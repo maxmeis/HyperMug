@@ -14,37 +14,41 @@ final class StatusItemController: NSObject {
     private var secureItem: NSMenuItem?
     private var secureSeparator: NSMenuItem?
     private var secureTimer: Timer?
+    private var doctorObserver: NSObjectProtocol?
+    private let trackpad: TrackpadCapture
+    private lazy var doctor = DoctorWindowController(store: store, capture: trackpad)
     /// Details window; each refresh re-polls so "seen since" stays owned by this controller.
     private lazy var secureWindow = SecureInputWindowController { [weak self] in
         self?.pollSecureInput()
         return (self?.tracker.info, self?.tracker.since)
     }
 
-    init(store: ConfigStore, engine: Engine, updateChecker: UpdateChecker) {
+    init(store: ConfigStore, engine: Engine, updateChecker: UpdateChecker, trackpad: TrackpadCapture) {
         self.store = store
         self.engine = engine
+        self.trackpad = trackpad
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         super.init()
+        doctorObserver = NotificationCenter.default.addObserver(forName: .showHyperMugDoctor, object: nil, queue: .main) { [weak self] _ in self?.showDoctor() }
+        ApplicationMenu.install(settingsTarget: self, settingsAction: #selector(openSettings), doctorAction: #selector(showDoctor))
 
         let settings = NSMenuItem(title: MenuText.settings, action: #selector(openSettings), keyEquivalent: ",")
         settings.keyEquivalentModifierMask = [.command]
         let stayAwake = NSMenuItem(title: "Stay Awake", action: #selector(toggleCaffeine), keyEquivalent: "")
         stayAwake.target = self
         stayAwakeItem = stayAwake
-        let privileges = NSMenuItem(title: MenuText.privileges, action: #selector(checkPrivileges), keyEquivalent: "")
-        let trackpad = NSMenuItem(title: "Trackpad Swipes…", action: #selector(showTrackpadSetup), keyEquivalent: "")
+        let doctor = NSMenuItem(title: "Doctor…", action: #selector(showDoctor), keyEquivalent: "")
         let updates = NSMenuItem(title: MenuText.updates, action: nil, keyEquivalent: "")
         let quit = NSMenuItem(title: MenuText.quit, action: #selector(quit), keyEquivalent: "q")
         quit.keyEquivalentModifierMask = [.command]
-        for item in [settings, trackpad, privileges, quit] { item.target = self }
+        for item in [settings, doctor, quit] { item.target = self }
         updateChecker.configureMenuItem(updates)
 
         menu.autoenablesItems = false
         menu.addItem(stayAwake)
         menu.addItem(.separator())
         menu.addItem(settings)
-        menu.addItem(trackpad)
-        menu.addItem(privileges)
+        menu.addItem(doctor)
         menu.addItem(updates)
         menu.addItem(.separator())
         menu.addItem(quit)
@@ -129,11 +133,7 @@ final class StatusItemController: NSObject {
         settingsWindow.present()
     }
 
-    @objc private func checkPrivileges() {
-        PrivilegesPresenter.present()
-    }
-
-    @objc private func showTrackpadSetup() { TrackpadSetup.present() }
+    @objc func showDoctor() { doctor.show() }
 
     @objc private func quit() {
         NSApp.terminate(nil)

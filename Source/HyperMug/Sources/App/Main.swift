@@ -32,7 +32,7 @@ private final class HyperMugRuntime {
         ports = SystemPorts(log: makeLogSink(category: "engine"), tap: tap, caps: caps, thumb: thumb, trackpad: trackpad)
         engine = Engine(ports: ports)
         updateChecker = UpdateChecker()
-        statusItem = StatusItemController(store: store, engine: engine, updateChecker: updateChecker)
+        statusItem = StatusItemController(store: store, engine: engine, updateChecker: updateChecker, trackpad: trackpad)
         configErrorAlert = ConfigErrorAlert(store: store)
 
         tap.handler = { [engine] in engine.handleTapEvent($0) }
@@ -68,6 +68,8 @@ private final class HyperMugRuntime {
         syncTimer = nil
         engine.shutdown()
     }
+
+    func showDoctor() { statusItem.showDoctor() }
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -77,10 +79,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let runtime = HyperMugRuntime()
         self.runtime = runtime
         runtime.start()
+        if CommandLine.arguments.contains("--doctor") { runtime.showDoctor() }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         runtime?.shutdown()
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        runtime?.showDoctor()
+        return true
     }
 }
 

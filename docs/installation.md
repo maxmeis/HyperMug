@@ -19,16 +19,16 @@ brew upgrade --cask --greedy maxmeis/hypermug/hypermug
 
 ## First run and permissions
 
-HyperMug creates `~/.config/hypermug.json` with defaults at first launch. No settings are imported from other apps. The app requests Accessibility permission and prompts for Input Monitoring when needed. Review or grant them from **Check Privileges…** in the menu. Relaunch HyperMug after granting Input Monitoring; the privileges window has a restart button.
+HyperMug creates `~/.config/hypermug.json` with defaults at first launch. No settings are imported from other apps. The app requests Accessibility permission and prompts for Input Monitoring when needed. Review or grant them from **Doctor… → Permissions** in the menu. Relaunch HyperMug after granting Input Monitoring; the privileges window has a restart button.
 
 - **Accessibility** enables the keyboard and mouse event tap used by Caps Lock Meh/Hyper, side-button mappings, and scroll inversion.
 - **Input Monitoring** enables raw Caps Lock detection and access to the MX Master 3S thumb button.
 
-Permission grants are tied to the app's code signature. Release builds use Developer ID signing. Local `make build` uses ad-hoc signing; see [Development](development.md) for a persistent local signing identity when permission continuity matters.
+Permission grants are tied to the app's code signature. Release builds use Developer ID signing. Local `make build` uses the persistent local signing identity; see [Development](development.md) for a persistent local signing identity when permission continuity matters.
 
 ## Trackpad setup
 
-macOS's native swipe actions can conflict with custom bindings. Open **Trackpad Swipes…** from the HyperMug menu and follow its instructions. Disable conflicting full-screen app, Mission Control, and App Exposé swipes in **System Settings → Trackpad → More Gestures**. If three-finger dragging is enabled, turn it off under **Accessibility → Pointer Control → Trackpad Options**. HyperMug does not change these macOS settings for you.
+macOS's native swipe actions can conflict with custom bindings. Open **Doctor… → Conflicts** from the HyperMug menu and follow its instructions. Disable conflicting full-screen app, Mission Control, and App Exposé swipes in **System Settings → Trackpad → More Gestures**. If three-finger dragging is enabled, turn it off under **Accessibility → Pointer Control → Trackpad Options**. HyperMug does not change these macOS settings for you.
 
 ## Other input tools
 

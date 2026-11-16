@@ -250,11 +250,11 @@ class PublishReleaseIntegrationTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(prefix="release-publish-test-")
         self.root = Path(self.temp.name)
         self.project = self.root / "project"
-        (self.project / "scripts").mkdir(parents=True)
+        (self.project / "helpers").mkdir(parents=True)
         (self.project / "build/release").mkdir(parents=True)
-        shutil.copy2(ROOT / "scripts/publish_release.sh", self.project / "scripts/publish_release.sh")
-        shutil.copy2(ROOT / "scripts/release_metadata.py", self.project / "scripts/release_metadata.py")
-        shutil.copy2(ROOT / "scripts/publish_source_cask.py", self.project / "scripts/publish_source_cask.py")
+        shutil.copy2(ROOT / "helpers/publish_release.sh", self.project / "helpers/publish_release.sh")
+        shutil.copy2(ROOT / "helpers/release_metadata.py", self.project / "helpers/release_metadata.py")
+        shutil.copy2(ROOT / "helpers/publish_source_cask.py", self.project / "helpers/publish_source_cask.py")
         self.state_dir = self.root / "gh-state"
         self.state_dir.mkdir()
         self.state_file = self.state_dir / "state.json"
@@ -332,7 +332,7 @@ class PublishReleaseIntegrationTests(unittest.TestCase):
 
     def _run(self, **overrides):
         env = self.env.copy(); env.update({k: str(v) for k, v in overrides.items()})
-        return subprocess.run(["bash", str(self.project / "scripts/publish_release.sh")], env=env,
+        return subprocess.run(["bash", str(self.project / "helpers/publish_release.sh")], env=env,
                               text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
     def _seed_tag(self, repo, tag, target, message="seed"):

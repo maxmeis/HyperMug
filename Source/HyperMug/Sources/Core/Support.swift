@@ -13,13 +13,22 @@ public enum HIDAccess: Equatable { case granted, denied, unknown }
 
 /// Single source for every name that identifies the app on disk, in the log and in the system.
 public enum AppIdentity {
+    #if HYPERMUG_DEV
+    public static let isDevelopment = true
+    public static let appName = "HyperMug Dev"
+    public static let bundleID = "com.maxmeis.hypermug.dev"
+    public static let configFileName = "hypermug-dev.json"
+    public static let schemaFileName = "hypermug-dev.schema.json"
+    #else
+    public static let isDevelopment = false
     public static let appName = "HyperMug"
     public static let bundleID = "com.maxmeis.hypermug"
-    public static let logSubsystem = "com.maxmeis.hypermug"
     public static let configFileName = "hypermug.json"            // in ~/.config
     public static let schemaFileName = "hypermug.schema.json"
-    public static let debugLogDirectory = "Library/Logs/HyperMug"  // relative to home
-    public static let caffeineAssertionName = "HyperMug Caffeine"
+    #endif
+    public static let logSubsystem = bundleID
+    public static let debugLogDirectory = "Library/Logs/\(appName)"
+    public static let caffeineAssertionName = "\(appName) Caffeine"
 }
 
 /// One-at-a-time gate for modal UI (the privileges alert).

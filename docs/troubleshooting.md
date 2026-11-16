@@ -5,7 +5,7 @@
 - **Accessibility** supports the keyboard and mouse event tap used by Caps Lock Meh/Hyper, side-button mappings, and scroll inversion.
 - **Input Monitoring** supports raw Caps Lock detection and access to the MX Master 3S thumb button.
 
-Use **Check Privileges…** in the menu to see or grant permissions. Relaunch HyperMug after granting Input Monitoring. Permission grants are tied to the app's code signature. Release builds use a stable Developer ID signature; a local build can use the persistent signing identity described in [Development](development.md).
+Use **Doctor… → Permissions** in the menu to see or grant permissions. Relaunch HyperMug after granting Input Monitoring. Permission grants are tied to the app's code signature. Release builds use a stable Developer ID signature; a local build can use the persistent signing identity described in [Development](development.md).
 
 ## Common issues
 
@@ -40,3 +40,11 @@ Logs include configuration errors, input diversion, and permission problems. Rev
 When macOS Secure Input is active, the system blocks keyboard event taps. Caps Lock Meh/Hyper will not work during that period. HyperMug shows a lock icon and identifies the reported holder in its menu. This is a macOS restriction and is not controlled by a HyperMug setting.
 
 The menu's **Blocked by Secure Input** item opens a reusable status panel. It refreshes while visible and shows the reported app and process details, including whether it is frontmost. **Bring to Front** activates the reported app. **Quit** and **Force Quit** ask for confirmation and are disabled for HyperMug itself, system processes, invalid process IDs, and processes owned by another user. macOS may report that Secure Input is active without identifying an owner; in that case HyperMug reports an unknown app.
+
+## Doctor and activity
+
+Doctor shows permissions, capture state, ignored setting keys, mouse actions, and swipe bindings. Checks update while its window is open. Conflicts lists possible overlaps with macOS gestures and other input apps. Unknown settings require manual review.
+
+Activity shows detected swipes and shell exit status. It supports filtering and pause. Each launch keeps the last session as `previous.log` beside `debug.log`. Dev logs use `~/Library/Logs/HyperMug Dev/`. Typed keys and command contents are not written to these files.
+
+In Meh/Hyper mode, HyperMug clears the macOS Caps Lock latch and strips Caps Lock flags from key events. Shift keeps its normal function. Default mode leaves Caps Lock unchanged.

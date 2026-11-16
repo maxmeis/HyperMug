@@ -1,4 +1,4 @@
-# Sourced by the hooks in this folder (POSIX sh). Not a hook itself.
+# Sourced by the entry points in .husky/ (POSIX sh). Not a hook itself.
 
 # GUI git clients (and the T3 app) often start hooks without the Volta shims on PATH.
 if [ -d "$HOME/.volta/bin" ]; then

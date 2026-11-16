@@ -5,7 +5,8 @@ on:
     paths:
       - 'Source/HyperMug/**'
       - 'Source/Branding/**'
-      - 'build.sh'
+      - 'helpers/**'
+      - 'Makefile'
 permissions:
   contents: read
 concurrency:
@@ -38,7 +39,7 @@ jobs:
           TAP_REPOSITORY: ${{ vars.TAP_REPOSITORY || 'maxmeis/homebrew-formulae' }}
         run: |
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          python3 Source/HyperMug/scripts/release_metadata.py validate --channel canary --version "$VERSION" --actor "$GITHUB_ACTOR" --triggering-actor "$GITHUB_TRIGGERING_ACTOR" --ref "$GITHUB_REF" --sha "$GITHUB_SHA" --source-repo "$SOURCE_REPOSITORY" --releases-repo "$RELEASES_REPOSITORY" --tap-repo "$TAP_REPOSITORY"
+          CHANNEL=canary make validate-release
       - name: Skip a superseded queued run
         id: freshness
         env:
@@ -50,7 +51,7 @@ jobs:
           python3 - "$VERSION" "$RUNNER_TEMP/release-tags" "$GITHUB_OUTPUT" <<'PY'
           import sys
           from pathlib import Path
-          sys.path.insert(0, 'Source/HyperMug/scripts')
+          sys.path.insert(0, 'helpers')
           from release_metadata import canary_superseded
           skip = canary_superseded(sys.argv[1], Path(sys.argv[2]).read_text().splitlines())
           with open(sys.argv[3], 'a') as output:
@@ -60,14 +61,12 @@ jobs:
       - name: Test
         if: steps.freshness.outputs.skip != 'true'
         run: |
-          python3 -m unittest discover -s Source/HyperMug/scripts -p 'test_release*.py'
-          ./Source/HyperMug/scripts/check-layers.sh
-          ./Source/HyperMug/scripts/test.sh
-          ./Source/HyperMug/scripts/compile-check.sh
-          node --check Source/Automation/triage-issues.mjs
-          node --test Source/Automation/triage-issues.test.mjs
-          node --check Source/Website/script.js
-          python3 Source/Automation/check-content.py
+          make test-release
+          make check-layers
+          make test
+          make compile-check
+          make check-automation
+          make check-website
       - name: Ensure unique Canary tag points to tested source
         if: steps.freshness.outputs.skip != 'true'
         env:
@@ -100,7 +99,7 @@ jobs:
           APP_STORE_CONNECT_ISSUER_ID: ${{ vars.APP_STORE_CONNECT_ISSUER_ID }}
           SPARKLE_EDDSA_PRIVATE_KEY: ${{ secrets.SPARKLE_EDDSA_PRIVATE_KEY }}
           SPARKLE_PUBLIC_ED_KEY: ${{ vars.SPARKLE_PUBLIC_ED_KEY }}
-        run: ./Source/HyperMug/scripts/release.sh
+        run: make release
       - name: Publish Canary
         if: steps.freshness.outputs.skip != 'true'
         env:
@@ -115,4 +114,4 @@ jobs:
           RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
           TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
           TAP_SSH_PRIVATE_KEY: ${{ secrets.TAP_SSH_PRIVATE_KEY }}
-        run: ./Source/HyperMug/scripts/publish_release.sh
+        run: make publish

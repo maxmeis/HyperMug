@@ -50,7 +50,7 @@ jobs:
           RELEASES_REPOSITORY: ${{ vars.RELEASES_REPOSITORY || github.repository }}
           TAP_REPOSITORY: ${{ vars.TAP_REPOSITORY || 'maxmeis/homebrew-formulae' }}
         run: |
-          python3 Source/HyperMug/scripts/release_metadata.py validate --channel stable --version "$VERSION" --actor "$GITHUB_ACTOR" --triggering-actor "$GITHUB_TRIGGERING_ACTOR" --ref "refs/tags/v$VERSION" --sha "$AUTHORIZED_SHA" --source-repo "$SOURCE_REPOSITORY" --releases-repo "$RELEASES_REPOSITORY" --tap-repo "$TAP_REPOSITORY"
+          CHANNEL=stable GITHUB_REF="refs/tags/v$VERSION" GITHUB_SHA="$AUTHORIZED_SHA" make validate-release
   release:
     needs: authorize
     runs-on: macos-latest
@@ -73,14 +73,12 @@ jobs:
           node-version-file: package.json
       - name: Test
         run: |
-          python3 -m unittest discover -s Source/HyperMug/scripts -p 'test_release*.py'
-          ./Source/HyperMug/scripts/check-layers.sh
-          ./Source/HyperMug/scripts/test.sh
-          ./Source/HyperMug/scripts/compile-check.sh
-          node --check Source/Automation/triage-issues.mjs
-          node --test Source/Automation/triage-issues.test.mjs
-          node --check Source/Website/script.js
-          python3 Source/Automation/check-content.py
+          make test-release
+          make check-layers
+          make test
+          make compile-check
+          make check-automation
+          make check-website
       - name: Ensure version tag points to tested source
         env:
           GH_TOKEN: ${{ github.token }}
@@ -118,7 +116,7 @@ jobs:
           GITHUB_REF="refs/tags/v$VERSION"
           BUILD_NUMBER="$VERSION"
           export VERSION BUILD_NUMBER GITHUB_REF GITHUB_SHA
-          ./Source/HyperMug/scripts/release.sh
+          make release
       - name: Publish stable
         env:
           CHANNEL: stable
@@ -137,4 +135,4 @@ jobs:
           GITHUB_REF="refs/tags/v$VERSION"
           BUILD_NUMBER="$VERSION"
           export VERSION BUILD_NUMBER GITHUB_REF GITHUB_SHA
-          ./Source/HyperMug/scripts/publish_release.sh
+          make publish

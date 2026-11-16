@@ -46,10 +46,12 @@ enum ActionRunner {
             do {
                 try process.run()
                 process.waitUntilExit()
+                DebugLog.write("shell action exited status=\(process.terminationStatus)")
                 if process.terminationStatus != 0 {
                     log(.info, "shell command exited with status \(process.terminationStatus): \(command)")
                 }
             } catch {
+                DebugLog.write("shell action failed to start: \(error.localizedDescription)")
                 log(.error, "shell command failed to start: \(error.localizedDescription)")
             }
         }

@@ -25,6 +25,7 @@ public protocol EnginePorts: AnyObject {
     func shutdownTrackpad()
     func run(_ action: ButtonAction)
     func postEscape()
+    func clearCapsLock()
     func log(_ level: LogLevel, _ message: String)
     func debugLog(_ line: String)
 }
@@ -98,6 +99,7 @@ public final class Engine {
         let capsWanted = settings.capsMode.isModifier && installedMask != nil && trusted
         if !capsWanted { tapState.resetCaps() }
         ports.setCapsKeyboardMonitoring(capsWanted)
+        if capsWanted { ports.clearCapsLock() }
         ports.configureTrackpad(trackpadConfig, enabled: !stopped && trusted && ports.inputMonitoringAccess() == .granted && trackpadConfig.hasMappings)
 
         onStateChange?()
@@ -157,6 +159,7 @@ public final class Engine {
             switch effect {
             case .run(let action): ports.run(action)
             case .postEscape: ports.postEscape()
+            case .clearCapsLock: ports.clearCapsLock()
             case .debugLog(let line): ports.debugLog(line)
             case .log(let level, let message): ports.log(level, message)
             }

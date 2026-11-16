@@ -262,6 +262,9 @@ private func reloadTests() {
         expectEqual(h.changes, [hyperConfig], "equal config: no onChange")
         expect(h.store.error == nil, "still valid")
         expectEqual(h.logged(.info, containing: "unknown config key \"unknown\" ignored"), 1, "unknown keys are logged as info")
+        expectEqual(h.store.unknownKeys, ["unknown"])
+        h.externalEdit(hyperJSON)
+        expectEqual(h.store.unknownKeys, [])
     }
 
     // An external edit goes through a delete+recreate (atomic replace): new inode, new watch.

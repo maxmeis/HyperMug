@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Builds Core + Tests with coverage instrumentation, runs the tests and fails unless every executable
-# line of Sources/Core is covered. Run it as:
-#   SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk ./scripts/test.sh
+# line of Source/HyperMug/Sources/Core is covered. Run it as:
+#   SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk ./helpers/test.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
-./scripts/check-layers.sh
-. scripts/swift-env.sh
+./helpers/check-layers.sh
+. helpers/swift-env.sh
 
 OUT=build/test
 rm -rf "$OUT"
@@ -18,22 +18,22 @@ mkdir -p "$OUT"
 swiftc -Onone -enable-testing -profile-generate -profile-coverage-mapping -wmo -parse-as-library \
   "${SWIFT_BASE_FLAGS[@]}" -module-name HyperMugCore \
   -emit-module -emit-module-path "$OUT/HyperMugCore.swiftmodule" \
-  -c -o "$OUT/HyperMugCore.o" Sources/Core/*.swift
+  -c -o "$OUT/HyperMugCore.o" Source/HyperMug/Sources/Core/*.swift
 
-# Tests/main.swift is the entry point, so no -parse-as-library here.
+# Source/HyperMug/Tests/main.swift is the entry point, so no -parse-as-library here.
 swiftc -Onone -profile-generate "${SWIFT_BASE_FLAGS[@]}" -module-name HyperMugCoreTests \
-  -I "$OUT" Tests/*.swift "$OUT/HyperMugCore.o" -o "$OUT/HyperMugCoreTests"
+  -I "$OUT" Source/HyperMug/Tests/*.swift "$OUT/HyperMugCore.o" -o "$OUT/HyperMugCoreTests"
 
 # Non-zero exit on any failed expectation stops the script (set -e).
 LLVM_PROFILE_FILE="$OUT/core.profraw" "$OUT/HyperMugCoreTests"
 
 xcrun llvm-profdata merge -sparse "$OUT/core.profraw" -o "$OUT/core.profdata"
-xcrun llvm-cov report "$OUT/HyperMugCoreTests" -instr-profile "$OUT/core.profdata" Sources/Core
-xcrun llvm-cov export -format=lcov "$OUT/HyperMugCoreTests" -instr-profile "$OUT/core.profdata" Sources/Core \
+xcrun llvm-cov report "$OUT/HyperMugCoreTests" -instr-profile "$OUT/core.profdata" Source/HyperMug/Sources/Core
+xcrun llvm-cov export -format=lcov "$OUT/HyperMugCoreTests" -instr-profile "$OUT/core.profdata" Source/HyperMug/Sources/Core \
   > "$OUT/core.lcov"
 
 # Core files with no executable lines (types and constants only) are absent from the lcov: informational.
-for f in Sources/Core/*.swift; do
+for f in Source/HyperMug/Sources/Core/*.swift; do
   if ! grep -q "^SF:.*/$f\$" "$OUT/core.lcov"; then
     echo "info: $f has no executable lines"
   fi

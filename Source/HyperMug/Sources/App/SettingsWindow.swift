@@ -189,8 +189,8 @@ private struct SettingsView: View {
                 Toggle("Check for updates automatically", isOn: $state.config.autoUpdate)
             }
             Section("Setup") {
-                Button("Check Permissions…") { PrivilegesPresenter.present() }
-                Button("Trackpad Setup…") { TrackpadSetup.present() }
+                Button("Open Doctor…") { NotificationCenter.default.post(name: .showHyperMugDoctor, object: nil) }
+                Button("Open Trackpad Settings…") { NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Trackpad-Settings.extension")!) }
             }
             Section("About") {
                 Text("Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "Unknown") (\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "Unknown"))")
@@ -226,7 +226,7 @@ private struct SettingsView: View {
             }
             Section {
                 Text("Disable conflicting macOS gestures in Trackpad settings before mapping these swipes.").font(.caption).foregroundStyle(.secondary)
-                Button("Open Trackpad Setup…") { TrackpadSetup.present() }
+                Button("Open Doctor…") { NotificationCenter.default.post(name: .showHyperMugDoctor, object: nil) }
             }
         }
     }
@@ -260,7 +260,7 @@ final class SettingsWindowController: NSWindowController {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 680, height: 550),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable],
                               backing: .buffered, defer: false)
-        window.title = "HyperMug Settings"
+        window.title = "\(AppIdentity.appName) Settings"
         window.contentView = NSHostingView(rootView: SettingsView(state: state))
         window.center()
         super.init(window: window)

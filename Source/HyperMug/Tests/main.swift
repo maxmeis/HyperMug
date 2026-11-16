@@ -19,6 +19,7 @@ secureInputTests()
 statusLogicTests()
 editorTests()
 privilegesTests()
+doctorTests()
 
 for dir in tempDirs { try? FileManager.default.removeItem(at: dir) }
 print("HyperMugCoreTests: \(checkCount) checks, \(failureCount) failures")

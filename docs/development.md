@@ -1,38 +1,39 @@
 # Development
 
-The Swift app, tests, and build tooling are in `Source/HyperMug/`. Repository-wide commit hooks and commit-message linting remain at the repository root and use the existing npm lockfile.
+App source and Core tests live in `Source/HyperMug/`. Build and automation helpers live in `helpers/`. Use the root Makefile for project commands.
 
 ## Build and run
 
-On macOS with Xcode Command Line Tools installed, from the repository root:
+On macOS with Xcode Command Line Tools installed:
 
 ```sh
-make build  # ad-hoc signed; does not launch
-make test   # Core tests and coverage
-make run    # explicitly build and launch
+make setup     # install development tools and the local signing identity
+make build     # build HyperMug Dev without launching it
+make run       # build Dev, stop other instances, and open Doctor
+make restart   # restart the existing Dev build
+make check     # run all checks
 ```
 
-`make check` runs tests and builds; `make clean` removes generated app/test output while keeping the dependency cache. For layer and compile checks, run `./Source/HyperMug/scripts/check-layers.sh` and `./Source/HyperMug/scripts/compile-check.sh`. Build products go under `Source/HyperMug/build/`. `make build` pins `SIGN_ID=-` and disables the updater, Developer ID signing, and notarization; it needs no Apple account. To keep Accessibility and Input Monitoring grants across rebuilds, create the optional local signing identity once:
+Run `make help` for the command list. Build products use the root `build/` directory. `make clean` removes generated files.
 
-```sh
-cd Source/HyperMug
-./scripts/create-signing-cert.sh
-```
+Local builds use **HyperMug Dev** (`com.maxmeis.hypermug.dev`). Dev uses `~/.config/hypermug-dev.json` and `~/Library/Logs/HyperMug Dev/`. Production keeps its own name, bundle ID, permissions, settings, and logs. The local launcher copies production settings once, disables login launch and updates in that copy, and stops both app variants before launching Dev. If AeroSpace is available, it brings Doctor to the current workspace.
 
-This creates `HyperMug Local Signing` in the login keychain and needs no administrator access. To use it, run `SIGN_ID='HyperMug Local Signing' ./Source/HyperMug/build.sh` directly; `make build` intentionally remains ad-hoc. Without a persistent identity, macOS can request permissions again after each rebuild. Release CI uses the same builder with Developer ID signing, hardened runtime, and notarization.
+Run `make signing` to create `HyperMug Local Signing` in the login keychain. This needs no administrator access. The first build can ask you to allow codesign to use the key. Choose Always Allow. Builds stop if the signing identity is missing. Disposable CI builds can use `SIGN_ID=- ALLOW_ADHOC_SIGNING=1 make build`. These builds can lose permission grants when their signature changes.
+
+Use `make build-production` for a local build with the production identity. Release CI uses `make release` with Developer ID signing and notarization. Release builds always use the production identity.
 
 ## Architecture and checks
 
-The layer rules are enforced by `Source/HyperMug/scripts/check-layers.sh`:
+The layer rules use `make check-layers`:
 
-- `Sources/Core`: pure logic with OS services supplied through injected interfaces.
-- `Sources/Platform`: operating-system adapters; may depend on Core, not App.
-- `Sources/App`: AppKit UI and composition root; may depend on Platform and Core.
-- `Tests`: test Core only.
+- `Source/HyperMug/Sources/Core`: pure logic with injected OS services.
+- `Source/HyperMug/Sources/Platform`: OS adapters; may depend on Core, not App.
+- `Source/HyperMug/Sources/App`: native UI and composition root.
+- `Source/HyperMug/Tests`: Core tests.
 
-Core tests must maintain 100% executable-line coverage. The compile check builds Core and type-checks Platform and App. Run the layer check, tests, compile check, and release metadata checks before opening a pull request. CI runs these checks on macOS.
+`make test` requires 100% executable-line coverage. `make compile-check` type-checks the app. `make test-release` checks release metadata and publication with temporary repositories. `make check-automation` and `make check-website` check repository automation and website assets. CI and Git hooks use these Makefile targets.
 
-Root Node tooling is for Git hooks and commitlint only. Run `npm ci` from the repository root to install it; do not use package scripts as the Swift build or test entry point. Commits follow [Conventional Commits](../CONTRIBUTING.md#commit-messages).
+Run `make ci-tools` to install the locked Node tooling. Run `make hooks` to install Git hooks again if npm scripts were disabled. Commits follow [Conventional Commits](../CONTRIBUTING.md#commit-messages).
 
 ## Issue-first planning
 
