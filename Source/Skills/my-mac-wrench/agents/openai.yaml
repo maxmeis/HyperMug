@@ -1,0 +1,4 @@
+interface:
+  display_name: "My Mac Wrench"
+  short_description: "Build and ship practical macOS utilities"
+  default_prompt: "Use $my-mac-wrench to plan and deliver this macOS utility work."
