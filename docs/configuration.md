@@ -33,7 +33,7 @@ HyperMug stores all persistent settings in `~/.config/hypermug.json`. It creates
 
 On a new or empty file, HyperMug writes the example above: `capsLock: "meh"`, `caffeineOnLaunch: true`, `autoUpdate: true`, `launchAtLogin: true`, both scroll inversions off, and the six AeroSpace mappings shown. These shell actions require AeroSpace at the specified path to work. Existing non-empty files are never rewritten. Missing keys in an existing file retain their previous fallback values; in particular, omitted `launchAtLogin` remains `false` and omitted mappings remain unmapped.
 
-The `$schema` property is optional. The generated file uses `./hypermug.schema.json`, which HyperMug installs beside it. The requested `./hypermug-dev.schema.json` would not resolve with the current schema installer, so the generated link retains the installed filename. Editors that support JSON Schema use it for validation and token autocomplete. The schema flags unknown keys, but the app ignores them for compatibility.
+The `$schema` property is optional. The generated file uses `./hypermug.schema.json`, which HyperMug installs beside it. Editors that support JSON Schema use it for validation and token autocomplete. The schema flags unknown keys, but the app ignores them for compatibility.
 
 ## Settings
 
