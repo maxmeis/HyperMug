@@ -1,0 +1,16 @@
+{
+  "name": "hypermug",
+  "private": true,
+  "description": "Dev tooling for HyperMug (git hooks, commit message lint). The app itself is Swift.",
+  "scripts": {
+    "prepare": "husky"
+  },
+  "volta": {
+    "node": "24.19.0"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^21.2.4",
+    "@commitlint/config-conventional": "^21.2.4",
+    "husky": "^9.1.7"
+  }
+}

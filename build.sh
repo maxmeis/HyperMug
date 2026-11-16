@@ -2,19 +2,16 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 ./scripts/check-layers.sh
+. scripts/swift-env.sh
 
 APP=build/HyperMug.app
 CORE=build/core
-TARGET=arm64-apple-macos14
 rm -rf "$APP" "$CORE"
-mkdir -p "$APP/Contents/MacOS" "$CORE"
+mkdir -p "$APP/Contents/MacOS"
 
-# Core: its own module, one WMO object (+ .swiftmodule). Platform and App see only its `public` API.
-swiftc -O -wmo -parse-as-library -swift-version 5 -target "$TARGET" \
-  -module-name HyperMugCore -emit-module -emit-module-path "$CORE/HyperMugCore.swiftmodule" \
-  -c -o "$CORE/HyperMugCore.o" Sources/Core/*.swift
+compile_core_module "$CORE"
 
-swiftc -O -parse-as-library -swift-version 5 -target "$TARGET" -module-name HyperMug \
+swiftc -O -parse-as-library "${SWIFT_BASE_FLAGS[@]}" -module-name HyperMug \
   -I "$CORE" Sources/Platform/*.swift Sources/App/*.swift "$CORE/HyperMugCore.o" \
   -o "$APP/Contents/MacOS/HyperMug" -framework IOKit -framework Carbon
 

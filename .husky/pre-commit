@@ -1,0 +1,22 @@
+. "$(dirname "$0")/lib.sh"
+run_vendored_hook pre-commit "$@"
+
+# Decide by what is staged. --no-renames lists both sides of a rename; -z keeps odd file names unquoted.
+staged="$(git diff --cached --name-only -z --no-renames --diff-filter=ACMRD | tr '\0' '\n')"
+
+run_tests=0
+run_compile=0
+while IFS= read -r path; do
+  case "$path" in
+    Sources/Core/* | Tests/* | scripts/test.sh) run_tests=1 ;;
+  esac
+  case "$path" in
+    Sources/* | build.sh | Info.plist) run_compile=1 ;;
+  esac
+done <<EOS
+$staged
+EOS
+
+./scripts/check-layers.sh
+if [ "$run_tests" = 1 ]; then ./scripts/test.sh; fi
+if [ "$run_compile" = 1 ]; then ./scripts/compile-check.sh; fi

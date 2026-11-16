@@ -193,7 +193,7 @@ Then build and run:
 open build/HyperMug.app
 ```
 
-If the Command Line Tools compiler and SDK disagree, point `SDKROOT` at the matching SDK:
+`build.sh`, `scripts/test.sh` and `scripts/compile-check.sh` pick the SDK themselves (see `scripts/swift-env.sh`): a `SDKROOT` you set is used as is; otherwise the default SDK is tried with one trivial compile, and if the Command Line Tools compiler and SDK disagree, the SDKs next to the toolchain are tried newest first and the first that compiles is used (logged as `swift-env: using SDK <path>`). The choice is cached in `$TMPDIR` for a day. To force one:
 
 ```bash
 SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk ./build.sh
@@ -221,10 +221,41 @@ The source is split into three layers under `Sources/`:
 **Tests:** `Tests/` is a plain Swift executable (`HyperMugCoreTests`, no XCTest) that tests only Core. Platform and App are deliberately untested (hardware and UI). Run:
 
 ```bash
-SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk ./scripts/test.sh
+./scripts/test.sh
 ```
 
 It builds Core and the tests with coverage instrumentation, runs them, and **fails unless line coverage of `Sources/Core` is 100%**, listing every uncovered `file:line`. Core is linked as a single object, never as a static archive, so a file the tests never touch cannot hide from the report. Unreachable defensive code is deleted, not covered with filler tests.
+
+### Git hooks and commit messages
+
+Hooks are managed with [Husky](https://typicode.github.io/husky/) and commit messages follow [Conventional Commits](https://www.conventionalcommits.org/). Node comes from [Volta](https://volta.sh/); `package.json` pins it (`volta.node`). Install once per clone:
+
+```bash
+npm install
+```
+
+This installs Husky, commitlint and the `@commitlint/config-conventional` rules and, through the `prepare` script, sets `core.hooksPath` to `.husky/_`. Check with `git config core.hooksPath`. If your npm config has `ignore-scripts=true`, `prepare` is skipped: run `npm run prepare` once (or `npx husky`) after `npm install`.
+
+**Commit message format:** `type(optional scope): subject`, with a lower-case type from `build`, `chore`, `ci`, `docs`, `feat`, `fix`, `perf`, `refactor`, `revert`, `style`, `test`, a subject that does not start with a capital letter and does not end with a full stop. Examples:
+
+```text
+feat(core): map the thumb button to a shell command
+fix: clear the Caps remap when the tap is not live
+docs: describe the Input Monitoring prompt
+refactor!: rename the config key capsLock
+```
+
+**What each hook runs** (every hook first runs the repo's vendored hook of the same name from `$(git rev-parse --git-common-dir)/hooks/`, if it exists: the commit-signing check on commit and gitleaks on push. A failure there fails the hook. Those files are never edited):
+
+| Hook | Runs |
+|------|------|
+| `commit-msg` | `commitlint --edit` (Conventional Commits) |
+| `pre-commit` | Always `scripts/check-layers.sh`. Plus `scripts/test.sh` (100% Core coverage) when a staged path is under `Sources/Core/` or `Tests/`, or is `scripts/test.sh`. Plus `scripts/compile-check.sh` when a staged path is under `Sources/` or is `build.sh` or `Info.plist`. A docs-only commit therefore runs only the layer check. |
+| `pre-push` | gitleaks, then `scripts/check-layers.sh`, `scripts/test.sh` and `scripts/compile-check.sh`, always. |
+
+`scripts/compile-check.sh` builds the `HyperMugCore` module and type-checks Platform and App against it (no app bundle, no linking, no signing), into a temp directory. The scripts share their Swift settings, including the SDK auto-detection described in [Build and run](#build-and-run), in `scripts/swift-env.sh`, so the hooks need no `SDKROOT` setup.
+
+**CI:** `.github/workflows/ci.yml` runs on every push and pull request on a `macos-latest` runner. It runs the same three scripts plus commitlint over the pushed commits (`npx commitlint --from <base> --to <head>`), so skipping the hooks with `--no-verify` does not get past it. On the runner the default Xcode SDK compiles, so the scripts use it as is.
 
 ## Upgrading from MyMug
 

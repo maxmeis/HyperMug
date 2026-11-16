@@ -5,9 +5,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ./scripts/check-layers.sh
+. scripts/swift-env.sh
 
 OUT=build/test
-TARGET=arm64-apple-macos14
 rm -rf "$OUT"
 mkdir -p "$OUT"
 
@@ -16,12 +16,12 @@ mkdir -p "$OUT"
 # coverage report and the gate would show a false 100%. -enable-testing is for this build only (the tests
 # use `@testable import HyperMugCore`); build.sh compiles Core without it.
 swiftc -Onone -enable-testing -profile-generate -profile-coverage-mapping -wmo -parse-as-library \
-  -swift-version 5 -target "$TARGET" -module-name HyperMugCore \
+  "${SWIFT_BASE_FLAGS[@]}" -module-name HyperMugCore \
   -emit-module -emit-module-path "$OUT/HyperMugCore.swiftmodule" \
   -c -o "$OUT/HyperMugCore.o" Sources/Core/*.swift
 
 # Tests/main.swift is the entry point, so no -parse-as-library here.
-swiftc -Onone -profile-generate -swift-version 5 -target "$TARGET" -module-name HyperMugCoreTests \
+swiftc -Onone -profile-generate "${SWIFT_BASE_FLAGS[@]}" -module-name HyperMugCoreTests \
   -I "$OUT" Tests/*.swift "$OUT/HyperMugCore.o" -o "$OUT/HyperMugCoreTests"
 
 # Non-zero exit on any failed expectation stops the script (set -e).
