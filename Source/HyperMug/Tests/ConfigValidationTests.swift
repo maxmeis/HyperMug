@@ -8,9 +8,26 @@ func configValidationTests() {
     }
     for text in ["{}", #"{"capsLock":"hyper"}"#, #"{"mouse":{"invertScroll":{"vertical":true}}}"#,
                  #"{"helpers":{" spaced ":"echo ok"},"mouse":{"buttons":{"back":{"helper":" spaced "}}}}"#,
-                 #"{"mouse":{"buttons":{"back":{"shortcut":["CMD","Shift","["]}}}}"#] {
+                 #"{"mouse":{"buttons":{"back":{"shortcut":["CMD","Shift","["]}}}}"#,
+                 #"{"mouse":{"buttons":{"back":{},"forward":{},"thumb":{}}},"trackpad":{"threeFingerSwipe":{"up":{}}}}"#] {
         if case .success = validateConfigDocument(Data(text.utf8)) { expect(true) }
         else { expect(false, "valid sparse/native config rejected: \(text)") }
+    }
+    for config in [AppConfig(), .newFileDefaults] {
+        let initialized = encodeConfig(config, schemaURL: schema, includeEmptyKeys: true)
+        expectEqual(try? validateConfigDocument(initialized).get().config, config, "empty slots do not enable actions")
+        let root = try! JSONSerialization.jsonObject(with: initialized) as! [String: Any]
+        expectEqual((root["helpers"] as? [String: String])?.count, 0, "empty helpers remain visible")
+        let mouse = root["mouse"] as! [String: Any]
+        let buttons = mouse["buttons"] as! [String: Any]
+        expectEqual(Set(buttons.keys), ["back", "forward", "thumb"], "all button slots are discoverable")
+        expectEqual((buttons["thumb"] as? [String: Any])?.count, 0, "unassigned thumb is an empty object")
+        let trackpad = root["trackpad"] as! [String: Any]
+        for group in ["threeFingerSwipe", "fourFingerSwipe"] {
+            let directions = trackpad[group] as! [String: Any]
+            expectEqual(Set(directions.keys), Set(SwipeDirection.allCases.map(\.rawValue)), "all swipe slots are discoverable")
+            expectEqual((directions["up"] as? [String: Any])?.count, 0, "unassigned swipe stays visibly empty")
+        }
     }
     let invalid = ["{", "[]", "true", "null", #"{"extra":true}"#,
         #"{"capsLock":42}"#, #"{"capsLock":"other"}"#,
@@ -20,7 +37,6 @@ func configValidationTests() {
         #"{"helpers":{"good":""}}"#, #"{"helpers":{"good":"  "}}"#,
         #"{"helpers":{"good":"echo hi\u0000exit 1"}}"#,
         #"{"mouse":{"buttons":{"back":{"shell":"echo hi\u0000exit 1"}}}}"#,
-        #"{"mouse":{"buttons":{"back":{}}}}"#,
         #"{"mouse":{"buttons":{"back":{"shell":""}}}}"#,
         #"{"mouse":{"buttons":{"back":{"shell":" \n"}}}}"#,
         #"{"mouse":{"buttons":{"back":{"shell":"echo ok","helper":"good"}}}}"#,

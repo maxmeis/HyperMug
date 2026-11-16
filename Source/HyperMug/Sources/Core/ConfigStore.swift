@@ -141,7 +141,7 @@ public final class ConfigStore {
     /// Atomic replace of the symlink target, so a dotfiles symlink stays a symlink.
     @discardableResult
     private func write(_ newConfig: AppConfig) -> Bool {
-        let data = encodeConfig(newConfig, schemaURL: env.schemaURL)
+        let data = encodeConfig(newConfig, schemaURL: env.schemaURL, includeEmptyKeys: true)
         let target = url.resolvingSymlinksInPath()
         do {
             try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)

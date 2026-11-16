@@ -20,7 +20,7 @@ private func buttonSchema(_ description: String) -> String {
     #"""
 {
           "type": "object",
-          "description": "\#(description) Set exactly one of shell, shortcut or helper. An omitted mapping runs no HyperMug action.",
+          "description": "\#(description) Use an empty object for an unassigned slot, or set exactly one of shell, shortcut or helper. An omitted mapping also runs no HyperMug action.",
           "additionalProperties": false,
           "properties": {
             "shell": {
@@ -56,6 +56,9 @@ private func buttonSchema(_ description: String) -> String {
             },
             {
               "required": ["helper"]
+            },
+            {
+              "maxProperties": 0
             }
           ]
         }

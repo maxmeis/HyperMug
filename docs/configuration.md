@@ -12,19 +12,25 @@ HyperMug settings are edited only in `~/.config/hypermug.json`. **Settings…** 
   "caffeineOnLaunch": true,
   "autoUpdate": true,
   "launchAtLogin": true,
+  "helpers": {},
   "mouse": {
     "invertScroll": { "vertical": false, "horizontal": false },
     "buttons": {
       "back": { "shell": "/opt/homebrew/bin/aerospace workspace --no-stdin --wrap-around next" },
-      "forward": { "shell": "/opt/homebrew/bin/aerospace workspace --no-stdin --wrap-around prev" }
+      "forward": { "shell": "/opt/homebrew/bin/aerospace workspace --no-stdin --wrap-around prev" },
+      "thumb": {}
     }
   },
   "trackpad": {
     "threeFingerSwipe": {
+      "up": {},
+      "down": {},
       "left": { "shell": "/opt/homebrew/bin/aerospace workspace --no-stdin --wrap-around next" },
       "right": { "shell": "/opt/homebrew/bin/aerospace workspace --no-stdin --wrap-around prev" }
     },
     "fourFingerSwipe": {
+      "up": {},
+      "down": {},
       "left": { "shell": "/opt/homebrew/bin/aerospace workspace --no-stdin --wrap-around next" },
       "right": { "shell": "/opt/homebrew/bin/aerospace workspace --no-stdin --wrap-around prev" }
     }
@@ -32,7 +38,7 @@ HyperMug settings are edited only in `~/.config/hypermug.json`. **Settings…** 
 }
 ```
 
-On a new or empty file, HyperMug writes the example above: `capsLock: "meh"`, `caffeineOnLaunch: true`, `autoUpdate: true`, `launchAtLogin: true`, both scroll inversions off, and the six AeroSpace mappings shown. These shell actions require AeroSpace at the specified path to work. Existing preferences are preserved; only `$schema` metadata is updated when the installed bundle location changes. Missing keys in an existing file retain their previous fallback values; in particular, omitted `launchAtLogin` remains `false` and omitted mappings remain unmapped.
+On a new or empty file, HyperMug shows every button and swipe direction, including unassigned slots as `{}` and an empty `helpers` object. These placeholders run no action; they make available keys visible while editing. It writes the example above: `capsLock: "meh"`, `caffeineOnLaunch: true`, `autoUpdate: true`, `launchAtLogin: true`, both scroll inversions off, and the six AeroSpace mappings shown. These shell actions require AeroSpace at the specified path to work. Existing preferences are preserved; only `$schema` metadata is updated when the installed bundle location changes. Missing keys in an existing file retain their previous fallback values; in particular, omitted `launchAtLogin` remains `false` and omitted mappings remain unmapped.
 
 The schema is generated from the same Core model into the signed app’s `Contents/Resources/hypermug.schema.json` before signing. HyperMug fills `$schema` with that resource’s actual `file://` URL, including URL escaping when the app path contains spaces. The example assumes `/Applications/HyperMug.app`; Homebrew or a custom app location can produce a different URL. Dev uses its own bundled `hypermug-dev.schema.json`. No schema sidecar is created beside your config. Old sidecars can be removed once your editor uses the bundled URL.
 
@@ -57,7 +63,7 @@ Scroll inversion affects mouse wheels only, not trackpads or Magic Mouse scrolli
 
 ## Actions and shortcuts
 
-An action object has exactly one non-empty key:
+An empty action object (`{}`) leaves that slot unassigned. To assign an action, set exactly one non-empty key:
 
 - `"shortcut"`: an array with any number of modifiers and exactly one key, such as `{"shortcut": ["cmd", "shift", "["]}`.
 - `"shell"`: a supervised command run by `/bin/sh -c`; output is discarded. GUI apps receive a minimal `PATH` (`/usr/bin:/bin:/usr/sbin:/sbin`), so use absolute paths for other tools. Use `open` to launch an app, file, or URL.
@@ -86,7 +92,7 @@ This example requires a `mission-control` helper in top-level `helpers`. Omitted
 
 ## Validation and recovery
 
-Omit a button or swipe direction to leave it unmapped. Optional settings may be omitted to use their fallback values; `null`, empty action objects, unknown keys and invalid action values are errors. A mapped back/forward button is swallowed and its action runs once on press; thumb also runs once per press. Trackpad actions use the same action format.
+Omit a button or swipe direction, or set it to `{}`, to leave it unmapped. Optional settings may be omitted to use their fallback values; `null`, unknown keys and invalid action values are errors. Empty action values such as `{"shell":""}` or `{"shortcut":[]}` are errors; an empty object is the explicit unassigned form. A mapped back/forward button is swallowed and its action runs once on press; thumb also runs once per press. Trackpad actions use the same action format.
 
 If JSON or the bundled schema rules fail, a shortcut is invalid, or a helper reference is missing, HyperMug keeps the last valid settings. It never overwrites a non-empty invalid file. A native notification offers **Open Configuration**; the menu also shows **Configuration Error…** while the file is invalid. Doctor activity records the validation path and reason. Fix and save the file to recover automatically. Renaming or deleting a helper requires updating every reference in the same save; names, including surrounding spaces, remain exact.
 

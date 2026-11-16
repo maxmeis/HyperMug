@@ -66,6 +66,7 @@ private func schemaStructureTests() {
             if let oneOf = node["oneOf"] as? [JSON] {
                 let matching = oneOf.filter { branch in
                     guard Set(branch["required"] as? [String] ?? []).isSubset(of: keys) else { return false }
+                    if let maximum = branch["maxProperties"] as? Int, object.count > maximum { return false }
                     for (name, rule) in (branch["properties"] as? [String: JSON]) ?? [:] {
                         if let s = object[name] as? String, let minLength = rule["minLength"] as? Int, s.count < minLength { return false }
                     }
@@ -161,7 +162,8 @@ private func schemaStructureTests() {
         expectEqual(Set((b["properties"] as? JSON ?? [:]).keys), ["shell", "shortcut", "helper"], "\(button) properties")
         expectEqual(child(b, "shell")["type"] as? String, "string", "\(button).shell is a string")
         let branches = b["oneOf"] as? [JSON] ?? []
-        expectEqual(branches.count, 3, "\(button) is exactly-one-of via oneOf")
+        expectEqual(branches.count, 4, "\(button) accepts an empty slot or exactly one action")
+        expect(branches.contains { $0["maxProperties"] as? Int == 0 }, "empty slot branch is present")
         let shellBranch = branches.first { ($0["required"] as? [String]) == ["shell"] }
         let shellRule = (shellBranch?["properties"] as? JSON)?["shell"] as? JSON
         expectEqual(shellRule?["minLength"] as? Int, 1, "\(button).shell must be non-empty")

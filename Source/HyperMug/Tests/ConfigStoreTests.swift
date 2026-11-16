@@ -129,7 +129,7 @@ private func startTests() {
     do {
         let h = Harness()
         h.store.start()
-        expectEqual(h.fileText, String(decoding: encodeConfig(.newFileDefaults), as: UTF8.self), "default config written")
+        expectEqual(h.fileText, String(decoding: encodeConfig(.newFileDefaults, includeEmptyKeys: true), as: UTF8.self), "default config written")
         expect(!FileManager.default.fileExists(atPath: h.configDir.appendingPathComponent(AppIdentity.schemaFileName).path),
                "no schema is written beside the config")
         expectEqual(h.changes, [.newFileDefaults], "onChange runs exactly once")
@@ -215,7 +215,7 @@ private func createIfAbsentTests() {
         expectEqual(h.store.config, hyperConfig, "config survives the deletion")
         let watchesBefore = h.fileWatches.count
         h.store.createIfAbsent()
-        expectEqual(h.fileText, String(decoding: encodeConfig(hyperConfig), as: UTF8.self), "recreated from the in-memory config")
+        expectEqual(h.fileText, String(decoding: encodeConfig(hyperConfig, includeEmptyKeys: true), as: UTF8.self), "recreated from the in-memory config")
         expectEqual(h.fileWatches.count, watchesBefore + 1, "the recreated file is watched")
         expectEqual(h.changes, [hyperConfig], "recreating does not report a change")
         // Our own write must not look like an external edit.
@@ -242,7 +242,7 @@ private func createIfAbsentTests() {
         h.store.start()
         try? FileManager.default.removeItem(at: h.configDir)
         h.store.createIfAbsent()
-        expectEqual(h.fileText, String(decoding: encodeConfig(.newFileDefaults), as: UTF8.self), "directory and file recreated")
+        expectEqual(h.fileText, String(decoding: encodeConfig(.newFileDefaults, includeEmptyKeys: true), as: UTF8.self), "directory and file recreated")
     }
 }
 
@@ -371,7 +371,7 @@ private func blankFileTests() {
         let h = Harness()
         h.put("")
         h.store.start()
-        expectEqual(h.fileText, String(decoding: encodeConfig(.newFileDefaults), as: UTF8.self), "blank file initialized")
+        expectEqual(h.fileText, String(decoding: encodeConfig(.newFileDefaults, includeEmptyKeys: true), as: UTF8.self), "blank file initialized")
         expectEqual(h.store.config, .newFileDefaults, "defaults adopted")
         expectEqual(h.changes, [.newFileDefaults], "one onChange")
         expect(h.errors.isEmpty && h.store.error == nil, "blank is not an error")
@@ -383,7 +383,7 @@ private func blankFileTests() {
         h.put(hyperJSON)
         h.store.start()
         h.externalEdit(" \n")
-        expectEqual(h.fileText, String(decoding: encodeConfig(.newFileDefaults), as: UTF8.self), "truncated file initialized")
+        expectEqual(h.fileText, String(decoding: encodeConfig(.newFileDefaults, includeEmptyKeys: true), as: UTF8.self), "truncated file initialized")
         expectEqual(h.changes, [hyperConfig, .newFileDefaults], "defaults reported")
         // Our own initialization does not loop.
         h.fileWatches.last?.onEvent(false)
@@ -448,7 +448,7 @@ private func blankFileTests() {
         try? FileManager.default.createSymbolicLink(at: h.url, withDestinationURL: target)
         h.store.start()
         expectEqual(try? FileManager.default.destinationOfSymbolicLink(atPath: h.url.path), target.path, "still a symlink")
-        expectEqual(try? Data(contentsOf: target), encodeConfig(.newFileDefaults), "written through to the target")
+        expectEqual(try? Data(contentsOf: target), encodeConfig(.newFileDefaults, includeEmptyKeys: true), "written through to the target")
         try? Data("{\"capsLock\":\"hyper\",\"launchAtLogin\":false}".utf8).write(to: target)
         h.store.pollFallback()
         expectEqual(h.store.config, hyperConfig, "an edit of the symlink target is noticed by the poll")

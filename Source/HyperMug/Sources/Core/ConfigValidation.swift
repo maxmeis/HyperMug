@@ -33,7 +33,7 @@ private func schemaViolation(_ schema: [String: Any], _ value: Any, path: String
     }
     if let branches = schema["oneOf"] as? [[String: Any]],
        branches.filter({ schemaViolation($0, value, path: path) == nil }).count != 1 {
-        return "\(label): set exactly one of shell, shortcut or helper"
+        return "\(label): use an empty object or set exactly one of shell, shortcut or helper"
     }
     if let string = value as? String {
         if let minimum = schema["minLength"] as? Int, string.unicodeScalars.count < minimum {
@@ -56,6 +56,7 @@ private func schemaViolation(_ schema: [String: Any], _ value: Any, path: String
         }
     }
     if let object = value as? [String: Any] {
+        if let maximum = schema["maxProperties"] as? Int, object.count > maximum { return "\(label): too many properties" }
         for key in schema["required"] as? [String] ?? [] where object[key] == nil { return "\(label).\(key): required" }
         let properties = schema["properties"] as? [String: [String: Any]] ?? [:]
         for key in object.keys.sorted() {

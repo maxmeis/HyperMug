@@ -180,7 +180,7 @@ public struct ConfigError: Error, Equatable {
 }
 
 /// A config that decoded, plus the keys it contained that HyperMug does not know (dotted paths).
-/// Typos like "capslock" are not errors; the store logs them so they can be found.
+/// Low-level decoding collects unknown keys; the store rejects them during schema validation.
 public struct DecodedConfig: Equatable {
     public let config: AppConfig
     public let unknownKeys: [String]
@@ -295,14 +295,15 @@ extension InvertScroll: Codable {
 
 /// A mapped button is an object with only its one action key.
 private struct ActionFields: Encodable {
-    let action: ButtonAction
+    let action: ButtonAction?
 
     func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: AnyKey.self)
         switch action {
-        case .shortcut(let s): try c.encode(s.tokens, forKey: AnyKey("shortcut"))
-        case .shell(let s): try c.encode(s, forKey: AnyKey("shell"))
-        case .helper(let name): try c.encode(name, forKey: AnyKey("helper"))
+        case .shortcut(let s)?: try c.encode(s.tokens, forKey: AnyKey("shortcut"))
+        case .shell(let s)?: try c.encode(s, forKey: AnyKey("shell"))
+        case .helper(let name)?: try c.encode(name, forKey: AnyKey("helper"))
+        case nil: break
         }
     }
 }
@@ -319,12 +320,12 @@ extension ButtonMap: Codable {
 
     var isEmpty: Bool { back == nil && forward == nil && thumb == nil }
 
-    /// Only mapped buttons are written (unmapped = key omitted).
+    /// Initial files show every slot; ordinary model encoding can remain compact.
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: AnyKey.self)
-        if let back { try c.encode(ActionFields(action: back), forKey: AnyKey("back")) }
-        if let forward { try c.encode(ActionFields(action: forward), forKey: AnyKey("forward")) }
-        if let thumb { try c.encode(ActionFields(action: thumb), forKey: AnyKey("thumb")) }
+        if back != nil || encoder.includeEmptyKeys { try c.encode(ActionFields(action: back), forKey: AnyKey("back")) }
+        if forward != nil || encoder.includeEmptyKeys { try c.encode(ActionFields(action: forward), forKey: AnyKey("forward")) }
+        if thumb != nil || encoder.includeEmptyKeys { try c.encode(ActionFields(action: thumb), forKey: AnyKey("thumb")) }
     }
 }
 
@@ -341,10 +342,10 @@ extension SwipeMap: Codable {
 
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: AnyKey.self)
-        if let up { try c.encode(ActionFields(action: up), forKey: AnyKey("up")) }
-        if let down { try c.encode(ActionFields(action: down), forKey: AnyKey("down")) }
-        if let left { try c.encode(ActionFields(action: left), forKey: AnyKey("left")) }
-        if let right { try c.encode(ActionFields(action: right), forKey: AnyKey("right")) }
+        if up != nil || encoder.includeEmptyKeys { try c.encode(ActionFields(action: up), forKey: AnyKey("up")) }
+        if down != nil || encoder.includeEmptyKeys { try c.encode(ActionFields(action: down), forKey: AnyKey("down")) }
+        if left != nil || encoder.includeEmptyKeys { try c.encode(ActionFields(action: left), forKey: AnyKey("left")) }
+        if right != nil || encoder.includeEmptyKeys { try c.encode(ActionFields(action: right), forKey: AnyKey("right")) }
     }
 }
 
@@ -359,8 +360,8 @@ extension TrackpadConfig: Codable {
 
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: AnyKey.self)
-        if !threeFingerSwipe.isEmpty { try c.encode(threeFingerSwipe, forKey: AnyKey("threeFingerSwipe")) }
-        if !fourFingerSwipe.isEmpty { try c.encode(fourFingerSwipe, forKey: AnyKey("fourFingerSwipe")) }
+        if !threeFingerSwipe.isEmpty || encoder.includeEmptyKeys { try c.encode(threeFingerSwipe, forKey: AnyKey("threeFingerSwipe")) }
+        if !fourFingerSwipe.isEmpty || encoder.includeEmptyKeys { try c.encode(fourFingerSwipe, forKey: AnyKey("fourFingerSwipe")) }
     }
 }
 
@@ -373,11 +374,11 @@ extension MouseConfig: Codable {
         buttons = try c.decodeIfPresent(ButtonMap.self, forKey: AnyKey("buttons")) ?? ButtonMap()
     }
 
-    /// `buttons` is omitted when no button is mapped.
+    /// Show the button slots when initializing a configuration file.
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: AnyKey.self)
         try c.encode(invertScroll, forKey: AnyKey("invertScroll"))
-        if !buttons.isEmpty { try c.encode(buttons, forKey: AnyKey("buttons")) }
+        if !buttons.isEmpty || encoder.includeEmptyKeys { try c.encode(buttons, forKey: AnyKey("buttons")) }
     }
 }
 
@@ -433,8 +434,8 @@ extension AppConfig: Codable {
         try c.encode(launchAtLogin, forKey: AnyKey("launchAtLogin"))
         try c.encode(autoUpdate, forKey: AnyKey("autoUpdate"))
         try c.encode(mouse, forKey: AnyKey("mouse"))
-        if !helpers.isEmpty { try c.encode(helpers, forKey: AnyKey("helpers")) }
-        if trackpad.hasMappings { try c.encode(trackpad, forKey: AnyKey("trackpad")) }
+        if !helpers.isEmpty || encoder.includeEmptyKeys { try c.encode(helpers, forKey: AnyKey("helpers")) }
+        if trackpad.hasMappings || encoder.includeEmptyKeys { try c.encode(trackpad, forKey: AnyKey("trackpad")) }
     }
 }
 
@@ -486,8 +487,15 @@ public func decodeConfig(_ data: Data) -> Result<DecodedConfig, ConfigError> {
 /// Pretty, sorted keys (so `$schema` comes first), no escaped slashes, trailing newline.
 private let schemaReferenceKey = CodingUserInfoKey(rawValue: "hypermug.schemaReference")!
 
-public func encodeConfig(_ config: AppConfig, schemaURL: URL? = nil) -> Data {
+private let emptyKeysKey = CodingUserInfoKey(rawValue: "hypermug.includeEmptyKeys")!
+private extension Encoder {
+    var includeEmptyKeys: Bool { userInfo[emptyKeysKey] as? Bool == true }
+}
+
+/// Include unassigned slots as `{}` when creating or recreating a configuration file.
+public func encodeConfig(_ config: AppConfig, schemaURL: URL? = nil, includeEmptyKeys: Bool = false) -> Data {
     let encoder = JSONEncoder()
+    encoder.userInfo[emptyKeysKey] = includeEmptyKeys
     if let schemaURL { encoder.userInfo[schemaReferenceKey] = schemaURL.absoluteString }
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
     // Encoding plain strings/bools cannot fail.
