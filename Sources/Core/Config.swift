@@ -25,6 +25,64 @@ public struct ButtonMap: Equatable {
     }
 }
 
+public enum SwipeDirection: String, CaseIterable, Equatable {
+    case up, down, left, right
+}
+
+public struct SwipeMap: Equatable {
+    public var up: ButtonAction?
+    public var down: ButtonAction?
+    public var left: ButtonAction?
+    public var right: ButtonAction?
+
+    public init(up: ButtonAction? = nil, down: ButtonAction? = nil,
+                left: ButtonAction? = nil, right: ButtonAction? = nil) {
+        self.up = up
+        self.down = down
+        self.left = left
+        self.right = right
+    }
+
+    public var isEmpty: Bool { up == nil && down == nil && left == nil && right == nil }
+
+    public func action(for direction: SwipeDirection) -> ButtonAction? {
+        switch direction {
+        case .up: return up
+        case .down: return down
+        case .left: return left
+        case .right: return right
+        }
+    }
+}
+
+public struct TrackpadConfig: Equatable {
+    public var threeFingerSwipe: SwipeMap
+    public var fourFingerSwipe: SwipeMap
+
+    public init(threeFingerSwipe: SwipeMap = SwipeMap(), fourFingerSwipe: SwipeMap = SwipeMap()) {
+        self.threeFingerSwipe = threeFingerSwipe
+        self.fourFingerSwipe = fourFingerSwipe
+    }
+
+    public var hasMappings: Bool { !threeFingerSwipe.isEmpty || !fourFingerSwipe.isEmpty }
+
+    public func hasMappings(fingers: Int) -> Bool {
+        switch fingers {
+        case 3: return !threeFingerSwipe.isEmpty
+        case 4: return !fourFingerSwipe.isEmpty
+        default: return false
+        }
+    }
+
+    public func action(fingers: Int, direction: SwipeDirection) -> ButtonAction? {
+        switch fingers {
+        case 3: return threeFingerSwipe.action(for: direction)
+        case 4: return fourFingerSwipe.action(for: direction)
+        default: return nil
+        }
+    }
+}
+
 public struct InvertScroll: Equatable {
     public var vertical: Bool
     public var horizontal: Bool
@@ -49,14 +107,19 @@ public struct AppConfig: Equatable {
     public var capsLock: CapsMode
     public var caffeineOnLaunch: Bool
     public var launchAtLogin: Bool
+    public var autoUpdate: Bool
     public var mouse: MouseConfig
+    public var trackpad: TrackpadConfig
 
     public init(capsLock: CapsMode = .meh, caffeineOnLaunch: Bool = true, launchAtLogin: Bool = false,
-                mouse: MouseConfig = MouseConfig()) {
+                autoUpdate: Bool = true,
+                mouse: MouseConfig = MouseConfig(), trackpad: TrackpadConfig = TrackpadConfig()) {
         self.capsLock = capsLock
         self.caffeineOnLaunch = caffeineOnLaunch
         self.launchAtLogin = launchAtLogin
+        self.autoUpdate = autoUpdate
         self.mouse = mouse
+        self.trackpad = trackpad
     }
 }
 
@@ -210,6 +273,42 @@ extension ButtonMap: Codable {
     }
 }
 
+extension SwipeMap: Codable {
+    public init(from decoder: Decoder) throws {
+        self.init()
+        let c = try decoder.container(keyedBy: AnyKey.self)
+        noteUnknownKeys(c, known: ["up", "down", "left", "right"], in: decoder)
+        up = try decodeAction(c, "up", in: decoder)
+        down = try decodeAction(c, "down", in: decoder)
+        left = try decodeAction(c, "left", in: decoder)
+        right = try decodeAction(c, "right", in: decoder)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: AnyKey.self)
+        if let up { try c.encode(ActionFields(action: up), forKey: AnyKey("up")) }
+        if let down { try c.encode(ActionFields(action: down), forKey: AnyKey("down")) }
+        if let left { try c.encode(ActionFields(action: left), forKey: AnyKey("left")) }
+        if let right { try c.encode(ActionFields(action: right), forKey: AnyKey("right")) }
+    }
+}
+
+extension TrackpadConfig: Codable {
+    public init(from decoder: Decoder) throws {
+        self.init()
+        let c = try decoder.container(keyedBy: AnyKey.self)
+        noteUnknownKeys(c, known: ["threeFingerSwipe", "fourFingerSwipe"], in: decoder)
+        threeFingerSwipe = try c.decodeIfPresent(SwipeMap.self, forKey: AnyKey("threeFingerSwipe")) ?? SwipeMap()
+        fourFingerSwipe = try c.decodeIfPresent(SwipeMap.self, forKey: AnyKey("fourFingerSwipe")) ?? SwipeMap()
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: AnyKey.self)
+        if !threeFingerSwipe.isEmpty { try c.encode(threeFingerSwipe, forKey: AnyKey("threeFingerSwipe")) }
+        if !fourFingerSwipe.isEmpty { try c.encode(fourFingerSwipe, forKey: AnyKey("fourFingerSwipe")) }
+    }
+}
+
 extension MouseConfig: Codable {
     public init(from decoder: Decoder) throws {
         self.init()
@@ -231,7 +330,7 @@ extension AppConfig: Codable {
     public init(from decoder: Decoder) throws {
         self.init()
         let c = try decoder.container(keyedBy: AnyKey.self)
-        noteUnknownKeys(c, known: ["$schema", "capsLock", "caffeineOnLaunch", "launchAtLogin", "mouse"], in: decoder)
+        noteUnknownKeys(c, known: ["$schema", "capsLock", "caffeineOnLaunch", "launchAtLogin", "autoUpdate", "mouse", "trackpad"], in: decoder)
         if let raw = try c.decodeIfPresent(String.self, forKey: AnyKey("capsLock")) {
             guard let mode = CapsMode(rawValue: raw) else {
                 throw ConfigError(reason: "capsLock must be \"default\", \"meh\" or \"hyper\" (got \"\(raw)\")")
@@ -240,7 +339,9 @@ extension AppConfig: Codable {
         }
         caffeineOnLaunch = try c.decodeIfPresent(Bool.self, forKey: AnyKey("caffeineOnLaunch")) ?? true
         launchAtLogin = try c.decodeIfPresent(Bool.self, forKey: AnyKey("launchAtLogin")) ?? false
+        autoUpdate = try c.decodeIfPresent(Bool.self, forKey: AnyKey("autoUpdate")) ?? true
         mouse = try c.decodeIfPresent(MouseConfig.self, forKey: AnyKey("mouse")) ?? MouseConfig()
+        trackpad = try c.decodeIfPresent(TrackpadConfig.self, forKey: AnyKey("trackpad")) ?? TrackpadConfig()
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -249,7 +350,9 @@ extension AppConfig: Codable {
         try c.encode(capsLock.rawValue, forKey: AnyKey("capsLock"))
         try c.encode(caffeineOnLaunch, forKey: AnyKey("caffeineOnLaunch"))
         try c.encode(launchAtLogin, forKey: AnyKey("launchAtLogin"))
+        try c.encode(autoUpdate, forKey: AnyKey("autoUpdate"))
         try c.encode(mouse, forKey: AnyKey("mouse"))
+        if trackpad.hasMappings { try c.encode(trackpad, forKey: AnyKey("trackpad")) }
     }
 }
 

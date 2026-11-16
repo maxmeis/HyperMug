@@ -42,6 +42,10 @@ private final class FakePorts: EnginePorts {
     func setLoginItem(registered: Bool) -> String? { calls.append("login:\(registered)"); return loginError }
     func setThumbDiversion(_ on: Bool) { calls.append("thumb:\(on)") }
     func shutdownThumb() { calls.append("shutdownThumb") }
+    func configureTrackpad(_ config: TrackpadConfig, enabled: Bool) {
+        calls.append("trackpad:\(enabled)")
+    }
+    func shutdownTrackpad() { calls.append("shutdownTrackpad") }
     func run(_ action: ButtonAction) { ran.append(action) }
     func postEscape() { calls.append("escape") }
     func log(_ level: LogLevel, _ message: String) {
@@ -79,6 +83,36 @@ func engineTests() {
     tapEventTests()
     stateChangeTests()
     shutdownTests()
+    trackpadTests()
+}
+
+private func trackpadTests() {
+    let (engine, ports) = makeEngine()
+    var mapped = config()
+    mapped.trackpad.threeFingerSwipe.up = .shell("three-up")
+    mapped.trackpad.fourFingerSwipe.left = .shell("four-left")
+    engine.apply(mapped)
+    expectEqual(ports.count("trackpad:true"), 1)
+    engine.trackpadSwiped(TrackpadSwipe(fingers: 3, direction: .up))
+    engine.trackpadSwiped(TrackpadSwipe(fingers: 4, direction: .left))
+    engine.trackpadSwiped(TrackpadSwipe(fingers: 3, direction: .down))
+    engine.trackpadSwiped(TrackpadSwipe(fingers: 2, direction: .up))
+    expectEqual(ports.ran, [.shell("three-up"), .shell("four-left")])
+    ports.trusted = false
+    engine.sync()
+    expectEqual(ports.calls.last, "trackpad:false")
+    ports.trusted = true; ports.access = .denied
+    engine.sync()
+    expectEqual(ports.calls.last, "trackpad:false")
+    ports.access = .granted
+    engine.sync()
+    expectEqual(ports.calls.last, "trackpad:true")
+    engine.apply(config())
+    expectEqual(ports.calls.last, "trackpad:false")
+    engine.shutdown()
+    engine.trackpadSwiped(TrackpadSwipe(fingers: 3, direction: .up))
+    expectEqual(ports.ran.count, 2)
+    expectEqual(ports.count("shutdownTrackpad"), 1)
 }
 
 private func startTests() {
@@ -461,7 +495,7 @@ private func shutdownTests() {
     ports.clear()
 
     engine.shutdown()
-    expectEqual(ports.calls, ["release", "caps:false", "removeTap", "shutdownThumb"])
+    expectEqual(ports.calls, ["shutdownTrackpad", "release", "caps:false", "removeTap", "shutdownThumb"])
     expect(!engine.caffeineOn, "caffeine released")
     expectEqual(engine.settings, TapSettings())
     engine.thumbPressed()
@@ -477,10 +511,10 @@ private func shutdownTests() {
     // Safe twice: nothing left to release or remove.
     ports.clear()
     engine.shutdown()
-    expectEqual(ports.calls, ["caps:false", "shutdownThumb"])
+    expectEqual(ports.calls, ["shutdownTrackpad", "caps:false", "shutdownThumb"])
 
     // Shutdown without ever applying a config.
     let (fresh, freshPorts) = makeEngine()
     fresh.shutdown()
-    expectEqual(freshPorts.calls, ["caps:false", "shutdownThumb"])
+    expectEqual(freshPorts.calls, ["shutdownTrackpad", "caps:false", "shutdownThumb"])
 }

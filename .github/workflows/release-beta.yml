@@ -1,0 +1,71 @@
+name: Release beta
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'Casks/**'
+permissions:
+  contents: read
+concurrency:
+  group: hypermug-publication
+  cancel-in-progress: false
+  queue: max
+jobs:
+  release:
+    if: github.repository == 'maxmeis/HyperMug'
+    runs-on: macos-latest
+    environment: beta
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate release context
+        env:
+          CHANNEL: beta
+          VERSION: 0.0.0-beta.${{ github.run_number }}
+          SOURCE_REPOSITORY: ${{ github.repository }}
+          RELEASES_REPOSITORY: ${{ vars.RELEASES_REPOSITORY || github.repository }}
+          TAP_REPOSITORY: ${{ vars.TAP_REPOSITORY || 'maxmeis/homebrew-formulae' }}
+        run: |
+          python3 scripts/release_metadata.py validate --channel "$CHANNEL" --version "$VERSION" --actor "$GITHUB_ACTOR" --triggering-actor "$GITHUB_TRIGGERING_ACTOR" --ref "$GITHUB_REF" --sha "$GITHUB_SHA" --source-repo "$SOURCE_REPOSITORY" --releases-repo "$RELEASES_REPOSITORY" --tap-repo "$TAP_REPOSITORY"
+      - name: Test
+        run: |
+          python3 -m unittest discover -s scripts -p 'test_release*.py'
+          ./scripts/test.sh
+          ./scripts/compile-check.sh
+      - name: Build and notarize
+        env:
+          CHANNEL: beta
+          VERSION: 0.0.0-beta.${{ github.run_number }}
+          BUILD_NUMBER: ${{ github.run_id }}
+          SOURCE_REPOSITORY: ${{ github.repository }}
+          RELEASES_REPOSITORY: ${{ vars.RELEASES_REPOSITORY || github.repository }}
+          TAP_REPOSITORY: ${{ vars.TAP_REPOSITORY || 'maxmeis/homebrew-formulae' }}
+          DEVELOPER_ID_P12_BASE64: ${{ secrets.DEVELOPER_ID_P12_BASE64 }}
+          DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+          SIGN_ID: ${{ vars.SIGN_ID }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+          APP_STORE_CONNECT_KEY_ID: ${{ vars.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ vars.APP_STORE_CONNECT_ISSUER_ID }}
+          SPARKLE_EDDSA_PRIVATE_KEY: ${{ secrets.SPARKLE_EDDSA_PRIVATE_KEY }}
+          SPARKLE_PUBLIC_ED_KEY: ${{ vars.SPARKLE_PUBLIC_ED_KEY }}
+        run: ./scripts/release.sh
+      - name: Publish beta
+        env:
+          CHANNEL: beta
+          VERSION: 0.0.0-beta.${{ github.run_number }}
+          BUILD_NUMBER: ${{ github.run_id }}
+          SOURCE_REPOSITORY: ${{ github.repository }}
+          RELEASES_REPOSITORY: ${{ vars.RELEASES_REPOSITORY || github.repository }}
+          TAP_REPOSITORY: ${{ vars.TAP_REPOSITORY || 'maxmeis/homebrew-formulae' }}
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+          TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
+          TAP_SSH_PRIVATE_KEY: ${{ secrets.TAP_SSH_PRIVATE_KEY }}
+        run: ./scripts/publish_release.sh

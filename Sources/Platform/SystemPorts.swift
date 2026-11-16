@@ -10,13 +10,24 @@ final class SystemPorts: EnginePorts {
     private let tap: EventTapHost
     private let caps: CapsKeyMonitor
     private let thumb: ThumbHID
+    private let trackpad: TrackpadCapture
+    private var swipeState = TrackpadSwipeState()
     private var caffeineAssertion: IOPMAssertionID = 0
 
-    init(log: @escaping LogSink, tap: EventTapHost, caps: CapsKeyMonitor, thumb: ThumbHID) {
+    var onTrackpadSwipe: ((TrackpadSwipe) -> Void)?
+
+    init(log: @escaping LogSink, tap: EventTapHost, caps: CapsKeyMonitor, thumb: ThumbHID, trackpad: TrackpadCapture) {
         self.sink = log
         self.tap = tap
         self.caps = caps
         self.thumb = thumb
+        self.trackpad = trackpad
+        TrackpadCallbackRouter.shared.host = trackpad
+        trackpad.onFrame = { [weak self] device, contacts, time in
+            guard let self, let swipe = self.swipeState.handleFrame(device: device, contacts: contacts, timestamp: time) else { return }
+            self.onTrackpadSwipe?(swipe)
+        }
+        trackpad.onDeviceRemoved = { [weak self] device in self?.swipeState.removeDevice(device) }
     }
 
     // MARK: Permissions (module-qualified: the free functions have the same names as the protocol methods)
@@ -32,6 +43,12 @@ final class SystemPorts: EnginePorts {
     func setCapsKeyboardMonitoring(_ on: Bool) { caps.setEnabled(on) }
     func setThumbDiversion(_ on: Bool) { thumb.setEnabled(on) }
     func shutdownThumb() { thumb.shutdown() }
+    func configureTrackpad(_ config: TrackpadConfig, enabled: Bool) {
+        swipeState.apply(config)
+        trackpad.setEnabled(enabled)
+        if !enabled { swipeState.reset() }
+    }
+    func shutdownTrackpad() { trackpad.shutdown(); swipeState.reset() }
 
     // MARK: Actions and logs
 

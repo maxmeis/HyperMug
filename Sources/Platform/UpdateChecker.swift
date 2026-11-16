@@ -1,27 +1,47 @@
-import Foundation
-import HyperMugCore
+import AppKit
+import Sparkle
 
-/// Fetches the latest GitHub release and hands the resulting alert to `done` on the main thread.
-/// What the response means is decided by Core's `updateOutcome`.
-enum UpdateChecker {
-    static func check(_ done: @escaping (UpdateAlert) -> Void) {
-        let local = appVersion(infoDictionary: Bundle.main.infoDictionary)
-        var request = URLRequest(url: githubLatestAPI)
-        for (field, value) in updateRequestHeaders(version: local) {
-            request.setValue(value, forHTTPHeaderField: field)
+/// Retained for the life of the app; Sparkle owns automatic checks and the install UI.
+final class UpdateChecker {
+    private let controller: SPUStandardUpdaterController?
+    private var menuObservation: NSKeyValueObservation?
+    private var started = false
+
+    init() {
+        let info = Bundle.main.infoDictionary ?? [:]
+        let feed = (info["SUFeedURL"] as? String).flatMap(URL.init(string:))
+        let key = info["SUPublicEDKey"] as? String ?? ""
+        if let feed, feed.scheme == "https", feed.host != nil, !key.isEmpty {
+            // Apply the JSON preference before Sparkle schedules its first check.
+            controller = SPUStandardUpdaterController(startingUpdater: false, updaterDelegate: nil, userDriverDelegate: nil)
+        } else {
+            controller = nil
+            NSLog("HyperMug: updates disabled (no valid Sparkle feed and public key)")
         }
-        request.timeoutInterval = updateRequestTimeout
+    }
 
-        URLSession.shared.dataTask(with: request) { data, response, error in
-            let alert = updateOutcome(
-                errorDescription: error?.localizedDescription,
-                status: (response as? HTTPURLResponse)?.statusCode ?? 0,
-                body: data,
-                local: local
-            )
-            // A run-loop block, not a GCD main-queue block: `done` may run a modal alert, and the main
-            // queue must keep draining (config watchers, debounce) while it is up.
-            RunLoop.main.perform(inModes: [.common]) { done(alert) }
-        }.resume()
+    func apply(autoUpdate: Bool) {
+        guard let controller else { return }
+        if controller.updater.automaticallyChecksForUpdates != autoUpdate {
+            controller.updater.automaticallyChecksForUpdates = autoUpdate
+        }
+        if !started {
+            controller.startUpdater()
+            started = true
+        }
+    }
+
+    func configureMenuItem(_ item: NSMenuItem) {
+        if let controller {
+            item.target = controller
+            item.action = #selector(SPUStandardUpdaterController.checkForUpdates(_:))
+            // The status menu disables AppKit's automatic item validation.
+            menuObservation = controller.updater.observe(\.canCheckForUpdates, options: [.initial, .new]) { [weak item] updater, _ in
+                item?.isEnabled = updater.canCheckForUpdates
+            }
+        } else {
+            item.isEnabled = false
+            item.toolTip = "Updates are unavailable in this build"
+        }
     }
 }

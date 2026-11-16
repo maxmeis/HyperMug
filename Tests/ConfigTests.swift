@@ -49,6 +49,58 @@ func configTests() {
     unknownKeyTests()
     encodeTests()
     anyKeyTests()
+    trackpadTests()
+}
+
+private func trackpadTests() {
+    expectEqual(SwipeDirection.allCases.map(\.rawValue), ["up", "down", "left", "right"], "swipe directions")
+    for json in ["{\"trackpad\":null}", "{\"trackpad\":{}}", "{\"trackpad\":{\"threeFingerSwipe\":null,\"fourFingerSwipe\":{}}}"] {
+        expectConfig(json, AppConfig())
+    }
+    let three = SwipeMap(up: .shell("echo up"), down: shortcut(["cmd", "a"]),
+                         left: .shell("echo left"), right: shortcut(["cmd", "b"]))
+    let four = SwipeMap(up: shortcut(["cmd", "c"]), down: .shell("echo down"),
+                        left: shortcut(["cmd", "d"]), right: .shell("echo right"))
+    let config = AppConfig(trackpad: TrackpadConfig(threeFingerSwipe: three, fourFingerSwipe: four))
+    expectConfig(text(config), config)
+    let root = jsonObject(encodeConfig(config))
+    let trackpad = root["trackpad"] as? [String: Any]
+    expectEqual(Set(trackpad?.keys.map { $0 } ?? []), ["threeFingerSwipe", "fourFingerSwipe"], "both groups encoded")
+    for fingers in [3, 4] {
+        let map = fingers == 3 ? three : four
+        let group = trackpad?[fingers == 3 ? "threeFingerSwipe" : "fourFingerSwipe"] as? [String: Any]
+        expectEqual(Set(group?.keys.map { $0 } ?? []), Set(SwipeDirection.allCases.map(\.rawValue)), "all directions encoded")
+        expect(config.trackpad.hasMappings(fingers: fingers), "mapped finger count")
+        for direction in SwipeDirection.allCases {
+            expectEqual(config.trackpad.action(fingers: fingers, direction: direction), map.action(for: direction), "action lookup")
+        }
+    }
+    expect(config.trackpad.hasMappings, "has mappings")
+    expect(!config.trackpad.hasMappings(fingers: 2) && !config.trackpad.hasMappings(fingers: 5), "unsupported fingers")
+    expect(config.trackpad.action(fingers: 2, direction: .up) == nil && config.trackpad.action(fingers: 5, direction: .right) == nil,
+           "unsupported finger actions")
+    expect(!TrackpadConfig().hasMappings && !TrackpadConfig().hasMappings(fingers: 3) && !TrackpadConfig().hasMappings(fingers: 4), "empty mappings")
+    expectEqual(SwipeMap().action(for: .up), nil, "empty direction")
+    let single = AppConfig(trackpad: TrackpadConfig(threeFingerSwipe: SwipeMap(left: .shell("x"))))
+    let singleTrackpad = jsonObject(encodeConfig(single))["trackpad"] as? [String: Any]
+    expectEqual(Set(singleTrackpad?.keys.map { $0 } ?? []), ["threeFingerSwipe"], "empty group omitted")
+    expectEqual(Set((singleTrackpad?["threeFingerSwipe"] as? [String: Any])?.keys.map { $0 } ?? []), ["left"], "nil directions omitted")
+    expectConfig(text(single), single)
+    let onlyFour = AppConfig(trackpad: TrackpadConfig(fourFingerSwipe: SwipeMap(right: .shell("x"))))
+    expectEqual(Set((jsonObject(encodeConfig(onlyFour))["trackpad"] as? [String: Any])?.keys.map { $0 } ?? []),
+                ["fourFingerSwipe"], "empty three-finger group omitted")
+    expectConfig(text(onlyFour), onlyFour)
+    expectEqual(decode("{\"trackpad\":{\"extra\":1,\"threeFingerSwipe\":{\"diagonal\":1,\"left\":{\"open\":\"x\",\"shell\":\"a\"}}}}")?.unknownKeys,
+                ["trackpad.extra", "trackpad.threeFingerSwipe.diagonal", "trackpad.threeFingerSwipe.left.open"], "nested unknown paths")
+    expectRejected("{\"trackpad\":[]}", "trackpad: expected an object")
+    expectRejected("{\"trackpad\":{\"threeFingerSwipe\":1}}", "trackpad.threeFingerSwipe: expected an object")
+    expectRejected("{\"trackpad\":{\"fourFingerSwipe\":{\"up\":true}}}", "trackpad.fourFingerSwipe.up: expected an object")
+    expectRejected("{\"trackpad\":{\"threeFingerSwipe\":{\"left\":{\"shortcut\":[\"cmd\",5]}}}}",
+                   "trackpad.threeFingerSwipe.left.shortcut[1]: expected a string")
+    expectRejected("{\"trackpad\":{\"fourFingerSwipe\":{\"right\":{\"shell\":\"x\",\"shortcut\":[\"cmd\",\"a\"]}}}}",
+                   "trackpad.fourFingerSwipe.right: needs exactly one of shortcut/shell")
+    expectRejected("{\"trackpad\":{\"threeFingerSwipe\":{\"down\":{\"shortcut\":[\"cmd\"]}}}}",
+                   "trackpad.threeFingerSwipe.down.shortcut: shortcut [\"cmd\"] needs exactly one key besides modifiers")
 }
 
 private func anyKeyTests() {
@@ -61,8 +113,11 @@ private func anyKeyTests() {
 
 private func decodeDefaultsTests() {
     expectConfig("{}", AppConfig())
-    expectEqual(AppConfig(), AppConfig(capsLock: .meh, caffeineOnLaunch: true, launchAtLogin: false, mouse: MouseConfig()),
+    expectEqual(AppConfig(), AppConfig(capsLock: .meh, caffeineOnLaunch: true, launchAtLogin: false, autoUpdate: true, mouse: MouseConfig()),
                 "documented defaults")
+    expectConfig("{\"autoUpdate\":true}", AppConfig(autoUpdate: true))
+    expectConfig("{\"autoUpdate\":false}", AppConfig(autoUpdate: false))
+    expectConfig("{\"autoUpdate\":null}", AppConfig())
     expectConfig("{\"caffeineOnLaunch\":false}", AppConfig(caffeineOnLaunch: false))
     expectConfig("{\"caffeineOnLaunch\":null}", AppConfig())
     expectConfig("{\"launchAtLogin\":true}", AppConfig(launchAtLogin: true))
@@ -158,6 +213,8 @@ private func decodeRejectionTests() {
     expectRejected("{\"capsLock\":5}", "capsLock: expected a string")
     expectRejected("{\"caffeineOnLaunch\":\"yes\"}", "caffeineOnLaunch: expected true or false")
     expectRejected("{\"launchAtLogin\":1}", "launchAtLogin: expected true or false")
+    expectRejected("{\"autoUpdate\":\"false\"}", "autoUpdate: expected true or false")
+    expectRejected("{\"autoUpdate\":1}", "autoUpdate: expected true or false")
     expectRejected("{\"mouse\":\"x\"}", "mouse: expected an object")
     expectRejected("{\"mouse\":{\"invertScroll\":{\"vertical\":\"yes\"}}}", "mouse.invertScroll.vertical: expected true or false")
     expectRejected("{\"mouse\":{\"buttons\":[]}}", "mouse.buttons: expected an object")
@@ -212,7 +269,7 @@ private func unknownKeyTests() {
         """)?.unknownKeys,
         ["capslock", "mouse.foo", "mouse.invertScroll.diagonal", "mouse.buttons.zzz", "mouse.buttons.back.open"],
         "unknown keys are reported as dotted paths")
-    expectEqual(decode("{\"capsLock\":\"meh\",\"$schema\":\"x\"}")?.unknownKeys, [], "known keys are not reported")
+    expectEqual(decode("{\"capsLock\":\"meh\",\"autoUpdate\":false,\"$schema\":\"x\"}")?.unknownKeys, [], "known keys are not reported")
     expectEqual(decode(withBack("{\"shell\":\"a\"}"))?.unknownKeys, [], "no unknown keys in a plain mapping")
 }
 
@@ -221,6 +278,7 @@ private func encodeTests() {
     let expectedDefault = """
     {
       "$schema" : "./hypermug.schema.json",
+      "autoUpdate" : true,
       "caffeineOnLaunch" : true,
       "capsLock" : "meh",
       "launchAtLogin" : false,
@@ -235,6 +293,9 @@ private func encodeTests() {
     """
     expectEqual(text(AppConfig()), expectedDefault, "default encoding")
     expectConfig(text(AppConfig()), AppConfig())
+    expectConfig(text(AppConfig(autoUpdate: false)), AppConfig(autoUpdate: false))
+    expectEqual(jsonObject(encodeConfig(AppConfig(autoUpdate: false)))["autoUpdate"] as? Bool, false,
+                "disabled automatic updates are encoded")
 
     // Only mapped buttons are written; a mapped button has only its one action key.
     let mapped = AppConfig(mouse: MouseConfig(buttons: ButtonMap(back: shortcut(["cmd", "["]), thumb: .shell("echo hi"))))

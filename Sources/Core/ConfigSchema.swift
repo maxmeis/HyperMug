@@ -12,7 +12,7 @@ private func buttonSchema(_ description: String) -> String {
     #"""
 {
           "type": "object",
-          "description": "\#(description) Set exactly one of shell or shortcut; leave the button out to keep its normal behavior.",
+          "description": "\#(description) Set exactly one of shell or shortcut. An omitted mapping runs no HyperMug action.",
           "additionalProperties": false,
           "properties": {
             "shell": {
@@ -71,6 +71,39 @@ public let configSchemaJSON: String = #"""
     "launchAtLogin": {
       "type": "boolean",
       "description": "Start \#(AppIdentity.appName) when you log in (Start with Machine)."
+    },
+    "autoUpdate": {
+      "type": "boolean",
+      "description": "Check for updates automatically with Sparkle. Defaults to true when omitted."
+    },
+    "trackpad": {
+      "type": "object",
+      "description": "Optional three- and four-finger swipe mappings. Before enabling mappings, disable the matching native macOS trackpad gestures once in System Settings so they do not conflict. Only swipes are mapped; taps are unaffected.",
+      "additionalProperties": false,
+      "properties": {
+        "threeFingerSwipe": {
+          "type": "object",
+          "description": "Actions for three-finger swipes. Omitted directions run no HyperMug action. Native assignments disabled in System Settings remain disabled.",
+          "additionalProperties": false,
+          "properties": {
+            "up": \#(buttonSchema("Three-finger swipe up.")),
+            "down": \#(buttonSchema("Three-finger swipe down.")),
+            "left": \#(buttonSchema("Three-finger swipe left.")),
+            "right": \#(buttonSchema("Three-finger swipe right."))
+          }
+        },
+        "fourFingerSwipe": {
+          "type": "object",
+          "description": "Actions for four-finger swipes. Omitted directions run no HyperMug action. Native assignments disabled in System Settings remain disabled.",
+          "additionalProperties": false,
+          "properties": {
+            "up": \#(buttonSchema("Four-finger swipe up.")),
+            "down": \#(buttonSchema("Four-finger swipe down.")),
+            "left": \#(buttonSchema("Four-finger swipe left.")),
+            "right": \#(buttonSchema("Four-finger swipe right."))
+          }
+        }
+      }
     },
     "mouse": {
       "type": "object",

@@ -5,6 +5,7 @@ name: CI
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -31,6 +32,11 @@ jobs:
       - name: Layer rules
         run: ./scripts/check-layers.sh
 
+      - name: Release metadata and workflow checks
+        run: |
+          python3 -m unittest discover -s scripts -p 'test_release*.py'
+          bash -n scripts/release.sh scripts/notary_auth.sh scripts/publish_release.sh scripts/sparkle.sh
+
       - name: Core tests and 100% coverage gate
         run: ./scripts/test.sh
 
@@ -41,8 +47,8 @@ jobs:
         if: github.event_name == 'pull_request'
         run: npx commitlint --from "${{ github.event.pull_request.base.sha }}" --to "${{ github.event.pull_request.head.sha }}" --verbose
 
-      - name: Commit messages (push)
-        if: github.event_name == 'push'
+      - name: Commit messages (branch)
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         env:
           BEFORE: ${{ github.event.before }}
           AFTER: ${{ github.sha }}
