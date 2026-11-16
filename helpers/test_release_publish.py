@@ -173,12 +173,8 @@ elif args[:2] in (["pr", "create"], ["pr", "edit"]):
                          "body": Path(args[args.index("--body-file") + 1]).read_text()}
     state["events"].append(["pr-" + args[1], repo, head, number]); save()
 elif args[:3] == ["workflow", "run", "ci.yml"]:
-    fail_once("ci-dispatch")
-    repo = repo_arg(args); branch = args[args.index("--ref") + 1]
-    sha = state["branch_heads"][repo + "|" + branch]
-    state.setdefault("checks", {}).setdefault(repo + "|" + sha, []).append(
-        {"name": "ci", "app": {"slug": "github-actions"}})
-    state["events"].append(["ci-dispatch", repo, branch, sha]); save()
+    sys.exit("owner pushes already trigger CI; duplicate dispatch is forbidden")
+
 else:
     print("unsupported fake gh: " + repr(args), file=sys.stderr); sys.exit(2)
 '''
@@ -555,7 +551,7 @@ class PublishReleaseIntegrationTests(unittest.TestCase):
                          bytes.fromhex(release["assets"]["hypermug.rb"]).decode())
         self.assertIsNone(self._remote_file(self.releases_bare, "Casks/hypermug.rb", "main"))
         self.assertEqual(self._state().get("prs", {}), {})
-        self.assertEqual(len([e for e in self._state()["events"] if e[0] == "ci-dispatch"]), 1)
+        self.assertEqual(len([e for e in self._state()["events"] if e[0] == "ci-dispatch"]), 0)
         identity = "maxmeis|41482988+maxmeis@users.noreply.github.com"
         for bare, branch in ((self.releases_bare, "updates"),
                              (self.releases_bare, "release-casks/stable"),
@@ -610,7 +606,7 @@ class PublishReleaseIntegrationTests(unittest.TestCase):
         self.assertEqual(again.returncode, 0, again.stderr)
         self.assertEqual(len([e for e in self._state()["events"] if e[0].startswith("pr-")]), 0)
 
-    def test_managed_cask_branch_rebases_on_advanced_main_and_dispatches_fresh_ci(self):
+    def test_managed_cask_branch_rebases_on_advanced_main_for_fresh_push_ci(self):
         self._build()
         first = self._run()
         self.assertEqual(first.returncode, 0, first.stderr)
@@ -623,25 +619,26 @@ class PublishReleaseIntegrationTests(unittest.TestCase):
         state = self._state()
         new_head = state["branch_heads"][self.releases_repo + "|release-casks/stable"]
         self.assertNotEqual(new_head, old_head)
-        self.assertEqual(len([e for e in state["events"] if e[0] == "ci-dispatch"]), 2)
+        self.assertEqual(len([e for e in state["events"] if e[0] == "ci-dispatch"]), 0)
         ancestor = subprocess.run([self.real_git, "--git-dir", str(self.releases_bare), "merge-base", "--is-ancestor", main_head, new_head])
         self.assertEqual(ancestor.returncode, 0)
         self.assertIn("main advanced", self._remote_file(self.releases_bare, "README.md", "release-casks/stable"))
 
-    def test_dispatch_failure_retries_without_a_pr_or_duplicate_ci(self):
+    def test_owner_push_and_retries_never_dispatch_even_before_checks_are_visible(self):
         self._build()
-        failed = self._run(FAKE_FAIL_ONCE="ci-dispatch")
-        self.assertNotEqual(failed.returncode, 0)
+        first = self._run()
+        self.assertEqual(first.returncode, 0, first.stderr)
+        head = self._state()["branch_heads"][self.releases_repo + "|release-casks/stable"]
+        events = list(self._state()["events"])
+        # The fake API has no check-runs yet, matching GitHub's asynchronous
+        # registration window. Retrying must not dispatch/cancel a second CI.
+        for _ in range(2):
+            retry = self._run()
+            self.assertEqual(retry.returncode, 0, retry.stderr)
+            self.assertEqual(self._state()["events"], events)
+            self.assertEqual(self._state()["branch_heads"][self.releases_repo + "|release-casks/stable"], head)
         self.assertEqual(self._state().get("prs", {}), {})
-        self.assertEqual(len([e for e in self._state()["events"] if e[0] == "ci-dispatch"]), 0)
-        retry = self._run()
-        self.assertEqual(retry.returncode, 0, retry.stderr)
-        again = self._run()
-        self.assertEqual(again.returncode, 0, again.stderr)
-        events = self._state()["events"]
-        self.assertEqual(len([e for e in events if e[0].startswith("pr-")]), 0)
-        self.assertEqual(len([e for e in events if e[0] == "ci-dispatch"]), 1)
-        self.assertEqual(events[-1][0], "ci-dispatch")
+        self.assertFalse(any(e[0] == "ci-dispatch" for e in events))
 
     def test_retry_after_release_success_and_feed_push_failure(self):
         self._build()
