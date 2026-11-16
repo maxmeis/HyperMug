@@ -115,7 +115,7 @@ private func schemaStructureTests() {
                            trackpad: TrackpadConfig(threeFingerSwipe: helperMap,
                                                     fourFingerSwipe: helperMap),
                            helpers: ["shared": "echo shared"])
-    for sample in [AppConfig(), mapped, fullyMapped, swapped, swipes, swappedSwipes, helper] {
+    for sample in [AppConfig(), .newFileDefaults, mapped, fullyMapped, swapped, swipes, swappedSwipes, helper] {
         validate(schema, encoded(sample), "")
     }
     expectEqual(Set(propertyPaths(schema, "")).subtracting(seen), [], "schema properties without an encoded counterpart")

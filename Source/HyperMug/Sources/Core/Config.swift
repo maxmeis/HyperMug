@@ -105,6 +105,17 @@ public struct MouseConfig: Equatable {
 }
 
 public struct AppConfig: Equatable {
+    /// Written only for a new or empty config file. Decoding omitted keys keeps legacy fallbacks.
+    public static var newFileDefaults: AppConfig {
+        let next = ButtonAction.shell("/opt/homebrew/bin/aerospace workspace --no-stdin --wrap-around next")
+        let prev = ButtonAction.shell("/opt/homebrew/bin/aerospace workspace --no-stdin --wrap-around prev")
+        let swipes = SwipeMap(left: next, right: prev)
+        return AppConfig(
+            launchAtLogin: true,
+            mouse: MouseConfig(buttons: ButtonMap(back: next, forward: prev)),
+            trackpad: TrackpadConfig(threeFingerSwipe: swipes, fourFingerSwipe: swipes)
+        )
+    }
     public var helpers: [String: String]
     public var capsLock: CapsMode
     public var caffeineOnLaunch: Bool

@@ -49,7 +49,6 @@ if gh release view "$tag" --repo "$RELEASES_REPOSITORY" >/dev/null 2>&1; then
   release_body="$(gh release view "$tag" --repo "$RELEASES_REPOSITORY" --json body --jq .body)"
   [[ "$release_body" == *"source ${GITHUB_SHA}"* ]] || { echo 'Existing release belongs to another source commit' >&2; exit 1; }
   release_draft="$(gh release view "$tag" --repo "$RELEASES_REPOSITORY" --json isDraft --jq .isDraft)"
-  release_latest="$(gh release view "$tag" --repo "$RELEASES_REPOSITORY" --json isLatest --jq .isLatest)"
   release_assets="$(gh release view "$tag" --repo "$RELEASES_REPOSITORY" --json assets --jq '.assets[].name')"
 fi
 source_only_release=0
@@ -62,9 +61,19 @@ if [[ "$BUILD_APP" == false && "$release_exists" == 1 && "$source_only_release" 
     tag_object="$(gh api "repos/${RELEASES_REPOSITORY}/git/ref/tags/${tag}" --jq .object.sha)"
     [[ "$(gh api "repos/${RELEASES_REPOSITORY}/git/tags/${tag_object}" --jq .message)" == *"source ${GITHUB_SHA}"* ]] || exit 1
   fi
-  if [[ "$release_latest" == true ]]; then
-    gh release edit "$tag" --repo "$RELEASES_REPOSITORY" --latest=false
+  # gh release view has no isLatest JSON field. The REST latest endpoint gives
+  # the actual latest tag, or 404 when this repository has no latest release.
+  latest_tag=''
+  if ! latest_tag="$(gh api "repos/${RELEASES_REPOSITORY}/releases/latest" --jq .tag_name 2>"$work/latest-error")"; then
+    if ! grep -q 'HTTP 404' "$work/latest-error"; then
+      cat "$work/latest-error" >&2
+      echo 'Could not verify the latest release' >&2
+      exit 1
+    fi
   fi
+  # Published releases are immutable. A retry must never edit a source-only
+  # release or change the latest pointer; fail if it was published incorrectly.
+  [[ "$latest_tag" != "$tag" ]] || { echo 'Published source-only release is latest; cannot repair immutable release on retry' >&2; exit 1; }
   exit 0
 fi
 gh api "repos/${RELEASES_REPOSITORY}/releases?per_page=100" --paginate --jq '.[].tag_name' > "$work/tags"

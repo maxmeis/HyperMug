@@ -85,7 +85,7 @@ public final class ConfigStore {
         }
         installSchemaFile(dir: directoryURL, log: env.log)   // atomic, only when content differs; failures are logged, never fatal
         if case .absent = readDisk() {
-            write(config)
+            if write(AppConfig.newFileDefaults) { config = .newFileDefaults }
         }
         armDirectoryWatcher()
         reload(emitChange: false)
@@ -214,10 +214,10 @@ public final class ConfigStore {
             reload(emitChange: emitChange)
             return
         }
-        if !write(AppConfig()) {
+        if !write(AppConfig.newFileDefaults) {
             noteValid(data)   // don't retry a failing write on every reload
         }
-        adopt(AppConfig(), emitChange: emitChange)
+        adopt(AppConfig.newFileDefaults, emitChange: emitChange)
     }
 
     private func scheduleReload() {

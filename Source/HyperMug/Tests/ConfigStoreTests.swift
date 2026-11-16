@@ -114,11 +114,11 @@ private func startTests() {
     do {
         let h = Harness()
         h.store.start()
-        expectEqual(h.fileText, String(decoding: encodeConfig(AppConfig()), as: UTF8.self), "default config written")
+        expectEqual(h.fileText, String(decoding: encodeConfig(.newFileDefaults), as: UTF8.self), "default config written")
         expectEqual(try? Data(contentsOf: h.configDir.appendingPathComponent(AppIdentity.schemaFileName)),
                     Data(configSchemaJSON.utf8), "schema installed next to it")
-        expectEqual(h.changes, [AppConfig()], "onChange runs exactly once")
-        expectEqual(h.store.config, AppConfig(), "config is the default")
+        expectEqual(h.changes, [.newFileDefaults], "onChange runs exactly once")
+        expectEqual(h.store.config, .newFileDefaults, "config is the new-file default")
         expect(h.store.error == nil && h.errors.isEmpty, "no error")
         expectEqual(h.dirWatches.count, 1, "directory watch armed")
         expectEqual(h.fileWatches.count, 1, "file watch armed")
@@ -227,7 +227,7 @@ private func createIfAbsentTests() {
         h.store.start()
         try? FileManager.default.removeItem(at: h.configDir)
         h.store.createIfAbsent()
-        expectEqual(h.fileText, String(decoding: encodeConfig(AppConfig()), as: UTF8.self), "directory and file recreated")
+        expectEqual(h.fileText, String(decoding: encodeConfig(.newFileDefaults), as: UTF8.self), "directory and file recreated")
     }
 }
 
@@ -248,7 +248,7 @@ private func reloadTests() {
         expectEqual(h.pending.count, 1, "only one reload is pending")
         h.runScheduled()
         expectEqual(h.store.config, hyperConfig, "the reload applied the edit")
-        expectEqual(h.changes, [AppConfig(), hyperConfig], "onChange fired with the new config")
+        expectEqual(h.changes, [.newFileDefaults, hyperConfig], "onChange fired with the new config")
         expect(h.pending.isEmpty, "nothing pending afterwards")
         expectEqual(h.logged(.info, containing: "config reloaded"), 1, "reload logged")
     }
@@ -354,9 +354,9 @@ private func blankFileTests() {
         let h = Harness()
         h.put("")
         h.store.start()
-        expectEqual(h.fileText, String(decoding: encodeConfig(AppConfig()), as: UTF8.self), "blank file initialized")
-        expectEqual(h.store.config, AppConfig(), "defaults adopted")
-        expectEqual(h.changes, [AppConfig()], "one onChange")
+        expectEqual(h.fileText, String(decoding: encodeConfig(.newFileDefaults), as: UTF8.self), "blank file initialized")
+        expectEqual(h.store.config, .newFileDefaults, "defaults adopted")
+        expectEqual(h.changes, [.newFileDefaults], "one onChange")
         expect(h.errors.isEmpty && h.store.error == nil, "blank is not an error")
     }
 
@@ -366,8 +366,8 @@ private func blankFileTests() {
         h.put(hyperJSON)
         h.store.start()
         h.externalEdit(" \n")
-        expectEqual(h.fileText, String(decoding: encodeConfig(AppConfig()), as: UTF8.self), "truncated file initialized")
-        expectEqual(h.changes, [hyperConfig, AppConfig()], "defaults reported")
+        expectEqual(h.fileText, String(decoding: encodeConfig(.newFileDefaults), as: UTF8.self), "truncated file initialized")
+        expectEqual(h.changes, [hyperConfig, .newFileDefaults], "defaults reported")
         // Our own initialization does not loop.
         h.fileWatches.last?.onEvent(false)
         let count = h.logs.count
@@ -413,7 +413,7 @@ private func blankFileTests() {
         defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path) }
         h.store.start()
         expectEqual(h.logged(.error, containing: "hypermug.json"), 1, "write failure logged")
-        expectEqual(h.store.config, AppConfig(), "defaults still adopted")
+        expectEqual(h.store.config, .newFileDefaults, "defaults still adopted")
         expect(h.store.error == nil, "a failed initialization is not a config error")
         h.fileWatches.last?.onEvent(false)
         h.runScheduled()
@@ -431,7 +431,7 @@ private func blankFileTests() {
         try? FileManager.default.createSymbolicLink(at: h.url, withDestinationURL: target)
         h.store.start()
         expectEqual(try? FileManager.default.destinationOfSymbolicLink(atPath: h.url.path), target.path, "still a symlink")
-        expectEqual(try? Data(contentsOf: target), encodeConfig(AppConfig()), "written through to the target")
+        expectEqual(try? Data(contentsOf: target), encodeConfig(.newFileDefaults), "written through to the target")
         try? Data("{\"capsLock\":\"hyper\",\"launchAtLogin\":false}".utf8).write(to: target)
         h.store.pollFallback()
         expectEqual(h.store.config, hyperConfig, "an edit of the symlink target is noticed by the poll")
