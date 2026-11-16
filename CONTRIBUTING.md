@@ -12,7 +12,7 @@ Before starting a substantial contribution, check for an owner-authored issue de
 
 Include enough detail to reproduce the problem:
 
-- HyperMug marketing version and build version (from **About HyperMug** or the app bundle, if available).
+- HyperMug marketing version and build number (from the app bundle's `Info.plist`, if available).
 - macOS version and Mac architecture (Apple silicon or Intel).
 - Installation source: Homebrew cask or local source build.
 - Steps to reproduce, expected result, and actual result.

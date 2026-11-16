@@ -19,10 +19,15 @@ test('parses exact form fields and checks only published production tags', () =>
   assert.match(missingComment(body.replace('1.2.3', 'unknown')), /marketing version/);
 });
 
-test('outsider issue and forged body identity cause no API calls', async () => {
-  const request = () => { throw new Error('must not call API'); };
+test('API author controls access even when the event claims ownership', async () => {
+  const calls = [];
+  const request = async (method, path) => {
+    calls.push([method, path]);
+    return { number: 1, user: { login: 'someone-else' }, labels: [{ name: 'bug' }], body };
+  };
   await triage({ event: { issue: { number: 1, user: { login: 'someone-else' }, labels: [{ name: 'bug' }], body: `${body}\n### Author\nmaxmeis` } }, repo: 'maxmeis/HyperMug', releasesRepo: 'maxmeis/HyperMug', request });
-  await triage({ event: { issue: { number: 1, user: { login: 'maxmeis' }, labels: [{ name: 'feature' }], body: '### Problem or use case\nNeed a feature' } }, repo: 'maxmeis/HyperMug', releasesRepo: 'maxmeis/HyperMug', request });
+  await triage({ event: { issue: { number: 1, user: { login: 'maxmeis' }, labels: [{ name: 'bug' }], body } }, repo: 'maxmeis/HyperMug', releasesRepo: 'maxmeis/HyperMug', request });
+  assert.deepEqual(calls, [['GET', '/repos/maxmeis/HyperMug/issues/1'], ['GET', '/repos/maxmeis/HyperMug/issues/1']]);
 });
 
 test('owner issue updates one existing bot comment only when content changes', async () => {
@@ -31,6 +36,7 @@ test('owner issue updates one existing bot comment only when content changes', a
   const wanted = missingComment(event.issue.body);
   const request = async (method, path, data) => {
     calls.push([method, path, data]);
+    if (path === '/repos/maxmeis/HyperMug/issues/2') return event.issue;
     if (path.includes('/releases?')) return releases;
     if (path.includes('/comments?')) return [{ id: 5, body: wanted, user: { login: 'github-actions[bot]' } }];
     return null;
@@ -47,6 +53,7 @@ test('owner issue creates one comment, updates it, and removes it when repaired'
   const event = { issue: { number: 3, user: { login: 'maxmeis' }, labels: [{ name: 'bug' }, { name: 'needs-version' }], body: '### HyperMug marketing version\n_No response_' } };
   const request = async (method, path, data) => {
     calls.push([method, path, data]);
+    if (path === '/repos/maxmeis/HyperMug/issues/3') return event.issue;
     if (path.includes('/releases?')) return releases;
     if (path.includes('/comments?')) return [...comments];
     if (method === 'POST' && path.endsWith('/comments')) comments.push({ id: 10, body: data.body, user: { login: 'github-actions[bot]' } });

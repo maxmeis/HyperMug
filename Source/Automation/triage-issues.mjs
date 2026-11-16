@@ -43,8 +43,12 @@ export function missingComment(body) {
 }
 
 export async function triage({ event, repo, releasesRepo, request }) {
-  const issue = event.issue;
-  if (!issue || issue.user?.login !== 'maxmeis' || !issue.labels?.some(l => l.name === 'bug')) return;
+  const issueNumber = event.issue?.number;
+  if (!Number.isSafeInteger(issueNumber) || issueNumber < 1) return;
+  // The issue endpoint is the authority for both author and current content.
+  // An edited-event payload can already be stale when this job starts.
+  const issue = await request('GET', `/repos/${repo}/issues/${issueNumber}`);
+  if (issue.user?.login !== 'maxmeis' || !issue.labels?.some(l => l.name === 'bug')) return;
   let releases = null;
   try { releases = await request('GET', `/repos/${releasesRepo}/releases?per_page=100`); }
   catch (error) { console.warn(`Release lookup unavailable: ${error.message}`); }

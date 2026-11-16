@@ -37,6 +37,13 @@ jobs:
           python3 -m unittest discover -s Source/HyperMug/scripts -p 'test_release*.py'
           bash -n Source/HyperMug/scripts/release.sh Source/HyperMug/scripts/notary_auth.sh Source/HyperMug/scripts/publish_release.sh Source/HyperMug/scripts/sparkle.sh
 
+      - name: Issue automation and content checks
+        run: |
+          node --check Source/Automation/triage-issues.mjs
+          node --test Source/Automation/triage-issues.test.mjs
+          node --check Source/Website/script.js
+          python3 Source/Automation/check-content.py
+
       - name: Core tests and 100% coverage gate
         run: ./Source/HyperMug/scripts/test.sh
 
