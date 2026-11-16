@@ -27,10 +27,10 @@ export function productionVersions(releases) {
     return r.assets?.some(asset => asset.name === `HyperMug-${r.tag_name.slice(1)}.zip`);
   })
     .sort((a, b) => {
-      const left = a.tag_name.slice(1).split('.').map(Number);
-      const right = b.tag_name.slice(1).split('.').map(Number);
+      const left = a.tag_name.slice(1).split('.').map(BigInt);
+      const right = b.tag_name.slice(1).split('.').map(BigInt);
       for (let i = 0; i < 3; i++) {
-        if (left[i] !== right[i]) return right[i] - left[i];
+        if (left[i] !== right[i]) return left[i] < right[i] ? 1 : -1;
       }
       return 0;
     })

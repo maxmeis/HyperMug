@@ -1,6 +1,6 @@
 # Release process
 
-HyperMug ships production releases on one stable channel. A release version uses `X.Y.Z` and its source tag uses `vX.Y.Z`. There is no beta or nightly release channel.
+HyperMug ships new releases on one stable production channel. A release version uses `X.Y.Z` and its source tag uses `vX.Y.Z`. The legacy beta release and nightly cask are historical; this workflow does not publish another beta or nightly version.
 
 ## Prepare a release
 

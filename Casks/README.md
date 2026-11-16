@@ -7,4 +7,4 @@ brew tap maxmeis/hypermug https://github.com/maxmeis/HyperMug
 brew install --cask maxmeis/hypermug/hypermug
 ```
 
-Homebrew follows the tap's default branch; there is no branch argument to `brew tap`. Each stable release proposes a cask update for review. Merge that pull request to make the new version available from this tap. This directory intentionally contains no placeholder cask or invented checksum.
+Homebrew follows the tap's default branch; there is no branch argument to `brew tap`. Each compiled production release proposes a cask update for review. Merge that pull request to make the new version available from this tap. There is no placeholder production cask or invented checksum. The existing `hypermug@nightly.rb` is a historical cask from an earlier beta release; this production-only pipeline does not update it.
