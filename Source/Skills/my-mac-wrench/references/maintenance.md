@@ -1,0 +1,26 @@
+# Maintain and install this cross-runtime skill
+
+Researched 2026-11-16. This file is for maintainers of **my-mac-wrench**, not for ordinary macOS app tasks. The tracked `Source/Skills/my-mac-wrench/` directory in the persistent project checkout is the single authoring source; installed discovery entries should point to it, rather than diverging copies or a short-lived worktree.
+
+## Keep the skill portable and navigable
+
+The [Agent Skills specification](https://agentskills.io/specification) requires `SKILL.md` with `name` and `description` YAML frontmatter; both [Claude Code](https://code.claude.com/docs/en/skills) and [Codex](https://learn.chatgpt.com/docs/build-skills) support that core format. Keep the frontmatter short and discriminating: it controls discovery before the body is read. `agents/openai.yaml` is optional Codex/ChatGPT interface metadata; retain it for those hosts without making Claude depend on it. Avoid Claude-only frontmatter, dynamic shell injection, or preapproved-tool fields in the portable entrypoint.
+
+`SKILL.md` is a one-hop routing table. Add domain detail to a focused `references/*.md` file and link it directly from the table with a cue for **when** to read it. Use relative paths so the links travel with the skill and resolve through either installation symlink. Do not load every reference on invocation or create chains of references that hide the needed file. Keep one procedure in one file; cross-link a source when needed rather than copying its steps. A reference that grows beyond about 100 lines benefits from a contents list or a split by decision boundary. Use `scripts/` only for repeated deterministic work that prose or existing tools cannot do reliably; use `assets/` only for material copied into outputs. [Claude supporting files](https://code.claude.com/docs/en/skills#add-supporting-files), [Anthropic authoring guidance](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices), [Codex skill guidance](https://learn.chatgpt.com/docs/build-skills).
+
+## One persistent source, two discovery links
+
+After the tracked skill is merged into a persistent checkout, set `<canonical>` to the absolute path of that checkout's `Source/Skills/my-mac-wrench` directory. Do not target an ephemeral feature worktree. Official documented personal locations are `$HOME/.claude/skills/my-mac-wrench` for Claude Code and `$HOME/.agents/skills/my-mac-wrench` for Codex; both products document skill-folder symlinks. A generic installation shape is:
+
+```sh
+ln -s "<canonical>" "$HOME/.claude/skills/my-mac-wrench"
+ln -s "<canonical>" "$HOME/.agents/skills/my-mac-wrench"
+```
+
+Those commands assume each destination is absent. **Before migration**, inspect every existing destination with `ls -ld`, `readlink`, and a recursive diff against the canonical directory. If an existing directory has local edits, reconcile or preserve them in a backup **outside the skill discovery paths** before replacing it; never `rm -rf` or overwrite it blindly. Compare any older `$HOME/.codex/skills/my-mac-wrench` installation too; it is not the personal path named in the current Codex guide. Move an older copy out of discovery only after confirming the new Codex link is loaded. Avoid keeping two same-named Codex installations: Codex says duplicate names may both appear, not merge. [Claude locations and symlinks](https://code.claude.com/docs/en/skills#choose-where-skills-load), [Codex locations and symlinks](https://learn.chatgpt.com/docs/build-skills).
+
+Verify both links resolve to the same canonical `SKILL.md` with `readlink`/`realpath`, then check Claude's `/skills` and Codex's `/skills` or skill selector in fresh sessions. Local symlinks do not install the skill into remote/cloud sessions; those need their own supported distribution. Claude Code documents live detection for edits under watched personal/project skill folders; Codex says it detects changes automatically and recommends a restart if they do not appear. Already-loaded instructions may remain in a running conversation, so verify a new run when changing behavior. [Claude discovery and live detection](https://code.claude.com/docs/en/skills#edit-a-skill-during-a-session), [Codex discovery](https://learn.chatgpt.com/docs/build-skills).
+
+## Validate a change
+
+Run `scripts/check_links.py` from this skill folder (or pass the folder path) to check local Markdown links, direct routes to every reference, and path containment; it uses only the Python standard library and makes no external requests. Run the host's skill validator where available, inspect `agents/openai.yaml` against its interface schema, and manually review source URLs for current vendor guidance. Test raw realistic prompts for **activation** (macOS utility) and **non-activation** (iOS-only/web-only), plus branching decisions such as source-only release, cask update, permission denial, and a small fix. Describe a manual instruction dry-run as such; do not call it a live independent Claude/Codex evaluation unless both runtimes were actually run. [Codex testing guidance](https://learn.chatgpt.com/docs/build-skills), [Anthropic evaluation guidance](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices).
