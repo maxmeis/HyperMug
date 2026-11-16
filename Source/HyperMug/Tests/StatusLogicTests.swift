@@ -14,13 +14,13 @@ func statusLogicTests() {
     expectEqual(statusIcon(caffeineOn: false, secureHolderName: nil),
                 StatusIcon(symbol: "mug", label: "HyperMug — Caffeine off"))
 
-    // Clicks: right and ctrl+left open the menu; plain left and anything else toggle Caffeine.
+    // Every status-item click opens the menu; caffeine changes only from its checkbox item.
     expectEqual(classifyStatusClick(.right, controlHeld: false), .showMenu)
     expectEqual(classifyStatusClick(.right, controlHeld: true), .showMenu)
     expectEqual(classifyStatusClick(.left, controlHeld: true), .showMenu)
-    expectEqual(classifyStatusClick(.left, controlHeld: false), .toggleCaffeine)
-    expectEqual(classifyStatusClick(.other, controlHeld: false), .toggleCaffeine)
-    expectEqual(classifyStatusClick(.other, controlHeld: true), .toggleCaffeine, "control only matters for left-click")
+    expectEqual(classifyStatusClick(.left, controlHeld: false), .showMenu)
+    expectEqual(classifyStatusClick(.other, controlHeld: false), .showMenu)
+    expectEqual(classifyStatusClick(.other, controlHeld: true), .showMenu)
 
     // First menu item exists only while Secure Input is held, and names the holder.
     expectEqual(secureMenuTitle(holderName: nil), nil)

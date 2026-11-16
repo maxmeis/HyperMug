@@ -1,13 +1,14 @@
 import AppKit
 import HyperMugCore
 
-/// Menu bar icon. Left-click toggles Caffeine for the running session (never written to the config);
-/// right-click and ctrl+left-click open the menu. All decisions live in Core `StatusLogic`.
+/// Menu bar icon. Clicking opens the native menu; its Stay Awake checkbox toggles Caffeine for the
+/// running session (never written to the config). All click decisions live in Core `StatusLogic`.
 final class StatusItemController: NSObject {
     private let store: ConfigStore
     private let engine: Engine
     private let statusItem: NSStatusItem
     private let menu = NSMenu()
+    private var stayAwakeItem: NSMenuItem!
     private var tracker = SecureInputTracker()
     private var secureItem: NSMenuItem?
     private var secureSeparator: NSMenuItem?
@@ -26,6 +27,9 @@ final class StatusItemController: NSObject {
 
         let settings = NSMenuItem(title: MenuText.settings, action: #selector(openSettings), keyEquivalent: ",")
         settings.keyEquivalentModifierMask = [.command]
+        let stayAwake = NSMenuItem(title: "Stay Awake", action: #selector(toggleCaffeine), keyEquivalent: "")
+        stayAwake.target = self
+        stayAwakeItem = stayAwake
         let privileges = NSMenuItem(title: MenuText.privileges, action: #selector(checkPrivileges), keyEquivalent: "")
         let trackpad = NSMenuItem(title: "Trackpad Swipes…", action: #selector(showTrackpadSetup), keyEquivalent: "")
         let updates = NSMenuItem(title: MenuText.updates, action: nil, keyEquivalent: "")
@@ -35,6 +39,8 @@ final class StatusItemController: NSObject {
         updateChecker.configureMenuItem(updates)
 
         menu.autoenablesItems = false
+        menu.addItem(stayAwake)
+        menu.addItem(.separator())
         menu.addItem(settings)
         menu.addItem(trackpad)
         menu.addItem(privileges)
@@ -55,6 +61,7 @@ final class StatusItemController: NSObject {
     }
 
     func refresh() {
+        stayAwakeItem.state = engine.caffeineOn ? .on : .off
         let icon = statusIcon(caffeineOn: engine.caffeineOn, secureHolderName: tracker.info?.holder.name)
         let image = NSImage(systemSymbolName: icon.symbol, accessibilityDescription: icon.label)
         image?.isTemplate = true
@@ -77,9 +84,11 @@ final class StatusItemController: NSObject {
             statusItem.menu = menu
             statusItem.button?.performClick(nil)
             statusItem.menu = nil
-        case .toggleCaffeine:
-            engine.toggleCaffeine()
         }
+    }
+
+    @objc private func toggleCaffeine() {
+        engine.toggleCaffeine()
     }
 
     /// Main-thread poll (2 s timer, common modes so it also runs while the menu or an alert is open).

@@ -26,15 +26,11 @@ public func statusIcon(caffeineOn: Bool, secureHolderName: String?) -> StatusIco
 /// The kind of mouse-up that reached the status item button.
 public enum MouseUpKind: Equatable { case left, right, other }
 
-public enum StatusClick: Equatable { case toggleCaffeine, showMenu }
+public enum StatusClick: Equatable { case showMenu }
 
-/// Right-click and ctrl+left-click open the menu; every other click toggles Caffeine.
+/// Every supported status-item click opens the native menu.
 public func classifyStatusClick(_ kind: MouseUpKind, controlHeld: Bool) -> StatusClick {
-    switch kind {
-    case .right: return .showMenu
-    case .left: return controlHeld ? .showMenu : .toggleCaffeine
-    case .other: return .toggleCaffeine
-    }
+    .showMenu
 }
 
 /// First menu item while Secure Input is held (`Blocked by Secure Input: <app>…`); nil when it is not.
