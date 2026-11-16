@@ -22,7 +22,6 @@ jobs:
     environment: beta
     permissions:
       contents: write
-      actions: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -110,7 +109,7 @@ jobs:
           SOURCE_REPOSITORY: ${{ github.repository }}
           RELEASES_REPOSITORY: ${{ vars.RELEASES_REPOSITORY || github.repository }}
           TAP_REPOSITORY: ${{ vars.TAP_REPOSITORY || 'maxmeis/homebrew-formulae' }}
-          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
           TAP_SSH_PRIVATE_KEY: ${{ secrets.TAP_SSH_PRIVATE_KEY }}
         run: make publish

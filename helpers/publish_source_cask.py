@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-"""Prepare a published cask on an internal branch and dispatch its required CI."""
+"""Prepare a published cask; the authenticated owner push triggers its required CI."""
 import argparse
 import base64
-import json
 import os
 import re
 import subprocess
@@ -79,7 +78,8 @@ def publish(channel, version, repository, asset, work):
         cwd=work, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     ).returncode == 0
     if previous_sha and previous == desired and branch_current:
-        head_sha = previous_sha
+        print(f"Source {path} is staged; awaiting its push-triggered CI")
+        return
     else:
         run("git", "checkout", "-B", branch, "origin/main", cwd=work)
         main_file.parent.mkdir(parents=True, exist_ok=True)
@@ -88,17 +88,15 @@ def publish(channel, version, repository, asset, work):
         run("git", "-c", "user.name=maxmeis",
             "-c", "user.email=41482988+maxmeis@users.noreply.github.com", "commit",
             "-m", f"chore: update {token} cask to {version}", cwd=work)
-        head_sha = run("git", "rev-parse", "HEAD", cwd=work, capture=True)
         refspec = f"HEAD:refs/heads/{branch}"
         if previous_sha:
             run("git", "push", f"--force-with-lease=refs/heads/{branch}:{previous_sha}", "origin", refspec, cwd=work)
         else:
             run("git", "push", "origin", refspec, cwd=work)
-    checks = json.loads(run("gh", "api", f"repos/{repository}/commits/{head_sha}/check-runs",
-                            cwd=work, capture=True))
-    if not any(check.get("name") == "ci" and check.get("app", {}).get("slug") == "github-actions"
-               for check in checks["check_runs"]):
-        run("gh", "workflow", "run", "ci.yml", "--repo", repository, "--ref", branch, cwd=work)
+    # RELEASE_TOKEN is the owner credential. Its push already starts CI.
+    # A second dispatch races check-run registration, cancels the push run,
+    # and can leave GitHub's required ci context cancelled even after success.
+
 
 
 if __name__ == "__main__":
