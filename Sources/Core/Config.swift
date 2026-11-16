@@ -1,0 +1,308 @@
+import Foundation
+import CoreGraphics
+
+// MARK: - Model
+
+public enum CapsMode: String, Equatable, CaseIterable {
+    case `default`, meh, hyper
+    public var isModifier: Bool { self != .default }
+}
+
+public enum ButtonAction: Equatable {
+    case shortcut(Shortcut)
+    case shell(String)
+}
+
+public struct ButtonMap: Equatable {
+    public var back: ButtonAction?
+    public var forward: ButtonAction?
+    public var thumb: ButtonAction?
+
+    public init(back: ButtonAction? = nil, forward: ButtonAction? = nil, thumb: ButtonAction? = nil) {
+        self.back = back
+        self.forward = forward
+        self.thumb = thumb
+    }
+}
+
+public struct InvertScroll: Equatable {
+    public var vertical: Bool
+    public var horizontal: Bool
+
+    public init(vertical: Bool = false, horizontal: Bool = false) {
+        self.vertical = vertical
+        self.horizontal = horizontal
+    }
+}
+
+public struct MouseConfig: Equatable {
+    public var invertScroll: InvertScroll
+    public var buttons: ButtonMap
+
+    public init(invertScroll: InvertScroll = InvertScroll(), buttons: ButtonMap = ButtonMap()) {
+        self.invertScroll = invertScroll
+        self.buttons = buttons
+    }
+}
+
+public struct AppConfig: Equatable {
+    public var capsLock: CapsMode
+    public var caffeineOnLaunch: Bool
+    public var launchAtLogin: Bool
+    public var mouse: MouseConfig
+
+    public init(capsLock: CapsMode = .meh, caffeineOnLaunch: Bool = true, launchAtLogin: Bool = false,
+                mouse: MouseConfig = MouseConfig()) {
+        self.capsLock = capsLock
+        self.caffeineOnLaunch = caffeineOnLaunch
+        self.launchAtLogin = launchAtLogin
+        self.mouse = mouse
+    }
+}
+
+/// `reason` is short and alert-ready, e.g. "mouse.buttons.thumb: needs exactly one of shortcut/shell".
+public struct ConfigError: Error, Equatable {
+    public let reason: String
+
+    public init(reason: String) {
+        self.reason = reason
+    }
+}
+
+/// A config that decoded, plus the keys it contained that HyperMug does not know (dotted paths).
+/// Typos like "capslock" are not errors; the store logs them so they can be found.
+public struct DecodedConfig: Equatable {
+    public let config: AppConfig
+    public let unknownKeys: [String]
+
+    public init(config: AppConfig, unknownKeys: [String]) {
+        self.config = config
+        self.unknownKeys = unknownKeys
+    }
+}
+
+// MARK: - Decoding
+
+/// Key type for objects whose key names are only known at run time. String keys only.
+struct AnyKey: CodingKey {
+    let stringValue: String
+    var intValue: Int? { nil }
+    init(_ s: String) { stringValue = s }
+    init?(stringValue: String) { self.stringValue = stringValue }
+    /// Integer keys (array positions) are not object keys: never succeeds.
+    init?(intValue: Int) { nil }
+}
+
+/// Collects unknown keys while one `decodeConfig` call runs; handed to the Decodable inits via `userInfo`.
+private final class UnknownKeyCollector {
+    var paths: [String] = []
+}
+
+private let unknownKeysInfoKey = CodingUserInfoKey(rawValue: "hypermug.unknownKeys")!
+
+/// Dotted path with array indexes as `[i]`, e.g. `mouse.buttons.back.shortcut[1]`.
+private func dotted(_ path: [CodingKey], _ extra: String? = nil) -> String {
+    var out = ""
+    for key in path {
+        if let index = key.intValue {
+            out += "[\(index)]"
+        } else {
+            out += (out.isEmpty ? "" : ".") + key.stringValue
+        }
+    }
+    if let extra { out += (out.isEmpty ? "" : ".") + extra }
+    return out
+}
+
+private func noteUnknownKeys(_ c: KeyedDecodingContainer<AnyKey>, known: Set<String>, in decoder: Decoder) {
+    let collector = decoder.userInfo[unknownKeysInfoKey] as? UnknownKeyCollector
+    for key in c.allKeys.map(\.stringValue).sorted() where !known.contains(key) {
+        collector?.paths.append(dotted(c.codingPath, key))
+    }
+}
+
+private func isBlank(_ s: String) -> Bool {
+    s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+}
+
+private func decodeAction(_ c: KeyedDecodingContainer<AnyKey>, _ name: String, in decoder: Decoder) throws -> ButtonAction? {
+    let key = AnyKey(name)
+    guard c.contains(key), try !c.decodeNil(forKey: key) else { return nil }
+    let path = dotted(c.codingPath, name)
+    let a = try c.nestedContainer(keyedBy: AnyKey.self, forKey: key)
+    noteUnknownKeys(a, known: ["shortcut", "shell"], in: decoder)
+    // An empty/blank value counts as absent: zero real kinds = button left unmapped.
+    var shell: String?
+    if let v = try a.decodeIfPresent(String.self, forKey: AnyKey("shell")), !isBlank(v) { shell = v }
+    var tokens: [String]?
+    let shortcutKey = AnyKey("shortcut")
+    if a.contains(shortcutKey), try !a.decodeNil(forKey: shortcutKey) {
+        if let text = try? a.decode(String.self, forKey: shortcutKey) {
+            // The old string form is gone; only an empty string still means "unmapped".
+            if !isBlank(text) { throw ConfigError(reason: "\(path).shortcut \(shortcutArrayHint)") }
+        } else {
+            let list = try a.decode([String].self, forKey: shortcutKey)
+            if !list.isEmpty { tokens = list }
+        }
+    }
+    switch (tokens, shell) {
+    case (nil, nil):
+        return nil
+    case (nil, let shell?):
+        return .shell(shell)
+    case (let tokens?, nil):
+        switch parseShortcut(tokens) {
+        case .success(let s): return .shortcut(s)
+        case .failure(let e): throw ConfigError(reason: "\(path).shortcut: \(e.reason)")
+        }
+    case (_?, _?):
+        throw ConfigError(reason: "\(path): needs exactly one of shortcut/shell")
+    }
+}
+
+extension InvertScroll: Codable {
+    public init(from decoder: Decoder) throws {
+        self.init()
+        let c = try decoder.container(keyedBy: AnyKey.self)
+        noteUnknownKeys(c, known: ["vertical", "horizontal"], in: decoder)
+        vertical = try c.decodeIfPresent(Bool.self, forKey: AnyKey("vertical")) ?? false
+        horizontal = try c.decodeIfPresent(Bool.self, forKey: AnyKey("horizontal")) ?? false
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: AnyKey.self)
+        try c.encode(vertical, forKey: AnyKey("vertical"))
+        try c.encode(horizontal, forKey: AnyKey("horizontal"))
+    }
+}
+
+/// A mapped button is an object with only its one action key.
+private struct ActionFields: Encodable {
+    let action: ButtonAction
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: AnyKey.self)
+        switch action {
+        case .shortcut(let s): try c.encode(s.tokens, forKey: AnyKey("shortcut"))
+        case .shell(let s): try c.encode(s, forKey: AnyKey("shell"))
+        }
+    }
+}
+
+extension ButtonMap: Codable {
+    public init(from decoder: Decoder) throws {
+        self.init()
+        let c = try decoder.container(keyedBy: AnyKey.self)
+        noteUnknownKeys(c, known: ["back", "forward", "thumb"], in: decoder)
+        back = try decodeAction(c, "back", in: decoder)
+        forward = try decodeAction(c, "forward", in: decoder)
+        thumb = try decodeAction(c, "thumb", in: decoder)
+    }
+
+    var isEmpty: Bool { back == nil && forward == nil && thumb == nil }
+
+    /// Only mapped buttons are written (unmapped = key omitted).
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: AnyKey.self)
+        if let back { try c.encode(ActionFields(action: back), forKey: AnyKey("back")) }
+        if let forward { try c.encode(ActionFields(action: forward), forKey: AnyKey("forward")) }
+        if let thumb { try c.encode(ActionFields(action: thumb), forKey: AnyKey("thumb")) }
+    }
+}
+
+extension MouseConfig: Codable {
+    public init(from decoder: Decoder) throws {
+        self.init()
+        let c = try decoder.container(keyedBy: AnyKey.self)
+        noteUnknownKeys(c, known: ["invertScroll", "buttons"], in: decoder)
+        invertScroll = try c.decodeIfPresent(InvertScroll.self, forKey: AnyKey("invertScroll")) ?? InvertScroll()
+        buttons = try c.decodeIfPresent(ButtonMap.self, forKey: AnyKey("buttons")) ?? ButtonMap()
+    }
+
+    /// `buttons` is omitted when no button is mapped.
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: AnyKey.self)
+        try c.encode(invertScroll, forKey: AnyKey("invertScroll"))
+        if !buttons.isEmpty { try c.encode(buttons, forKey: AnyKey("buttons")) }
+    }
+}
+
+extension AppConfig: Codable {
+    public init(from decoder: Decoder) throws {
+        self.init()
+        let c = try decoder.container(keyedBy: AnyKey.self)
+        noteUnknownKeys(c, known: ["$schema", "capsLock", "caffeineOnLaunch", "launchAtLogin", "mouse"], in: decoder)
+        if let raw = try c.decodeIfPresent(String.self, forKey: AnyKey("capsLock")) {
+            guard let mode = CapsMode(rawValue: raw) else {
+                throw ConfigError(reason: "capsLock must be \"default\", \"meh\" or \"hyper\" (got \"\(raw)\")")
+            }
+            capsLock = mode
+        }
+        caffeineOnLaunch = try c.decodeIfPresent(Bool.self, forKey: AnyKey("caffeineOnLaunch")) ?? true
+        launchAtLogin = try c.decodeIfPresent(Bool.self, forKey: AnyKey("launchAtLogin")) ?? false
+        mouse = try c.decodeIfPresent(MouseConfig.self, forKey: AnyKey("mouse")) ?? MouseConfig()
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: AnyKey.self)
+        try c.encode("./\(AppIdentity.schemaFileName)", forKey: AnyKey("$schema"))
+        try c.encode(capsLock.rawValue, forKey: AnyKey("capsLock"))
+        try c.encode(caffeineOnLaunch, forKey: AnyKey("caffeineOnLaunch"))
+        try c.encode(launchAtLogin, forKey: AnyKey("launchAtLogin"))
+        try c.encode(mouse, forKey: AnyKey("mouse"))
+    }
+}
+
+/// Short, alert-ready text for an error thrown by `JSONDecoder`. Validation errors are `ConfigError`s already;
+/// the decoder raises only these three: a wrong type, a `null` where a value is required (inside a shortcut
+/// array), or unparsable JSON (everything else, since every key is optional).
+private func describe(_ error: Error) -> String {
+    func expected(_ type: Any.Type) -> String {
+        if type == Bool.self { return "true or false" }
+        if type == String.self { return "a string" }
+        if type == [String: Any].self { return "an object" }
+        return "an array"
+    }
+    switch error {
+    case DecodingError.typeMismatch(let type, let ctx), DecodingError.valueNotFound(let type, let ctx):
+        if ctx.codingPath.isEmpty { return "config must be a JSON object" }
+        return "\(dotted(ctx.codingPath)): expected \(expected(type))"
+    default:
+        let underlying = (error as NSError).userInfo[NSUnderlyingErrorKey] as? NSError
+        var reason = "invalid JSON"
+        if let detail = underlying?.userInfo[NSDebugDescriptionErrorKey] as? String { reason += ": \(detail)" }
+        return reason
+    }
+}
+
+/// Empty or whitespace-only file contents mean "all defaults".
+public func isBlankConfigData(_ data: Data) -> Bool {
+    isBlank(String(decoding: data, as: UTF8.self))
+}
+
+public func decodeConfig(_ data: Data) -> Result<DecodedConfig, ConfigError> {
+    if isBlankConfigData(data) { return .success(DecodedConfig(config: AppConfig(), unknownKeys: [])) }
+    let collector = UnknownKeyCollector()
+    let decoder = JSONDecoder()
+    decoder.userInfo[unknownKeysInfoKey] = collector
+    do {
+        let config = try decoder.decode(AppConfig.self, from: data)
+        return .success(DecodedConfig(config: config, unknownKeys: collector.paths))
+    } catch let e as ConfigError {
+        return .failure(e)
+    } catch {
+        return .failure(ConfigError(reason: describe(error)))
+    }
+}
+
+// MARK: - Encoding
+
+/// Pretty, sorted keys (so `$schema` comes first), no escaped slashes, trailing newline.
+public func encodeConfig(_ config: AppConfig) -> Data {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+    // Encoding plain strings/bools cannot fail.
+    var data = try! encoder.encode(config)
+    data.append(0x0A)
+    return data
+}
