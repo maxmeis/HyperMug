@@ -7,7 +7,7 @@ from pathlib import Path
 from release_metadata import appcast, asset_url, bundle_identity, cask, validate, stable_order, canary_superseded, release_order, publication_decision
 
 SHA = 'a' * 40
-ARGS = ('maxmeis', 'maxmeis', 'refs/tags/v1.2.3', SHA, 'maxmeis/HyperMug', 'maxmeis/HyperMug', 'maxmeis/homebrew-formulae')
+ARGS = ('maxmeis', 'maxmeis', 'refs/tags/v1.2.3', SHA, 'maxmeis/hypermug', 'maxmeis/hypermug', 'maxmeis/homebrew-formulae')
 
 
 class ReleaseMetadataTests(unittest.TestCase):
@@ -28,18 +28,18 @@ class ReleaseMetadataTests(unittest.TestCase):
 
     def test_canary_requires_exact_main_and_its_own_version_namespace(self):
         args = ('contributor', 'contributor', 'refs/heads/main', SHA,
-                'maxmeis/HyperMug', 'maxmeis/HyperMug', 'maxmeis/homebrew-formulae')
+                'maxmeis/hypermug', 'maxmeis/hypermug', 'maxmeis/homebrew-formulae')
         validate('canary', '0.0.0-canary.12', *args)
         for version in ('1.2.3', '0.0.0-canary.0', '0.0.0-beta.12'):
             with self.assertRaises(ValueError):
                 validate('canary', version, *args)
-        for index, value in ((2, 'refs/heads/feature'), (4, 'fork/HyperMug')):
+        for index, value in ((2, 'refs/heads/feature'), (4, 'fork/hypermug'), (4, 'maxmeis/HyperMug')):
             changed = list(args); changed[index] = value
             with self.assertRaises(ValueError):
                 validate('canary', '0.0.0-canary.12', *changed)
 
     def test_appcast_escapes_and_signs(self):
-        url = asset_url('maxmeis/HyperMug', 'v1.2.3', 'HyperMug-1.2.3.zip')
+        url = asset_url('maxmeis/hypermug', 'v1.2.3', 'HyperMug-1.2.3.zip')
         xml = appcast('stable', '1.2.3', 123, url + '?x="&', 'abc+/=', 17)
         self.assertIn('sparkle:edSignature="abc+/="', xml)
         self.assertIn('<sparkle:shortVersionString>1.2.3</sparkle:shortVersionString>', xml)
@@ -67,8 +67,8 @@ class ReleaseMetadataTests(unittest.TestCase):
             command = [sys.executable, str(Path(__file__).with_name('release_metadata.py')), 'render',
                        '--channel', 'canary', '--version', '0.0.0-canary.12',
                        '--actor', 'maxmeis', '--triggering-actor', 'maxmeis', '--ref', 'refs/heads/main',
-                       '--sha', SHA, '--source-repo', 'maxmeis/HyperMug',
-                       '--releases-repo', 'maxmeis/HyperMug', '--tap-repo', 'maxmeis/homebrew-formulae',
+                       '--sha', SHA, '--source-repo', 'maxmeis/hypermug',
+                       '--releases-repo', 'maxmeis/hypermug', '--tap-repo', 'maxmeis/homebrew-formulae',
                        '--build-number', '12', '--zip', str(archive), '--signature', 'abc+/=',
                        '--output', str(output)]
             subprocess.run(command, check=True, capture_output=True, text=True)
@@ -77,6 +77,7 @@ class ReleaseMetadataTests(unittest.TestCase):
             self.assertIn('<sparkle:shortVersionString>0.0.12</sparkle:shortVersionString>', feed)
             self.assertIn('<sparkle:version>12</sparkle:version>', feed)
             self.assertIn('version "0.0.12"', cask_text)
+            self.assertIn('homepage "https://github.com/maxmeis/hypermug"', cask_text)
             self.assertIn('/releases/download/v0.0.0-canary.12/', feed)
             wrong = command.copy()
             wrong[wrong.index('--build-number') + 1] = '13'

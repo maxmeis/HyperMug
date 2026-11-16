@@ -15,7 +15,7 @@ concurrency:
   queue: max
 jobs:
   release:
-    if: github.repository == 'maxmeis/HyperMug' && github.ref == 'refs/heads/main'
+    if: github.repository == 'maxmeis/hypermug' && github.ref == 'refs/heads/main'
     runs-on: macos-latest
     # The existing beta environment supplies the Canary signing and Sparkle key.
     # Its deployment policy permits only main; beta is an internal secret scope.

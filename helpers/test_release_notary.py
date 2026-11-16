@@ -157,7 +157,7 @@ class ReleaseNotaryAuthTests(unittest.TestCase):
         env.update({
             "PATH": f"{self.bin_dir}:{env['PATH']}", "SECURITY_CALLS": str(calls),
             "CHANNEL": "stable", "VERSION": "1.2.3", "BUILD_NUMBER": "1.2.3",
-            "SOURCE_REPOSITORY": "maxmeis/HyperMug", "RELEASES_REPOSITORY": "maxmeis/HyperMug",
+            "SOURCE_REPOSITORY": "maxmeis/hypermug", "RELEASES_REPOSITORY": "maxmeis/hypermug",
             "TAP_REPOSITORY": "maxmeis/homebrew-formulae", "GITHUB_ACTOR": "maxmeis",
             "GITHUB_TRIGGERING_ACTOR": "maxmeis", "GITHUB_REF": "refs/tags/v1.2.3",
             "GITHUB_SHA": "a" * 40, "DEVELOPER_ID_P12_BASE64": "ZmFrZQ==",
