@@ -25,6 +25,7 @@ final class SystemPorts: EnginePorts {
         TrackpadCallbackRouter.shared.host = trackpad
         trackpad.onFrame = { [weak self] device, contacts, time in
             guard let self, let swipe = self.swipeState.handleFrame(device: device, contacts: contacts, timestamp: time) else { return }
+            DebugLog.write("swipe recognized fingers=\(swipe.fingers) direction=\(swipe.direction.rawValue)")
             self.onTrackpadSwipe?(swipe)
         }
         trackpad.onDeviceRemoved = { [weak self] device in self?.swipeState.removeDevice(device) }
@@ -54,6 +55,7 @@ final class SystemPorts: EnginePorts {
 
     func run(_ action: ButtonAction) { ActionRunner.run(action) }
     func postEscape() { ActionRunner.postEscape() }
+    func clearCapsLock() { CapsLockLatch.clear() }
     func log(_ level: LogLevel, _ message: String) { sink(level, message) }
     func debugLog(_ line: String) { DebugLog.write(line) }
 

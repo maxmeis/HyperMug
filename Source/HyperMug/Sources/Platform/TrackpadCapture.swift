@@ -29,6 +29,9 @@ final class TrackpadCapture {
     private var devices: [UInt64: Device] = [:]
     private var generation: UInt64 = 0
     private var enabled = false
+    var isEnabled: Bool { enabled }
+    private(set) var deviceCount = 0
+    private(set) var captureError: String?
     private var port: IONotificationPortRef?
     private var added: io_iterator_t = 0
     private var removed: io_iterator_t = 0
@@ -39,6 +42,8 @@ final class TrackpadCapture {
     func setEnabled(_ on: Bool) {
         guard on != enabled else { return }
         enabled = on
+        captureError = nil
+        DebugLog.write("trackpad capture enabled=\(on)")
         if on { load(); observe(); rescan() } else { stop(); unobserve() }
     }
 
@@ -48,6 +53,8 @@ final class TrackpadCapture {
         guard library == nil else { return }
         guard let handle = dlopen("/System/Library/PrivateFrameworks/MultitouchSupport.framework/MultitouchSupport", RTLD_NOW) else {
             log(.info, "MultitouchSupport unavailable")
+            captureError = "macOS trackpad capture is unavailable."
+            DebugLog.write("MultitouchSupport unavailable")
             return
         }
         func symbol<T>(_ name: String, as: T.Type) -> T? {
@@ -61,6 +68,8 @@ final class TrackpadCapture {
               let stop: Stop = symbol("MTDeviceStop", as: Stop.self) else {
             dlclose(handle)
             log(.error, "MultitouchSupport required symbols unavailable")
+            captureError = "This macOS version does not provide the required trackpad functions."
+            DebugLog.write("MultitouchSupport required symbols unavailable")
             return
         }
         library = handle; createList = make; register = reg; unregister = unreg
@@ -72,9 +81,13 @@ final class TrackpadCapture {
         guard enabled, let make = createList else { return }
         // Callback entries are detached before stopping; MTDeviceStop can wait for a callback.
         stop()
-        guard let newList = make()?.takeRetainedValue() else { return }
+        guard let newList = make()?.takeRetainedValue() else {
+            captureError = "macOS did not return a trackpad device list."
+            return
+        }
         list = newList
         let count = CFArrayGetCount(newList)
+        DebugLog.write("trackpad scan devices=\(count)")
         guard count > 0 else { return }
         lock.lock()
         generation &+= 1
@@ -89,11 +102,16 @@ final class TrackpadCapture {
         for device in current {
             register?(device, trackpadContactCallback)
             let result = startDevice?(device, 0) ?? -1
+            if result == 0 { deviceCount += 1 }
+            else { captureError = "A trackpad could not start (code \(result))." }
+            DebugLog.write("trackpad device start result=\(result)")
             if result != 0 { log(.info, "trackpad device start returned \(result)") }
         }
     }
 
     private func stop() {
+        deviceCount = 0
+        captureError = nil
         lock.lock()
         generation &+= 1
         let old = devices

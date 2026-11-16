@@ -30,6 +30,8 @@ public final class ConfigStore {
     public private(set) var config = AppConfig()
     /// Non-nil while the file on disk is invalid.
     public private(set) var error: ConfigError?
+    /// Unknown keys from the last valid file. These settings have no effect.
+    public private(set) var unknownKeys: [String] = []
     /// Main thread; called whenever `config` changes after `start()`, and once from `start()`.
     public var onChange: ((AppConfig) -> Void)?
     /// Main thread; once per distinct reason while invalid (reset after a valid load).
@@ -151,6 +153,7 @@ public final class ConfigStore {
 
     private func noteValid(_ data: Data) {
         error = nil
+        unknownKeys = []
         lastAlertedReason = nil
         lastBytes = data
     }
@@ -186,6 +189,7 @@ public final class ConfigStore {
                     switch decodeConfig(data) {
                     case .success(let decoded):
                         noteValid(data)
+                        unknownKeys = decoded.unknownKeys
                         for key in decoded.unknownKeys { env.log(.info, "unknown config key \"\(key)\" ignored") }
                         adopt(decoded.config, emitChange: emitChange)
                     case .failure(let e):

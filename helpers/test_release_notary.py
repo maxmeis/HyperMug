@@ -8,7 +8,7 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-HELPER = ROOT / "scripts" / "notary_auth.sh"
+HELPER = ROOT / "helpers" / "notary_auth.sh"
 
 
 class ReleaseNotaryAuthTests(unittest.TestCase):
@@ -138,10 +138,10 @@ class ReleaseNotaryAuthTests(unittest.TestCase):
 
     def test_keychain_snapshot_failure_stops_before_creating_signing_keychain(self):
         project = Path(self.temp_dir.name) / "project"
-        scripts = project / "scripts"
+        scripts = project / "helpers"
         scripts.mkdir(parents=True)
         for name in ("release.sh", "notary_auth.sh", "release_metadata.py"):
-            shutil.copy2(ROOT / "scripts" / name, scripts / name)
+            shutil.copy2(ROOT / "helpers" / name, scripts / name)
         calls = Path(self.temp_dir.name) / "security-calls.jsonl"
         security = self.bin_dir / "security"
         security.write_text(

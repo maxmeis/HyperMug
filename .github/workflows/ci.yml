@@ -27,33 +27,31 @@ jobs:
           node-version-file: package.json # reads the `volta.node` pin
           cache: npm
 
-      - run: npm ci
+      - run: make ci-tools
 
       - name: Layer rules
-        run: ./Source/HyperMug/scripts/check-layers.sh
+        run: make check-layers
 
       - name: Release metadata and workflow checks
         run: |
-          python3 -m unittest discover -s Source/HyperMug/scripts -p 'test_release*.py'
-          bash -n Source/HyperMug/scripts/release.sh Source/HyperMug/scripts/notary_auth.sh Source/HyperMug/scripts/publish_release.sh Source/HyperMug/scripts/sparkle.sh
+          make test-release
+          make check-shell
 
       - name: Issue automation and content checks
         run: |
-          node --check Source/Automation/triage-issues.mjs
-          node --test Source/Automation/triage-issues.test.mjs
-          node --check Source/Website/script.js
-          python3 Source/Automation/check-content.py
+          make check-automation
+          make check-website
 
       - name: Core tests and 100% coverage gate
-        run: ./Source/HyperMug/scripts/test.sh
+        run: make test
 
       - name: Compile check (Core module, Platform + App type-check)
-        run: ./Source/HyperMug/scripts/compile-check.sh
+        run: make compile-check
 
       - name: Build bundle and verify app icon
         run: |
-          make build
-          app=Source/HyperMug/build/HyperMug.app
+          make build SIGN_ID=- ALLOW_ADHOC_SIGNING=1
+          app="build/HyperMug Dev.app"
           test "$(plutil -extract CFBundleIconFile raw -o - "$app/Contents/Info.plist")" = HyperMug.icns
           test "$(plutil -extract HyperMugReleaseChannel raw -o - "$app/Contents/Info.plist")" = local
           test "$(plutil -extract CFBundleShortVersionString raw -o - "$app/Contents/Info.plist")" = 0.1.0
@@ -64,7 +62,7 @@ jobs:
 
       - name: Commit messages (pull request)
         if: github.event_name == 'pull_request'
-        run: npx commitlint --from "${{ github.event.pull_request.base.sha }}" --to "${{ github.event.pull_request.head.sha }}" --verbose
+        run: make lint-commits FROM="${{ github.event.pull_request.base.sha }}" TO="${{ github.event.pull_request.head.sha }}"
 
       - name: Commit messages (branch)
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
@@ -82,5 +80,5 @@ jobs:
           if [ -z "$from" ] || [ "$(git rev-list --count "$from..$AFTER")" = 0 ]; then
             echo "No new commits to lint."
           else
-            npx commitlint --from "$from" --to "$AFTER" --verbose
+            FROM="$from" TO="$AFTER" make lint-commits
           fi

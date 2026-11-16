@@ -1,4 +1,4 @@
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/../helpers/hook-lib.sh"
 run_vendored_hook pre-commit "$@"
 
 # Decide by what is staged. --no-renames lists both sides of a rename; -z keeps odd file names unquoted.
@@ -8,15 +8,15 @@ run_tests=0
 run_compile=0
 while IFS= read -r path; do
   case "$path" in
-    Source/HyperMug/Sources/Core/* | Source/HyperMug/Tests/* | Source/HyperMug/scripts/test.sh) run_tests=1 ;;
+    Source/HyperMug/Sources/Core/* | Source/HyperMug/Tests/* | helpers/test.sh | helpers/swift-env.sh | Makefile) run_tests=1 ;;
   esac
   case "$path" in
-    Source/HyperMug/Sources/* | Source/HyperMug/build.sh | Source/HyperMug/Info.plist | build.sh) run_compile=1 ;;
+    Source/HyperMug/Sources/* | helpers/build.sh | helpers/compile-check.sh | helpers/swift-env.sh | Makefile | Source/HyperMug/Info.plist) run_compile=1 ;;
   esac
 done <<EOS
 $staged
 EOS
 
-./Source/HyperMug/scripts/check-layers.sh
-if [ "$run_tests" = 1 ]; then ./Source/HyperMug/scripts/test.sh; fi
-if [ "$run_compile" = 1 ]; then ./Source/HyperMug/scripts/compile-check.sh; fi
+make check-layers
+if [ "$run_tests" = 1 ]; then make test; fi
+if [ "$run_compile" = 1 ]; then make compile-check; fi

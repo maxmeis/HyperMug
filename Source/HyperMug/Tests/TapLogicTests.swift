@@ -118,6 +118,9 @@ private func capsFlagsTests() {
     expectEqual(flagsWhileCapsHeld(.maskShift, mode: .hyper), hyper)
     expectEqual(flagsWhileCapsHeld([.maskSecondaryFn, .maskShift], mode: .meh), meh.union([.maskSecondaryFn, .maskShift]))
     expectEqual(flagsWhileCapsHeld([.maskShift, .maskCommand], mode: .default), [.maskShift, .maskCommand])
+    expectEqual(flagsWhileCapsHeld([.maskAlphaShift, .maskShift], mode: .meh), meh.union(.maskShift))
+    expectEqual(flagsWhileCapsHeld(.maskAlphaShift, mode: .hyper), hyper)
+    expectEqual(flagsWhileCapsHeld(.maskAlphaShift, mode: .default), .maskAlphaShift)
 }
 
 // MARK: - TapState.handle
@@ -273,6 +276,29 @@ private func capsKeyEventTests() {
     expectEqual(state.handle(toggle, settings: settings(caps: .hyper)).0, TapDecision(pass: false))
     expectEqual(state.handle(toggle, settings: settings(caps: .default)).0, TapDecision())
     expectEqual(state.handle(TapEvent(type: .flagsChanged, keyCode: 56), settings: settings(caps: .meh)).0, TapDecision())
+
+    for mode in [CapsMode.meh, .hyper] {
+        var clean = TapState()
+        let capsToggle = TapEvent(type: .flagsChanged, keyCode: 57, flags: [.maskAlphaShift, .maskShift])
+        let toggled = clean.handle(capsToggle, settings: settings(caps: mode))
+        expectEqual(toggled.0, TapDecision(pass: false, flags: .maskShift))
+        expectEqual(toggled.1, [.clearCapsLock])
+        let shiftChange = clean.handle(TapEvent(type: .flagsChanged, keyCode: 56, flags: [.maskAlphaShift, .maskShift]), settings: settings(caps: mode))
+        expectEqual(shiftChange.0, TapDecision(flags: .maskShift))
+        expectEqual(shiftChange.1, [.clearCapsLock])
+        for type in [CGEventType.keyDown, .keyUp] {
+            let event = TapEvent(type: type, keyCode: 0, flags: [.maskAlphaShift, .maskShift])
+            let released = clean.handle(event, settings: settings(caps: mode))
+            expectEqual(released.0, TapDecision(flags: .maskShift))
+            expectEqual(released.1, [.clearCapsLock])
+            _ = clean.capsKey(down: true, nowNanos: 0)
+            let held = clean.handle(event, settings: settings(caps: mode))
+            expectEqual(held.0.flags, Optional(capsModifierFlags(for: mode).union(.maskShift)))
+            expectEqual(held.1, [.clearCapsLock])
+            clean.resetCaps()
+            expectNoop(clean.handle(event, settings: settings(caps: .default)))
+        }
+    }
 
     // Not held: keys pass without flags.
     let key = TapEvent(type: .keyDown, keyCode: 40, flags: .maskShift)

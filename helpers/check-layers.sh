@@ -7,10 +7,10 @@
 #   Sources/App       AppKit UI and composition root. May use Platform and Core.
 #   Tests             test Core only.
 #
-# Usage: scripts/check-layers.sh [repo-root]   (defaults to the parent of this script)
+# Usage: helpers/check-layers.sh [repo-root]   (defaults to the parent of this script)
 set -euo pipefail
 
-ROOT="${1:-$(cd "$(dirname "$0")/.." && pwd)}"
+ROOT="${1:-$(cd "$(dirname "$0")/../Source/HyperMug" && pwd)}"
 cd "$ROOT"
 
 violations=0

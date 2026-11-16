@@ -73,7 +73,8 @@ public func capsModifierFlags(for mode: CapsMode) -> CGEventFlags {
 
 /// Flags of a key event while Caps is held: everything already on it (physically held modifiers) plus Meh/Hyper.
 public func flagsWhileCapsHeld(_ original: CGEventFlags, mode: CapsMode) -> CGEventFlags {
-    original.union(capsModifierFlags(for: mode))
+    guard mode.isModifier else { return original }
+    return original.subtracting(.maskAlphaShift).union(capsModifierFlags(for: mode))
 }
 
 // MARK: - Event model
@@ -141,6 +142,7 @@ public struct TapDecision: Equatable {
 public enum TapEffect: Equatable {
     case run(ButtonAction)
     case postEscape
+    case clearCapsLock
     case debugLog(String)
     case log(LogLevel, String)
 }
@@ -193,13 +195,20 @@ public struct TapState: Equatable {
             return (decision, [])
 
         case .flagsChanged:
-            // The Caps Lock toggle (when macOS leaves Caps Lock as Caps Lock) must not reach apps in Meh/Hyper mode.
-            return (TapDecision(pass: !(settings.capsMode.isModifier && e.keyCode == capsLockKeyCode)), [])
+            guard settings.capsMode.isModifier else { return (TapDecision(), []) }
+            let latched = e.flags.contains(.maskAlphaShift)
+            return (TapDecision(pass: e.keyCode != capsLockKeyCode,
+                flags: latched ? e.flags.subtracting(.maskAlphaShift) : nil), latched ? [.clearCapsLock] : [])
 
         case .keyDown, .keyUp:
-            guard settings.capsMode.isModifier, capsHeld else { return (TapDecision(), []) }
+            guard settings.capsMode.isModifier else { return (TapDecision(), []) }
+            let latched = e.flags.contains(.maskAlphaShift)
+            let effects: [TapEffect] = latched ? [.clearCapsLock] : []
+            guard capsHeld else {
+                return (TapDecision(flags: latched ? e.flags.subtracting(.maskAlphaShift) : nil), effects)
+            }
             if e.type == .keyDown { otherKeyPressed = true }
-            return (TapDecision(flags: flagsWhileCapsHeld(e.flags, mode: settings.capsMode)), [])
+            return (TapDecision(flags: flagsWhileCapsHeld(e.flags, mode: settings.capsMode)), effects)
 
         default:
             return (TapDecision(), [])

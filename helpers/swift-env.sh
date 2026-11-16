@@ -1,5 +1,5 @@
-# Shared Swift build settings. Sourced (not executed) by build.sh, scripts/test.sh and
-# scripts/compile-check.sh, so the target and the Core module flags exist in exactly one place.
+# Shared Swift build settings. Sourced (not executed) by build.sh, helpers/test.sh and
+# helpers/compile-check.sh, so the target and the Core module flags exist in exactly one place.
 # SDKROOT: a value set by the caller is used as is. If it is unset, the default SDK is probed with one
 # trivial compile; when that fails (Command Line Tools whose newest SDK is newer than the compiler), the
 # SDKs next to the toolchain are tried newest first and the first one that compiles is exported.
@@ -83,5 +83,5 @@ compile_core_module() { # out-dir
   mkdir -p "$out"
   swiftc -O -wmo -parse-as-library "${SWIFT_BASE_FLAGS[@]}" \
     -module-name HyperMugCore -emit-module -emit-module-path "$out/HyperMugCore.swiftmodule" \
-    -c -o "$out/HyperMugCore.o" Sources/Core/*.swift
+    -c -o "$out/HyperMugCore.o" Source/HyperMug/Sources/Core/*.swift
 }

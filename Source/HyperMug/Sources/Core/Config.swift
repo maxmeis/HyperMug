@@ -111,7 +111,8 @@ public struct AppConfig: Equatable {
         let prev = ButtonAction.shell("/opt/homebrew/bin/aerospace workspace --no-stdin --wrap-around prev")
         let swipes = SwipeMap(left: next, right: prev)
         return AppConfig(
-            launchAtLogin: true,
+            launchAtLogin: !AppIdentity.isDevelopment,
+            autoUpdate: !AppIdentity.isDevelopment,
             mouse: MouseConfig(buttons: ButtonMap(back: next, forward: prev)),
             trackpad: TrackpadConfig(threeFingerSwipe: swipes, fourFingerSwipe: swipes)
         )

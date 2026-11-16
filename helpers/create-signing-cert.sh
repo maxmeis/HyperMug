@@ -43,7 +43,7 @@ security import "$tmp/identity.p12" -k "$KEYCHAIN" -P "$pw" -T /usr/bin/codesign
 
 if security find-identity -p codesigning | grep -q "$NAME"; then
   echo "Created signing identity \"$NAME\" in the login keychain."
-  echo "The first ./build.sh may ask once to let codesign use the key: choose Always Allow."
+  echo "The first make build may ask once to let codesign use the key: choose Always Allow."
 else
   echo "error: identity \"$NAME\" not found after import" >&2
   exit 1

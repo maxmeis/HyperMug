@@ -3,7 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 : "${CHANNEL:?}" "${VERSION:?}" "${BUILD_NUMBER:?}" "${BUILD_APP:?}" "${SOURCE_REPOSITORY:?}" "${RELEASES_REPOSITORY:?}" "${TAP_REPOSITORY:?}" "${RELEASE_TOKEN:?}" "${GITHUB_SHA:?}"
-python3 scripts/release_metadata.py validate --channel "$CHANNEL" --version "$VERSION" --actor "$GITHUB_ACTOR" --triggering-actor "$GITHUB_TRIGGERING_ACTOR" --ref "$GITHUB_REF" --sha "$GITHUB_SHA" --source-repo "$SOURCE_REPOSITORY" --releases-repo "$RELEASES_REPOSITORY" --tap-repo "$TAP_REPOSITORY"
+python3 helpers/release_metadata.py validate --channel "$CHANNEL" --version "$VERSION" --actor "$GITHUB_ACTOR" --triggering-actor "$GITHUB_TRIGGERING_ACTOR" --ref "$GITHUB_REF" --sha "$GITHUB_SHA" --source-repo "$SOURCE_REPOSITORY" --releases-repo "$RELEASES_REPOSITORY" --tap-repo "$TAP_REPOSITORY"
 [[ "$BUILD_NUMBER" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]] || exit 1
 [[ "$BUILD_APP" == true || "$BUILD_APP" == false ]] || { echo 'BUILD_APP must be true or false' >&2; exit 1; }
 PUBLISH_EXTERNAL_TAP="${PUBLISH_EXTERNAL_TAP:-false}"
@@ -18,7 +18,7 @@ if [[ "$BUILD_APP" == true && "$PUBLISH_EXTERNAL_TAP" == true ]]; then
   tap_archived="$(gh api "repos/${TAP_REPOSITORY}" --jq .archived)" || { echo 'External tap is unavailable; disable PUBLISH_EXTERNAL_TAP or repair its access' >&2; exit 1; }
   [[ "$tap_archived" == false ]] || { echo 'External tap is archived; disable PUBLISH_EXTERNAL_TAP or choose a writable destination' >&2; exit 1; }
 fi
-export PYTHONPATH="$PWD/scripts"
+export PYTHONPATH="$PWD/helpers"
 expected_build="$(python3 -c 'import sys; from release_metadata import bundle_identity; print(bundle_identity(sys.argv[1], sys.argv[2])[1])' "$CHANNEL" "$VERSION")"
 [[ "$BUILD_NUMBER" == "$expected_build" ]] || { echo 'Build number does not match release tag' >&2; exit 1; }
 tag="v${VERSION}"
@@ -80,7 +80,7 @@ gh api "repos/${RELEASES_REPOSITORY}/releases?per_page=100" --paginate --jq '.[]
 python3 - "$CHANNEL" "$VERSION" "$release_exists" "$work/tags" <<'PY'
 import sys
 from pathlib import Path
-sys.path.insert(0, 'scripts')
+sys.path.insert(0, 'helpers')
 from release_metadata import release_order
 release_order(sys.argv[1], sys.argv[2], Path(sys.argv[4]).read_text().splitlines(), sys.argv[3] == '1')
 PY
@@ -218,5 +218,5 @@ git clone "$tap_url" "$work/tap" >/dev/null 2>&1
 fi
 # The source repository is a protected tap. Propose its cask from the immutable
 # published asset; a failed PR can be resumed without replaying earlier writes.
-python3 scripts/publish_source_cask.py --channel "$CHANNEL" --version "$VERSION" \
+python3 helpers/publish_source_cask.py --channel "$CHANNEL" --version "$VERSION" \
   --repository "$SOURCE_REPOSITORY" --asset "$work/${token}.rb" --work "$work/source"

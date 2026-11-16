@@ -22,7 +22,7 @@ Canary is an opt-in channel with its own feed and cask. See [Installation](docs/
 - **Secure Input status:** see when macOS blocks keyboard monitoring and which app holds Secure Input.
 - **Native Settings:** use **Settings…** (⌘,) for General, Mouse, Trackpad, and shared Helpers; advanced JSON edits in `~/.config/hypermug.json` reload while the app runs.
 
-HyperMug requires macOS Accessibility and Input Monitoring permissions for its input features. The app explains each permission in **Check Privileges…**. See [Permissions and troubleshooting](docs/troubleshooting.md).
+HyperMug requires macOS Accessibility and Input Monitoring permissions for its input features. The app explains each permission in **Doctor… → Permissions**. See [Permissions and troubleshooting](docs/troubleshooting.md).
 
 ## Configuration
 

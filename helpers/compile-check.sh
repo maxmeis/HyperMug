@@ -4,8 +4,8 @@
 # SDKROOT is optional (see swift-env.sh). Exits non-zero on any compile error.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-. scripts/swift-env.sh
-. scripts/sparkle.sh
+. helpers/swift-env.sh
+. helpers/sparkle.sh
 sparkle_prepare
 
 OUT="$(mktemp -d "${TMPDIR:-/tmp}/hypermug-compile-check.XXXXXX")"
@@ -14,6 +14,6 @@ trap 'rm -rf "$OUT"' EXIT
 compile_core_module "$OUT/core"
 
 swiftc -typecheck -parse-as-library "${SWIFT_BASE_FLAGS[@]}" -module-name HyperMug \
-  -I "$OUT/core" -F "$SPARKLE_FRAMEWORK_DIR" Sources/Platform/*.swift Sources/App/*.swift
+  -I "$OUT/core" -F "$SPARKLE_FRAMEWORK_DIR" Source/HyperMug/Sources/Platform/*.swift Source/HyperMug/Sources/App/*.swift
 
 echo "compile-check: ok"

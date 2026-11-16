@@ -50,6 +50,7 @@ private final class FakePorts: EnginePorts {
     func shutdownTrackpad() { calls.append("shutdownTrackpad") }
     func run(_ action: ButtonAction) { ran.append(action) }
     func postEscape() { calls.append("escape") }
+    func clearCapsLock() { calls.append("clearCapsLock") }
     func log(_ level: LogLevel, _ message: String) {
         if level == .error { errors.append(message) } else { logs.append(message) }
     }
@@ -411,6 +412,11 @@ private func capsEventTests() {
     // Short tap sends Esc once; the same press with a typed key does not.
     var (engine, ports) = makeEngine()
     engine.apply(config(caps: .meh))
+    expect(ports.count("clearCapsLock") > 0, "modifier mode clears an existing system latch")
+    ports.clear()
+    let latched = engine.handleTapEvent(TapEvent(type: .flagsChanged, keyCode: 57, flags: .maskAlphaShift))
+    expect(!latched.pass)
+    expectEqual(ports.count("clearCapsLock"), 1)
     engine.capsKeyChanged(down: true, nowNanos: 0)
     engine.capsKeyChanged(down: false, nowNanos: 50 * ms)
     expectEqual(ports.count("escape"), 1)
