@@ -45,6 +45,9 @@ jobs:
       - name: Core tests and 100% coverage gate
         run: make test
 
+      - name: Native subprocess supervision checks
+        run: make test-runtime
+
       - name: Compile check (Core module, Platform + App type-check)
         run: make compile-check
 
@@ -58,6 +61,7 @@ jobs:
           test "$(plutil -extract CFBundleVersion raw -o - "$app/Contents/Info.plist")" = 1
           ! plutil -extract SUFeedURL raw -o - "$app/Contents/Info.plist" >/dev/null 2>&1
           test -s "$app/Contents/Resources/HyperMug.icns"
+          python3 helpers/check-bundle-schema.py "$app"
           codesign --verify --deep --strict "$app"
 
       - name: Commit messages (pull request)

@@ -1,10 +1,18 @@
 import Foundation
 
-/// JSON array literal of every token `parseShortcut` accepts. Built from the parser's own table
-/// (`shortcutTokenNames`), so the schema enum and the grammar cannot drift apart.
-private let shortcutTokenEnumJSON: String = {
-    // Serializing an array of strings cannot fail.
-    let data = try! JSONSerialization.data(withJSONObject: shortcutTokenNames, options: [.withoutEscapingSlashes])
+/// A JSON-escaped, case-insensitive pattern derived from the parser's token table.
+/// JSON Schema patterns have no case-insensitive flag, so use portable character classes.
+private let shortcutTokenPatternJSON: String = {
+    let escaped: [String] = shortcutTokenNames.map { token in
+        token.map { character -> String in
+            let value = String(character)
+            if character.isASCII && character.isLetter { return "[\(value.lowercased())\(value.uppercased())]" }
+            if "\\.^$|?*+()[]{}".contains(character) { return "\\" + value }
+            return value
+        }.joined()
+    }
+    let pattern = "^(?:" + escaped.joined(separator: "|") + ")$"
+    let data = try! JSONSerialization.data(withJSONObject: pattern, options: [.fragmentsAllowed, .withoutEscapingSlashes])
     return String(decoding: data, as: UTF8.self)
 }()
 
@@ -17,11 +25,13 @@ private func buttonSchema(_ description: String) -> String {
           "properties": {
             "shell": {
               "type": "string",
+              "pattern": "\\S",
               "description": "Command run via /bin/sh -c in the background, output discarded (minimal PATH: /usr/bin:/bin:/usr/sbin:/sbin). Must not be empty."
             },
             "helper": {
               "type": "string",
               "minLength": 1,
+              "pattern": "\\S",
               "description": "Name of a shell command in the top-level helpers object."
             },
             "shortcut": {
@@ -30,7 +40,7 @@ private func buttonSchema(_ description: String) -> String {
               "minItems": 1,
               "items": {
                 "type": "string",
-                "enum": \#(shortcutTokenEnumJSON)
+                "pattern": \#(shortcutTokenPatternJSON)
               }
             }
           },
@@ -61,11 +71,10 @@ public let configSchemaJSON: String = #"""
   "description": "Settings for \#(AppIdentity.appName) (~/.config/\#(AppIdentity.configFileName)). Edits apply within about a second; an invalid file is reported and the last good settings stay active.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["$schema", "caffeineOnLaunch", "capsLock", "launchAtLogin", "mouse"],
   "properties": {
     "$schema": {
       "type": "string",
-      "description": "Link to this schema (written by \#(AppIdentity.appName)); only used by editors."
+      "description": "File URL of the schema inside the signed \#(AppIdentity.appName) bundle; used by editors."
     },
     "caffeineOnLaunch": {
       "type": "boolean",
@@ -83,6 +92,13 @@ public let configSchemaJSON: String = #"""
     "autoUpdate": {
       "type": "boolean",
       "description": "Check for updates automatically with Sparkle. Defaults to true when omitted."
+    },
+    "shellTimeoutSeconds": {
+      "type": "number",
+      "minimum": 1,
+      "maximum": 300,
+      "default": 10,
+      "description": "Maximum seconds for a shell action before its process group is terminated and a native notification is sent. Defaults to 10."
     },
     "helpers": {
       "type": "object",
@@ -123,13 +139,11 @@ public let configSchemaJSON: String = #"""
       "type": "object",
       "description": "Mouse settings (wheel mice such as the MX Master; trackpad and Magic Mouse scrolling is never changed).",
       "additionalProperties": false,
-      "required": ["invertScroll"],
       "properties": {
         "invertScroll": {
           "type": "object",
           "description": "Reverse the scroll direction of a mouse wheel, relative to the system's current Natural Scrolling setting.",
           "additionalProperties": false,
-          "required": ["vertical", "horizontal"],
           "properties": {
             "vertical": {
               "type": "boolean",
@@ -158,17 +172,18 @@ public let configSchemaJSON: String = #"""
 
 """#
 
-/// Writes the schema next to the config, atomically and only when the content differs.
-/// Never fatal: failures are logged.
-public func installSchemaFile(dir: URL, log: LogSink) {
-    let target = dir.appendingPathComponent(AppIdentity.schemaFileName)
-    let data = Data(configSchemaJSON.utf8)
-    if let existing = try? Data(contentsOf: target), existing == data { return }
-    do {
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        try data.write(to: target.resolvingSymlinksInPath(), options: .atomic)
-        log(.info, "wrote \(target.path)")
-    } catch {
-        log(.error, "cannot write \(target.path): \(error.localizedDescription)")
+/// Replace only schema metadata; preserve every actual setting and unknown value.
+/// Callers compare disk bytes again before atomically replacing a symlink target.
+public func configDataLinkingSchema(_ data: Data, schemaURL: URL) throws -> Data {
+    guard var object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        throw ConfigError(reason: "config must be a JSON object")
     }
+    if let value = object["$schema"], !(value is String) {
+        throw ConfigError(reason: "$schema: expected a string")
+    }
+    if object["$schema"] as? String == schemaURL.absoluteString { return data }
+    object["$schema"] = schemaURL.absoluteString
+    var result = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+    result.append(0x0A)
+    return result
 }

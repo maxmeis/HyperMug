@@ -27,7 +27,7 @@ let productionConfig = directory.appendingPathComponent("hypermug.json")
 // Copy settings once. Later Dev edits never change the production file.
 if !manager.fileExists(atPath: devConfig.path), manager.fileExists(atPath: productionConfig.path) {
     var config = try JSONSerialization.jsonObject(with: Data(contentsOf: productionConfig)) as! [String: Any]
-    config["$schema"] = "./hypermug-dev.schema.json"
+    config["$schema"] = appURL.appendingPathComponent("Contents/Resources/hypermug-dev.schema.json").absoluteString
     config["launchAtLogin"] = false
     config["autoUpdate"] = false
     try JSONSerialization.data(withJSONObject: config, options: [.prettyPrinted, .sortedKeys])

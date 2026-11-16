@@ -117,6 +117,7 @@ public struct AppConfig: Equatable {
             trackpad: TrackpadConfig(threeFingerSwipe: swipes, fourFingerSwipe: swipes)
         )
     }
+    public var shellTimeoutSeconds: Double
     public var helpers: [String: String]
     public var capsLock: CapsMode
     public var caffeineOnLaunch: Bool
@@ -128,8 +129,9 @@ public struct AppConfig: Equatable {
     public init(capsLock: CapsMode = .meh, caffeineOnLaunch: Bool = true, launchAtLogin: Bool = false,
                 autoUpdate: Bool = true,
                 mouse: MouseConfig = MouseConfig(), trackpad: TrackpadConfig = TrackpadConfig(),
-                helpers: [String: String] = [:]) {
+                helpers: [String: String] = [:], shellTimeoutSeconds: Double = 10) {
         self.helpers = helpers
+        self.shellTimeoutSeconds = shellTimeoutSeconds
         self.capsLock = capsLock
         self.caffeineOnLaunch = caffeineOnLaunch
         self.launchAtLogin = launchAtLogin
@@ -241,7 +243,10 @@ private func decodeAction(_ c: KeyedDecodingContainer<AnyKey>, _ name: String, i
     noteUnknownKeys(a, known: ["shortcut", "shell", "helper"], in: decoder)
     // An empty/blank value counts as absent: zero real kinds = button left unmapped.
     var shell: String?
-    if let v = try a.decodeIfPresent(String.self, forKey: AnyKey("shell")), !isBlank(v) { shell = v }
+    if let v = try a.decodeIfPresent(String.self, forKey: AnyKey("shell")), !isBlank(v) {
+        if v.utf8.contains(0) { throw ConfigError(reason: "\(path).shell: command cannot contain a NUL character") }
+        shell = v
+    }
     var helper: String?
     if let v = try a.decodeIfPresent(String.self, forKey: AnyKey("helper")) {
         if isBlank(v) { throw ConfigError(reason: "\(path).helper: name cannot be empty") }
@@ -380,11 +385,17 @@ extension AppConfig: Codable {
     public init(from decoder: Decoder) throws {
         self.init()
         let c = try decoder.container(keyedBy: AnyKey.self)
-        noteUnknownKeys(c, known: ["$schema", "capsLock", "caffeineOnLaunch", "launchAtLogin", "autoUpdate", "mouse", "trackpad", "helpers"], in: decoder)
+        noteUnknownKeys(c, known: ["$schema", "capsLock", "caffeineOnLaunch", "launchAtLogin", "autoUpdate", "mouse", "trackpad", "helpers", "shellTimeoutSeconds"], in: decoder)
+        if c.contains(AnyKey("$schema")) { _ = try c.decode(String.self, forKey: AnyKey("$schema")) }
+        shellTimeoutSeconds = try c.decodeIfPresent(Double.self, forKey: AnyKey("shellTimeoutSeconds")) ?? 10
+        guard shellTimeoutSeconds.isFinite && (1...300).contains(shellTimeoutSeconds) else {
+            throw ConfigError(reason: "shellTimeoutSeconds must be between 1 and 300 seconds")
+        }
         helpers = try c.decodeIfPresent([String: String].self, forKey: AnyKey("helpers")) ?? [:]
         for (name, command) in helpers {
             if isBlank(name) { throw ConfigError(reason: "helpers: name cannot be empty") }
             if isBlank(command) { throw ConfigError(reason: "helpers.\(name): command cannot be empty") }
+            if command.utf8.contains(0) { throw ConfigError(reason: "helpers.\(name): command cannot contain a NUL character") }
         }
         if let raw = try c.decodeIfPresent(String.self, forKey: AnyKey("capsLock")) {
             guard let mode = CapsMode(rawValue: raw) else {
@@ -413,7 +424,10 @@ extension AppConfig: Codable {
 
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: AnyKey.self)
-        try c.encode("./\(AppIdentity.schemaFileName)", forKey: AnyKey("$schema"))
+        if let schema = encoder.userInfo[schemaReferenceKey] as? String {
+            try c.encode(schema, forKey: AnyKey("$schema"))
+        }
+        try c.encode(shellTimeoutSeconds, forKey: AnyKey("shellTimeoutSeconds"))
         try c.encode(capsLock.rawValue, forKey: AnyKey("capsLock"))
         try c.encode(caffeineOnLaunch, forKey: AnyKey("caffeineOnLaunch"))
         try c.encode(launchAtLogin, forKey: AnyKey("launchAtLogin"))
@@ -431,6 +445,7 @@ private func describe(_ error: Error) -> String {
     func expected(_ type: Any.Type) -> String {
         if type == Bool.self { return "true or false" }
         if type == String.self { return "a string" }
+        if type == Double.self { return "a number" }
         if type == [String: Any].self { return "an object" }
         return "an array"
     }
@@ -469,8 +484,11 @@ public func decodeConfig(_ data: Data) -> Result<DecodedConfig, ConfigError> {
 // MARK: - Encoding
 
 /// Pretty, sorted keys (so `$schema` comes first), no escaped slashes, trailing newline.
-public func encodeConfig(_ config: AppConfig) -> Data {
+private let schemaReferenceKey = CodingUserInfoKey(rawValue: "hypermug.schemaReference")!
+
+public func encodeConfig(_ config: AppConfig, schemaURL: URL? = nil) -> Data {
     let encoder = JSONEncoder()
+    if let schemaURL { encoder.userInfo[schemaReferenceKey] = schemaURL.absoluteString }
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
     // Encoding plain strings/bools cannot fail.
     var data = try! encoder.encode(config)

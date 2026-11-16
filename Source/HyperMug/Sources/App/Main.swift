@@ -3,6 +3,7 @@ import HyperMugCore
 
 /// Composition root: builds every Platform adapter, the Core store/engine, wires their callbacks and
 /// starts them. It contains no decisions of its own.
+@MainActor
 private final class HyperMugRuntime {
     let store: ConfigStore
     let tap: EventTapHost
@@ -13,7 +14,7 @@ private final class HyperMugRuntime {
     let engine: Engine
     let updateChecker: UpdateChecker
     let statusItem: StatusItemController
-    let configErrorAlert: ConfigErrorAlert
+    let notifications: IssueNotifications
     private var syncTimer: Timer?
 
     init() {
@@ -33,7 +34,13 @@ private final class HyperMugRuntime {
         engine = Engine(ports: ports)
         updateChecker = UpdateChecker()
         statusItem = StatusItemController(store: store, engine: engine, updateChecker: updateChecker, trackpad: trackpad)
-        configErrorAlert = ConfigErrorAlert(store: store)
+        notifications = IssueNotifications()
+        notifications.openConfiguration = { [weak store] in
+            guard let store else { return }
+            store.createIfAbsent()
+            EditorLauncher.open(store.url)
+        }
+        ActionRunner.onIssue = { [notifications] in notifications.report($0) }
 
         tap.handler = { [engine] in engine.handleTapEvent($0) }
         caps.onCapsChange = { [engine] down, nowNanos in engine.capsKeyChanged(down: down, nowNanos: nowNanos) }
@@ -41,23 +48,41 @@ private final class HyperMugRuntime {
         thumb.onPress = { [engine] in engine.thumbPressed() }
         ports.onTrackpadSwipe = { [engine] swipe in engine.trackpadSwiped(swipe) }
         engine.onStateChange = { [statusItem] in statusItem.refresh() }
-        store.onChange = { [engine, updateChecker] config in
+        store.onChange = { [weak store, engine, updateChecker, notifications] config in
             engine.apply(config)
             updateChecker.apply(autoUpdate: config.autoUpdate)
+            ActionRunner.configure(timeout: config.shellTimeoutSeconds)
+            if store?.error == nil && Bundle.main.url(forResource: AppIdentity.schemaFileName, withExtension: nil) != nil { notifications.configurationRecovered() }
         }
-        store.onError = { [configErrorAlert] error in configErrorAlert.present(error) }
+        store.onError = { [notifications, statusItem] error in
+            DebugLog.write("Invalid configuration: \(error.reason)")
+            notifications.report(.configuration)
+            statusItem.refresh()
+        }
     }
 
     func start() {
         engine.start()
         thumb.start()
         store.start()   // first onChange performs the first apply
+        if Bundle.main.url(forResource: AppIdentity.schemaFileName, withExtension: nil) == nil {
+            DebugLog.write("Bundled configuration schema is missing; reinstall the app")
+            notifications.report(.configuration)
+        }
 
         // Common modes: the timer also fires while a menu or an alert is open.
-        let timer = Timer(timeInterval: 2, repeats: true) { [engine, store, thumb] _ in
-            engine.sync()
-            store.pollFallback()
-            thumb.tick()
+        let timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in
+            // This timer is registered only on RunLoop.main, including menu tracking modes.
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.engine.sync()
+                self.store.pollFallback()
+                self.thumb.tick()
+                self.statusItem.refresh()
+                if self.store.error == nil && Bundle.main.url(forResource: AppIdentity.schemaFileName, withExtension: nil) != nil {
+                    self.notifications.configurationRecovered()
+                }
+            }
         }
         RunLoop.main.add(timer, forMode: .common)
         syncTimer = timer
@@ -67,6 +92,7 @@ private final class HyperMugRuntime {
         syncTimer?.invalidate()
         syncTimer = nil
         engine.shutdown()
+        ActionRunner.shutdown()
     }
 
     func showDoctor() { statusItem.showDoctor() }

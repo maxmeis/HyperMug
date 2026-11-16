@@ -25,12 +25,10 @@ private final class DoctorModel: ObservableObject {
     @Published var updated = Date()
     private let store: ConfigStore
     private let capture: TrackpadCapture
-    private let settings: SettingsWindowController
 
     init(store: ConfigStore, capture: TrackpadCapture) {
         self.store = store
         self.capture = capture
-        self.settings = SettingsWindowController(url: store.url)
     }
 
     func refresh() {
@@ -58,7 +56,7 @@ private final class DoctorModel: ObservableObject {
             NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.universalaccess?Mouse")!)
         case .config:
             store.createIfAbsent()
-            settings.present()
+            EditorLauncher.open(store.url)
         }
     }
 
@@ -176,7 +174,7 @@ private struct DoctorView: View {
                         Label(copied ? "Copied" : "Copy Report", systemImage: copied ? "checkmark" : "doc.on.doc")
                     }
                     .help("Copy diagnostic checks and recent activity")
-                    Button { model.perform(.config) } label: { Label("Open Settings", systemImage: "gearshape") }
+                    Button { model.perform(.config) } label: { Label("Open Configuration", systemImage: "gearshape") }
                         .help("Open the HyperMug configuration")
                 }
             }
@@ -214,7 +212,7 @@ private struct DoctorView: View {
                             LabeledContent("Horizontal scroll", value: model.config.mouse.invertScroll.horizontal ? "Reversed" : "System direction")
                         }.font(.callout).padding(8)
                     }
-                    Button("Edit Mouse Settings") { model.perform(.config) }
+                    Button("Edit Configuration") { model.perform(.config) }
                 }
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Swipe controls").font(.headline)
@@ -323,7 +321,7 @@ private struct DoctorView: View {
             }
             Spacer(minLength: 8)
             if check.action != .none {
-                Button(check.action == .config ? "Open Settings" : "Open System Settings") { model.perform(check.action) }
+                Button(check.action == .config ? "Open Configuration" : "Open System Settings") { model.perform(check.action) }
                     .controlSize(.small)
             }
         }.padding(12).frame(maxWidth: .infinity, alignment: .leading)

@@ -2,6 +2,9 @@ import Foundation
 
 /// Everything the store needs from the OS, injected so the state machine stays deterministic and testable.
 public struct ConfigStoreEnvironment {
+    public var schemaURL: URL?
+    public var readData: (URL) throws -> Data
+    public var writeData: (Data, URL) throws -> Void
     public var log: LogSink
     /// Runs `work` once on the main thread after `delay` seconds, unless cancelled first.
     public var schedule: (_ delay: TimeInterval, _ work: @escaping () -> Void) -> Cancellable
@@ -11,18 +14,24 @@ public struct ConfigStoreEnvironment {
     public var watch: (_ path: String, _ onEvent: @escaping (_ gone: Bool) -> Void) -> Cancellable?
 
     public init(
+        schemaURL: URL? = nil,
+        readData: @escaping (URL) throws -> Data = { try Data(contentsOf: $0) },
+        writeData: @escaping (Data, URL) throws -> Void = { try $0.write(to: $1, options: .atomic) },
         log: @escaping LogSink,
         schedule: @escaping (_ delay: TimeInterval, _ work: @escaping () -> Void) -> Cancellable,
         watch: @escaping (_ path: String, _ onEvent: @escaping (_ gone: Bool) -> Void) -> Cancellable?
     ) {
+        self.schemaURL = schemaURL
+        self.readData = readData
+        self.writeData = writeData
         self.log = log
         self.schedule = schedule
         self.watch = watch
     }
 }
 
-/// Owns `~/.config/hypermug.json`: first-run creation, atomic writes, live reload.
-/// The app writes the file only to create or initialize it; it never overwrites an existing, non-empty file.
+/// Owns the config: first-run creation, schema-reference migration and live reload.
+/// Existing settings are never replaced; a migration changes only `$schema`.
 /// Main thread only.
 public final class ConfigStore {
     public let url: URL
@@ -75,7 +84,7 @@ public final class ConfigStore {
 
     // MARK: Public
 
-    /// mkdir, install the schema, write the defaults if the file is absent, arm watchers, load,
+    /// mkdir, write defaults if absent, link the bundled schema, arm watchers, load,
     /// emit `onChange` once.
     public func start() {
         guard !started else { return }
@@ -85,7 +94,6 @@ public final class ConfigStore {
         } catch {
             env.log(.error, "cannot create \(directoryURL.path): \(error.localizedDescription)")
         }
-        installSchemaFile(dir: directoryURL, log: env.log)   // atomic, only when content differs; failures are logged, never fatal
         if case .absent = readDisk() {
             if write(AppConfig.newFileDefaults) { config = .newFileDefaults }
         }
@@ -114,7 +122,7 @@ public final class ConfigStore {
 
     private func readDisk() -> DiskState {
         do {
-            return .data(try Data(contentsOf: url))
+            return .data(try env.readData(url))
         } catch let e as CocoaError where e.code == .fileReadNoSuchFile || e.code == .fileNoSuchFile {
             return .absent
         } catch {
@@ -133,11 +141,11 @@ public final class ConfigStore {
     /// Atomic replace of the symlink target, so a dotfiles symlink stays a symlink.
     @discardableResult
     private func write(_ newConfig: AppConfig) -> Bool {
-        let data = encodeConfig(newConfig)
+        let data = encodeConfig(newConfig, schemaURL: env.schemaURL)
         let target = url.resolvingSymlinksInPath()
         do {
             try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try data.write(to: target, options: .atomic)
+            try env.writeData(data, target)
         } catch {
             env.log(.error, "cannot write \(target.path): \(error.localizedDescription)")
             return false
@@ -161,8 +169,8 @@ public final class ConfigStore {
     private func noteInvalid(_ data: Data?, _ e: ConfigError) {
         lastBytes = data
         error = e
-        env.log(.error, "invalid config: \(e.reason)")
         if e.reason != lastAlertedReason {
+            env.log(.error, "invalid config: \(e.reason)")
             lastAlertedReason = e.reason
             onError?(e)
         }
@@ -182,15 +190,15 @@ public final class ConfigStore {
         case .unreadable(let reason):
             noteInvalid(nil, ConfigError(reason: reason))
         case .data(let data):
-            if data != lastBytes {
+            if data != lastBytes || error != nil {
                 if isBlankConfigData(data) {
                     initializeEmptyFile(data, emitChange: emitChange)
                 } else {
-                    switch decodeConfig(data) {
+                    switch validateConfigDocument(data) {
                     case .success(let decoded):
-                        noteValid(data)
+                        guard let linked = linkSchema(data) else { break }
+                        noteValid(linked)
                         unknownKeys = decoded.unknownKeys
-                        for key in decoded.unknownKeys { env.log(.info, "unknown config key \"\(key)\" ignored") }
                         adopt(decoded.config, emitChange: emitChange)
                     case .failure(let e):
                         noteInvalid(data, e)
@@ -199,6 +207,25 @@ public final class ConfigStore {
             }
         }
         ensureFileWatcher()
+    }
+
+    /// Metadata migration is the sole update to an existing nonempty file.
+    /// Invalid JSON is left untouched so the normal decoder can report it.
+    private func linkSchema(_ data: Data) -> Data? {
+        guard let schemaURL = env.schemaURL,
+              let linked = try? configDataLinkingSchema(data, schemaURL: schemaURL), linked != data else { return data }
+        guard case .data(let current) = readDisk(), current == data else {
+            scheduleReload()
+            return nil
+        }
+        do {
+            try env.writeData(linked, url.resolvingSymlinksInPath())
+            lastStamp = stamp()
+            return linked
+        } catch {
+            noteInvalid(data, ConfigError(reason: "Cannot update the bundled schema reference: \(error.localizedDescription)"))
+            return nil
+        }
     }
 
     private func adopt(_ loaded: AppConfig, emitChange: Bool) {

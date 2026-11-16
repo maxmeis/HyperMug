@@ -4,11 +4,11 @@ HyperMug is a macOS menu bar utility that combines a Hyperkey, Caffeine, trackpa
 
 ## Install
 
-Stable currently has no compiled app or cask. Canary has signed, notarized app releases. After automatic cask publication completes, install Canary with:
+Stable currently has no compiled app or cask. Canary has signed, notarized app releases. Install Canary with:
 
 ```sh
 brew tap maxmeis/hypermug https://github.com/maxmeis/hypermug
-brew install --cask maxmeis/hypermug/hypermug@canary
+brew install maxmeis/hypermug/hypermug@canary
 ```
 
 Stable Homebrew installation requires a future compiled Stable release and successful automatic cask publication. See [Installation](docs/installation.md) for channel choice, updates, permissions, and first-run setup. For a source build, see [Development](docs/development.md).
@@ -20,13 +20,13 @@ Stable Homebrew installation requires a future compiled Stable release and succe
 - **Trackpad swipes:** bind three- and four-finger swipes to shortcuts, shell commands, or shared named helpers.
 - **Mouse remapping:** map back/forward buttons and the MX Master 3S thumb button to the same actions, and invert wheel scrolling.
 - **Secure Input status:** see when macOS blocks keyboard monitoring and which app holds Secure Input.
-- **Native Settings:** use **Settings…** (⌘,) for General, Mouse, Trackpad, and shared Helpers; advanced JSON edits in `~/.config/hypermug.json` reload while the app runs.
+- **File-based settings:** **Settings…** (⌘,) opens your JSON configuration; saved edits reload automatically, with native notifications for invalid settings or failed shell actions.
 
 HyperMug requires macOS Accessibility and Input Monitoring permissions for its input features. The app explains each permission in **Doctor… → Permissions**. See [Permissions and troubleshooting](docs/troubleshooting.md).
 
 ## Configuration
 
-Settings are stored in `~/.config/hypermug.json`. HyperMug creates a JSON Schema alongside it and watches for edits. See [Configuration](docs/configuration.md) for the native editor, defaults, actions, and examples.
+Settings are stored in `~/.config/hypermug.json`. The file links to the JSON Schema inside the signed app bundle. See [Configuration](docs/configuration.md) for defaults, shared helpers, validation and the default 10-second shell deadline.
 
 ## Development and contributions
 

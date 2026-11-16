@@ -9,7 +9,7 @@ final class StatusItemController: NSObject {
     private let statusItem: NSStatusItem
     private let menu = NSMenu()
     private var stayAwakeItem: NSMenuItem!
-    private lazy var settingsWindow = SettingsWindowController(url: store.url)
+    private var configErrorItem: NSMenuItem!
     private var tracker = SecureInputTracker()
     private var secureItem: NSMenuItem?
     private var secureSeparator: NSMenuItem?
@@ -45,6 +45,11 @@ final class StatusItemController: NSObject {
         updateChecker.configureMenuItem(updates)
 
         menu.autoenablesItems = false
+        let errorItem = NSMenuItem(title: "Configuration Error…", action: #selector(openSettings), keyEquivalent: "")
+        errorItem.target = self
+        errorItem.isHidden = true
+        configErrorItem = errorItem
+        menu.addItem(errorItem)
         menu.addItem(stayAwake)
         menu.addItem(.separator())
         menu.addItem(settings)
@@ -66,6 +71,7 @@ final class StatusItemController: NSObject {
     }
 
     func refresh() {
+        configErrorItem.isHidden = store.error == nil
         stayAwakeItem.state = engine.caffeineOn ? .on : .off
         let icon = statusIcon(caffeineOn: engine.caffeineOn, secureHolderName: tracker.info?.holder.name)
         let image = NSImage(systemSymbolName: icon.symbol, accessibilityDescription: icon.label)
@@ -85,7 +91,7 @@ final class StatusItemController: NSObject {
         case .showMenu:
             // Re-read Secure Input so the first item is current when the menu opens.
             pollSecureInput()
-            // A menu attached only for this click keeps left-click free for the Caffeine toggle.
+            // Attach the same native menu for left, right and Control clicks.
             statusItem.menu = menu
             statusItem.button?.performClick(nil)
             statusItem.menu = nil
@@ -130,7 +136,7 @@ final class StatusItemController: NSObject {
 
     @objc private func openSettings() {
         store.createIfAbsent()
-        settingsWindow.present()
+        EditorLauncher.open(store.url)
     }
 
     @objc func showDoctor() { doctor.show() }

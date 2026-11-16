@@ -2,16 +2,16 @@
 
 ## Homebrew
 
-Stable currently has no compiled app or `Casks/hypermug.rb`; use [Development](development.md) to build it locally. Canary has signed, notarized app releases. After automatic cask publication completes, install Canary with:
+Stable currently has no compiled app or `Casks/hypermug.rb`; use [Development](development.md) to build it locally. Canary has signed, notarized app releases. Install Canary with:
 
 ```sh
 brew tap maxmeis/hypermug https://github.com/maxmeis/hypermug
-brew install --cask maxmeis/hypermug/hypermug@canary
+brew install maxmeis/hypermug/hypermug@canary
 ```
 
-The fully qualified `brew install --cask maxmeis/hypermug/hypermug@canary` command trusts only this cask. To inspect or fetch it before installing on Homebrew versions with [tap trust](https://docs.brew.sh/Tap-Trust), first run `brew trust --cask maxmeis/hypermug/hypermug@canary`; `brew info` and `brew fetch` do not grant that trust automatically. Trusting the whole tap is unnecessary.
+The fully qualified `brew install maxmeis/hypermug/hypermug@canary` command detects and trusts only this cask. The optional `--cask` flag gives the same app installation; this app belongs in the root `Casks/` directory, not `Formula/`. To inspect or fetch it before installing on Homebrew versions with [tap trust](https://docs.brew.sh/Tap-Trust), first run `brew trust --cask maxmeis/hypermug/hypermug@canary`; `brew info` and `brew fetch` do not grant that trust automatically. Trusting the whole tap is unnecessary.
 
-Stable Homebrew installation requires a future compiled Stable release and successful automatic cask publication. The channels use separate signed Sparkle feeds and keys. Stable installations follow Stable; Canary installations follow Canary. They share the same bundle identity and config file, so uninstall the current channel before installing the other. Existing `hypermug@nightly` users can migrate manually by uninstalling the old cask, then installing Canary; the historical beta feed remains separate.
+Stable Homebrew installation requires a future compiled Stable release and successful automatic cask publication. The channels use separate signed Sparkle feeds and keys. Stable installations follow Stable; Canary installations follow Canary. They share the same bundle identity and config file, so uninstall the current channel before installing the other. Only Stable and Canary are offered. Users of the retired Nightly/beta packages can uninstall their old cask, then install Canary; historical releases are preserved.
 
 Homebrew installs the signed application. Set `"autoUpdate": false` in `~/.config/hypermug.json` to disable scheduled checks; **Check for Updates…** remains available in the menu. Homebrew casks declare `auto_updates true`, so ordinary upgrades leave updates to Sparkle. Once a Stable cask is available, explicitly upgrade it with Homebrew using:
 
@@ -41,8 +41,8 @@ Quit Hyperkey or other Caps Lock remappers while HyperMug is using Meh/Hyper mod
 HyperMug does not import MyMug settings. To move manually:
 
 1. Disable MyMug's login item, then quit MyMug.
-2. Move `~/.config/mymug.json` to `~/.config/hypermug.json` and change `$schema` to `./hypermug.schema.json`.
-3. Review the file for settings you no longer want. HyperMug ignores unknown keys.
+2. Move `~/.config/mymug.json` to `~/.config/hypermug.json`; remove an obsolete `$schema` reference.
+3. Review the file for settings you no longer want. Remove unknown keys and omit unmapped actions; invalid settings are reported while the last valid configuration remains active.
 4. Launch HyperMug and grant Accessibility and Input Monitoring again; macOS permission grants belong to the app identity and signature.
 
-The current HyperMug app creates `hypermug.schema.json` itself. Do not run MyMug and HyperMug together while they could both handle the same input.
+HyperMug links `$schema` to its signed app resource on a valid load; it does not create a schema beside your configuration. Do not run MyMug and HyperMug together while they could both handle the same input.
