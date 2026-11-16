@@ -174,7 +174,7 @@ private struct DoctorView: View {
                         Label(copied ? "Copied" : "Copy Report", systemImage: copied ? "checkmark" : "doc.on.doc")
                     }
                     .help("Copy diagnostic checks and recent activity")
-                    Button { model.perform(.config) } label: { Label("Open Configuration", systemImage: "gearshape") }
+                    Button { model.perform(.config) } label: { Label("Open Configuration", systemImage: "doc.text") }
                         .help("Open the HyperMug configuration")
                 }
             }

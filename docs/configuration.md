@@ -1,6 +1,6 @@
 # Configuration
 
-HyperMug settings are edited only in `~/.config/hypermug.json`. **Settings…** (⌘,) and **Open Config File…** open it in your configured GUI editor or the default JSON app. Save in that editor to apply changes; atomic-save edits are supported. Doctor diagnoses settings and permissions but does not provide a second settings editor. The menu’s **Stay Awake** checkmark remains a session-only control.
+HyperMug settings are edited only in `~/.config/hypermug.json`. **Settings…** (⌘,) opens it in your configured GUI editor or the default JSON app. Save in that editor to apply changes; atomic-save edits are supported. Doctor diagnoses settings and permissions but does not provide a second settings editor. The menu’s **Stay Awake** checkmark remains a session-only control.
 
 ## Example
 
@@ -102,4 +102,4 @@ A command that cannot start, exits nonzero, or exceeds `shellTimeoutSeconds` tri
 
 Notifications ask for macOS permission when the first problem occurs. Denial is respected: errors still appear in Doctor activity/logs, and invalid configuration remains visible in the menu. Repeated notifications are limited to one per category every 30 seconds; configuration recovery resets that category. Success is silent. Native notification text and shell activity logs contain status and an action ID, never command contents, environment values or shell output. Configuration validation logs can include setting names; review them before sharing.
 
-**Open Config File…** uses `$EDITOR` when it identifies a GUI editor, otherwise the default `.json` app. It never launches an interactive terminal editor inside the menu-bar app. There is no separate Settings window or Save/Cancel workflow.
+**Settings…** uses `$EDITOR` when it identifies a GUI editor, otherwise the default `.json` app. It never launches an interactive terminal editor inside the menu-bar app. There is no separate Settings window or Save/Cancel workflow.
