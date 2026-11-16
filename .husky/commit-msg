@@ -1,0 +1,4 @@
+. "$(dirname "$0")/lib.sh"
+run_vendored_hook commit-msg "$@"
+
+commitlint --edit "$1"

@@ -3,13 +3,13 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleIdentifier</key>
-	<string>com.max.mymug</string>
+	<string>com.maxmeis.hypermug</string>
 	<key>CFBundleName</key>
-	<string>MyMug</string>
+	<string>HyperMug</string>
 	<key>CFBundleDisplayName</key>
-	<string>MyMug</string>
+	<string>HyperMug</string>
 	<key>CFBundleExecutable</key>
-	<string>MyMug</string>
+	<string>HyperMug</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

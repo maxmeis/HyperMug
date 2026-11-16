@@ -1,0 +1,61 @@
+name: CI
+
+# The git hooks (.husky/) can be skipped with --no-verify. This workflow cannot: it re-runs the same
+# checks plus the commit message lint.
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # commitlint needs the full range, not just the tip
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: package.json # reads the `volta.node` pin
+          cache: npm
+
+      - run: npm ci
+
+      - name: Layer rules
+        run: ./scripts/check-layers.sh
+
+      - name: Core tests and 100% coverage gate
+        run: ./scripts/test.sh
+
+      - name: Compile check (Core module, Platform + App type-check)
+        run: ./scripts/compile-check.sh
+
+      - name: Commit messages (pull request)
+        if: github.event_name == 'pull_request'
+        run: npx commitlint --from "${{ github.event.pull_request.base.sha }}" --to "${{ github.event.pull_request.head.sha }}" --verbose
+
+      - name: Commit messages (push)
+        if: github.event_name == 'push'
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          from="$BEFORE"
+          # New branch (all-zero sha) or a force-push over a commit this clone does not have:
+          # lint everything since the default branch instead.
+          if echo "$from" | grep -qE '^0+$' || ! git cat-file -e "${from}^{commit}" 2>/dev/null; then
+            from="$(git merge-base "origin/$DEFAULT_BRANCH" "$AFTER" 2>/dev/null || true)"
+          fi
+          if [ -z "$from" ] || [ "$(git rev-list --count "$from..$AFTER")" = 0 ]; then
+            echo "No new commits to lint."
+          else
+            npx commitlint --from "$from" --to "$AFTER" --verbose
+          fi
