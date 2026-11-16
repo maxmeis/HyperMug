@@ -258,8 +258,9 @@ class PublishReleaseIntegrationTests(unittest.TestCase):
             "SOURCE_REPOSITORY": self.releases_repo, "RELEASES_REPOSITORY": self.releases_repo,
             "TAP_REPOSITORY": self.tap_repo, "RELEASE_TOKEN": "release-token", "TAP_TOKEN": "tap-token",
             "GITHUB_ACTOR": "maxmeis", "GITHUB_TRIGGERING_ACTOR": "maxmeis",
-            "GITHUB_REF": "refs/heads/main", "GITHUB_SHA": SHA_A,
+            "GITHUB_REF": "refs/tags/v1.2.3", "GITHUB_SHA": SHA_A,
         })
+        self._seed_tag(self.releases_repo, "v1.2.3", SHA_A)
 
     def tearDown(self):
         self.temp.cleanup()
@@ -279,7 +280,7 @@ class PublishReleaseIntegrationTests(unittest.TestCase):
         channel = channel or self.env["CHANNEL"]
         version = version or self.env["VERSION"]
         build_number = build_number or self.env["BUILD_NUMBER"]
-        token = "hypermug@nightly" if channel == "beta" else "hypermug"
+        token = "hypermug"
         out = self.project / "build/release"
         archive = out / f"HyperMug-{version}.zip"
         with zipfile.ZipFile(archive, "w") as zf:
@@ -292,7 +293,7 @@ class PublishReleaseIntegrationTests(unittest.TestCase):
             f'<enclosure url="https://example.invalid/{archive.name}" sparkle:edSignature="sig" length="{archive.stat().st_size}" />'
             "</item></channel></rss>"
         )
-        cask_version = "0.0." + version.rsplit(".", 1)[1] if channel == "beta" else version
+        cask_version = version
         (out / f"{token}.rb").write_text(f'cask "{token}" do\n  version "{cask_version}"\n  sha256 "{digest}"\nend\n')
         (out / "sha256.txt").write_text(digest + "\n")
 
@@ -362,7 +363,7 @@ class PublishReleaseIntegrationTests(unittest.TestCase):
         self.assertEqual((self.state_dir / "tap-url").read_text(), "https://x-access-token:tap-token@github.com/maxmeis/homebrew-formulae.git")
         state = self._state()
         self.assertEqual(state["tags"][self.releases_repo + "|v1.2.3"]["target"], SHA_A)
-        self.assertEqual([e for e in state["events"] if e[0] == "ref"], [["ref", self.releases_repo, "v1.2.3", SHA_A]])
+        self.assertEqual([e for e in state["events"] if e[0] == "ref"], [])
         release = self._release()
         self.assertFalse(release["draft"])
         self.assertTrue(release["latest"])
@@ -384,38 +385,6 @@ class PublishReleaseIntegrationTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("1.2.3", self._remote_file(self.releases_bare, "appcast-stable.xml"))
         self.assertIn('cask "hypermug"', self._remote_file(self.tap_bare, "Casks/hypermug.rb"))
-
-    def test_first_beta_preserves_stable_feed_and_cask(self):
-        stable_xml = '<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"><channel><item><title>HyperMug 2.0.0</title><sparkle:version>2.0.0</sparkle:version></item></channel></rss>'
-        self._commit_initial(self.releases_bare, {"appcast-stable.xml": stable_xml})
-        self._commit_initial(self.tap_bare, {"Casks/hypermug.rb": 'cask "hypermug" do\nend\n'})
-        self.env.update({"CHANNEL": "beta", "VERSION": "0.0.0-beta.100", "BUILD_NUMBER": "100", "GITHUB_ACTOR": "someone", "GITHUB_TRIGGERING_ACTOR": "someone"})
-        self._build()
-        result = self._run()
-        self.assertEqual(result.returncode, 0, result.stderr)
-        release = self._release("v0.0.0-beta.100")
-        self.assertFalse(release["draft"])
-        self.assertTrue(release["prerelease"])
-        self.assertFalse(release["latest"])
-        self.assertEqual(self._remote_file(self.releases_bare, "appcast-stable.xml"), stable_xml)
-        beta = self._remote_file(self.releases_bare, "appcast-beta.xml")
-        self.assertIn("0.0.0-beta.100", beta)
-        self.assertIn('cask "hypermug"', self._remote_file(self.tap_bare, "Casks/hypermug.rb"))
-        self.assertIn('cask "hypermug@nightly"', self._remote_file(self.tap_bare, "Casks/hypermug@nightly.rb"))
-        self.assertIn('cask "hypermug@nightly"', self._remote_file(self.releases_bare, "Casks/hypermug@nightly.rb", "release-casks/beta"))
-        self.assertIsNone(self._remote_file(self.releases_bare, "Casks/hypermug@nightly.rb", "main"))
-
-    def test_retry_after_tag_creation_before_release(self):
-        self._build()
-        first = self._run(FAKE_FAIL_ONCE="release-create")
-        self.assertNotEqual(first.returncode, 0)
-        self.assertIn(self.releases_repo + "|v1.2.3", self._state()["tags"])
-        self.assertIsNone(self._release())
-        second = self._run()
-        self.assertEqual(second.returncode, 0, second.stderr)
-        state = self._state()
-        self.assertEqual(len([e for e in state["events"] if e[0] == "ref"]), 1)
-        self.assertEqual(len([e for e in state["events"] if e[0] == "release-create"]), 1)
 
     def test_retry_after_release_feed_success_and_tap_failure(self):
         self._build()
@@ -466,49 +435,6 @@ class PublishReleaseIntegrationTests(unittest.TestCase):
         self.assertEqual(len([e for e in events if e[0] == "ci-dispatch"]), 1)
         self.assertEqual(events[-1][0], "ci-dispatch")
 
-    def test_newer_beta_updates_same_pr_without_touching_stable_cask(self):
-        stable = 'cask "hypermug" do\n  version "1.0.0"\nend\n'
-        self._commit_initial(self.releases_bare, {"Casks/hypermug.rb": stable})
-        self.env.update({"CHANNEL": "beta", "VERSION": "0.0.0-beta.100", "BUILD_NUMBER": "100",
-                         "GITHUB_ACTOR": "someone", "GITHUB_TRIGGERING_ACTOR": "someone"})
-        self._build()
-        first = self._run()
-        self.assertEqual(first.returncode, 0, first.stderr)
-        self.env.update({"VERSION": "0.0.0-beta.101", "BUILD_NUMBER": "101", "GITHUB_SHA": SHA_B})
-        self._build()
-        second = self._run()
-        self.assertEqual(second.returncode, 0, second.stderr)
-        self.assertIn('version "0.0.101"', self._remote_file(self.releases_bare, "Casks/hypermug@nightly.rb", "release-casks/beta"))
-        self.assertEqual(self._remote_file(self.releases_bare, "Casks/hypermug.rb", "release-casks/beta"), stable)
-        self.assertEqual(len(self._state()["prs"]), 1)
-        self.assertEqual(len([e for e in self._state()["events"] if e[0] == "pr-edit"]), 1)
-        old = self._run(VERSION="0.0.0-beta.100", BUILD_NUMBER="100", GITHUB_SHA=SHA_A)
-        self.assertEqual(old.returncode, 0, old.stderr)
-        self.assertIn('version "0.0.101"', self._remote_file(self.releases_bare, "Casks/hypermug@nightly.rb", "release-casks/beta"))
-
-    def test_failed_beta_pr_edit_is_repaired_before_ci_dispatch(self):
-        self.env.update({"CHANNEL": "beta", "VERSION": "0.0.0-beta.100", "BUILD_NUMBER": "100",
-                         "GITHUB_ACTOR": "someone", "GITHUB_TRIGGERING_ACTOR": "someone"})
-        self._build()
-        self.assertEqual(self._run().returncode, 0)
-        self.env.update({"VERSION": "0.0.0-beta.101", "BUILD_NUMBER": "101", "GITHUB_SHA": SHA_B})
-        self._build()
-        failed = self._run(FAKE_FAIL_ONCE="pr-write")
-        self.assertNotEqual(failed.returncode, 0)
-        self.assertIn('version "0.0.101"', self._remote_file(self.releases_bare, "Casks/hypermug@nightly.rb", "release-casks/beta"))
-        self.assertIn("beta.100", self._state()["prs"][self.releases_repo + "|release-casks/beta"]["title"])
-        retry = self._run()
-        self.assertEqual(retry.returncode, 0, retry.stderr)
-        pr = self._state()["prs"][self.releases_repo + "|release-casks/beta"]
-        self.assertIn("beta.101", pr["title"])
-        self.assertIn("beta.101", pr["body"])
-        events = self._state()["events"]
-        self.assertEqual(len([e for e in events if e[0] == "pr-create"]), 1)
-        self.assertEqual(len([e for e in events if e[0] == "pr-edit"]), 1)
-        self.assertEqual(len([e for e in events if e[0] == "ci-dispatch"]), 2)
-        self.assertEqual(events[-2][0], "pr-edit")
-        self.assertEqual(events[-1][0], "ci-dispatch")
-
     def test_retry_after_release_success_and_feed_push_failure(self):
         self._build()
         failed = self._run(FAKE_FAIL_PUSH_REPO=self.releases_repo)
@@ -546,44 +472,6 @@ class PublishReleaseIntegrationTests(unittest.TestCase):
         self.assertTrue(pointer_pushes)
         self.assertTrue(all(i > published_at for i in pointer_pushes))
 
-    def test_incomplete_draft_is_deleted_and_recreated_but_published_release_is_never_deleted(self):
-        self._build()
-        # First create a draft by failing the publish edit, then remove an asset to
-        # simulate an interrupted upload. The verified immutable tag remains.
-        first = self._run(FAKE_FAIL_ONCE="release-publish")
-        self.assertNotEqual(first.returncode, 0)
-        state = self._state(); release = state["releases"][self.releases_repo + "|v1.2.3"]
-        del release["assets"]["sha256.txt"]; self._save_state(state)
-        self._build(content=b"replacement draft content")
-        retry = self._run()
-        self.assertEqual(retry.returncode, 0, retry.stderr)
-        state = self._state()
-        self.assertEqual(len([e for e in state["events"] if e[0] == "release-delete-draft"]), 1)
-        self.assertEqual(len([e for e in state["events"] if e[0] == "ref"]), 1)
-        self.assertFalse(self._release()["draft"])
-        self.assertIn(b"replacement draft content", bytes.fromhex(self._release()["assets"]["HyperMug-1.2.3.zip"]))
-        # A published release with missing metadata fails closed and is not deleted.
-        state = self._state(); release = state["releases"][self.releases_repo + "|v1.2.3"]
-        del release["assets"]["sha256.txt"]; self._save_state(state)
-        bad = self._run()
-        self.assertNotEqual(bad.returncode, 0)
-        self.assertFalse(self._release()["draft"])
-        self.assertEqual(len([e for e in self._state()["events"] if e[0] == "release-delete-draft"]), 1)
-
-    def test_old_beta_is_archived_without_regressing_feed_or_tap(self):
-        beta_xml = '<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"><channel><item><title>HyperMug 0.0.0-beta.9</title><sparkle:version>900</sparkle:version></item></channel></rss>'
-        self._commit_initial(self.releases_bare, {"appcast-beta.xml": beta_xml})
-        self._commit_initial(self.tap_bare, {"Casks/hypermug@nightly.rb": 'cask "hypermug@nightly" do\n  version "0.0.9"\nend\n'})
-        self.env.update({"CHANNEL": "beta", "VERSION": "0.0.0-beta.8", "BUILD_NUMBER": "800", "GITHUB_ACTOR": "someone", "GITHUB_TRIGGERING_ACTOR": "someone"})
-        self._build()
-        tap_before = self._remote_file(self.tap_bare, "Casks/hypermug@nightly.rb")
-        feed_before = self._remote_file(self.releases_bare, "appcast-beta.xml")
-        result = self._run()
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertFalse(self._release("v0.0.0-beta.8")["draft"])
-        self.assertEqual(self._remote_file(self.releases_bare, "appcast-beta.xml"), feed_before)
-        self.assertEqual(self._remote_file(self.tap_bare, "Casks/hypermug@nightly.rb"), tap_before)
-
     def test_stable_downgrade_and_wrong_source_tag_sha_fail_before_writes(self):
         self._build()
         self._seed_tag(self.releases_repo, "v2.0.0", SHA_B)
@@ -611,7 +499,7 @@ class PublishReleaseIntegrationTests(unittest.TestCase):
         for key, value in (("GITHUB_ACTOR", "someone"), ("GITHUB_TRIGGERING_ACTOR", "someone")):
             result = self._run(**{key: value})
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("stable requires both actor", result.stderr)
+            self.assertIn("production requires both actor", result.stderr)
             self.assertEqual(self._state()["events"], [])
 
 

@@ -13,17 +13,14 @@ SHA = re.compile(r"^[0-9a-f]{40}$")
 
 
 def validate(channel, version, actor, triggering_actor, ref, sha, source_repo, releases_repo, tap_repo):
-    if channel not in ("beta", "stable") or not REPO.fullmatch(source_repo) or not REPO.fullmatch(releases_repo) or not REPO.fullmatch(tap_repo):
-        raise ValueError("invalid channel or repository")
-    if ref != "refs/heads/main" or not SHA.fullmatch(sha):
-        raise ValueError("release requires main and a full commit SHA")
-    if channel == "stable":
-        if actor != "maxmeis" or triggering_actor != "maxmeis":
-            raise ValueError("stable requires both actor and triggering_actor maxmeis")
-        if not SEMVER.fullmatch(version):
-            raise ValueError("stable version must be X.Y.Z")
-    elif not re.fullmatch(r"0\.0\.0-beta\.[1-9][0-9]*", version):
-        raise ValueError("beta version must be 0.0.0-beta.N")
+    if channel != "stable" or not all(REPO.fullmatch(r) for r in (source_repo, releases_repo, tap_repo)):
+        raise ValueError("production channel and valid repositories required")
+    if ref != f"refs/tags/v{version}" or not SHA.fullmatch(sha):
+        raise ValueError("release requires a version tag and full commit SHA")
+    if actor != "maxmeis" or triggering_actor != "maxmeis":
+        raise ValueError("production requires both actor and triggering_actor maxmeis")
+    if not SEMVER.fullmatch(version):
+        raise ValueError("version must be X.Y.Z")
 
 
 def asset_url(repo, tag, name):
@@ -33,7 +30,7 @@ def asset_url(repo, tag, name):
 def appcast(channel, version, build_number, url, signature, size):
     if not re.fullmatch(r"[0-9]+(?:\.[0-9]+){0,2}", str(build_number)) or not re.fullmatch(r"[A-Za-z0-9+/=]+", signature):
         raise ValueError("invalid build number or EdDSA signature")
-    short_version = "0.0." + version.rsplit(".", 1)[1] if channel == "beta" else version
+    short_version = version
     e = lambda s: escape(str(s), {'"': '&quot;', "'": '&apos;'})
     return f'''<?xml version="1.0" encoding="utf-8"?>
 <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
@@ -49,9 +46,8 @@ def appcast(channel, version, build_number, url, signature, size):
 def cask(channel, version, url, digest):
     if not re.fullmatch(r"[0-9a-f]{64}", digest):
         raise ValueError("invalid SHA256")
-    token = "hypermug@nightly" if channel == "beta" else "hypermug"
-    cask_version = "0.0." + version.rsplit(".", 1)[1] if channel == "beta" else version
-    other = "hypermug" if channel == "beta" else "hypermug@nightly"
+    token = "hypermug"
+    cask_version = version
     return f'''cask "{token}" do
   version "{cask_version}"
   sha256 "{digest}"
@@ -62,13 +58,12 @@ def cask(channel, version, url, digest):
   homepage "https://github.com/maxmeis/HyperMug"
 
   livecheck do
-    skip "GitHub release assets are published by channel automation"
+    skip "GitHub release assets are published by production automation"
   end
 
   auto_updates true
   depends_on macos: ">= :sonoma"
   depends_on arch: :arm64
-  conflicts_with cask: "{other}"
   app "HyperMug.app"
 end
 '''
@@ -92,15 +87,6 @@ def stable_order(candidate, existing, retry=False):
 def publication_decision(channel, version, build_number, current_version, current_build):
     """Return advance, resume, or archive for a published channel pointer."""
     if not current_version:
-        return "advance"
-    if channel == "beta":
-        incoming, old = int(build_number), int(current_build)
-        if incoming < old:
-            return "archive"
-        if incoming == old:
-            if version != current_version:
-                raise ValueError("same build number has different version")
-            return "resume"
         return "advance"
     new = tuple(map(int, version.split(".")))
     old = tuple(map(int, current_version.split(".")))
@@ -131,7 +117,7 @@ def main():
     out = Path(a.output)
     out.mkdir(parents=True, exist_ok=True)
     (out / f"appcast-{a.channel}.xml").write_text(appcast(a.channel, a.version, a.build_number, url, a.signature, archive.stat().st_size))
-    token = "hypermug@nightly" if a.channel == "beta" else "hypermug"
+    token = "hypermug"
     (out / f"{token}.rb").write_text(cask(a.channel, a.version, url, digest))
     (out / "sha256.txt").write_text(digest + "\n")
 

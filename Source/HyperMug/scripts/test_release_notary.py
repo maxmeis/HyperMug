@@ -156,10 +156,10 @@ class ReleaseNotaryAuthTests(unittest.TestCase):
         env = os.environ.copy()
         env.update({
             "PATH": f"{self.bin_dir}:{env['PATH']}", "SECURITY_CALLS": str(calls),
-            "CHANNEL": "beta", "VERSION": "0.0.0-beta.1", "BUILD_NUMBER": "1",
+            "CHANNEL": "stable", "VERSION": "1.2.3", "BUILD_NUMBER": "1.2.3",
             "SOURCE_REPOSITORY": "maxmeis/HyperMug", "RELEASES_REPOSITORY": "maxmeis/HyperMug",
             "TAP_REPOSITORY": "maxmeis/homebrew-formulae", "GITHUB_ACTOR": "maxmeis",
-            "GITHUB_TRIGGERING_ACTOR": "maxmeis", "GITHUB_REF": "refs/heads/main",
+            "GITHUB_TRIGGERING_ACTOR": "maxmeis", "GITHUB_REF": "refs/tags/v1.2.3",
             "GITHUB_SHA": "a" * 40, "DEVELOPER_ID_P12_BASE64": "ZmFrZQ==",
             "DEVELOPER_ID_P12_PASSWORD": "test-only", "SIGN_ID": "test-only",
             "SPARKLE_EDDSA_PRIVATE_KEY": "test-only", "RUNNER_TEMP": str(self.work),

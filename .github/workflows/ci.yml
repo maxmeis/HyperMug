@@ -30,18 +30,18 @@ jobs:
       - run: npm ci
 
       - name: Layer rules
-        run: ./scripts/check-layers.sh
+        run: ./Source/HyperMug/scripts/check-layers.sh
 
       - name: Release metadata and workflow checks
         run: |
-          python3 -m unittest discover -s scripts -p 'test_release*.py'
-          bash -n scripts/release.sh scripts/notary_auth.sh scripts/publish_release.sh scripts/sparkle.sh
+          python3 -m unittest discover -s Source/HyperMug/scripts -p 'test_release*.py'
+          bash -n Source/HyperMug/scripts/release.sh Source/HyperMug/scripts/notary_auth.sh Source/HyperMug/scripts/publish_release.sh Source/HyperMug/scripts/sparkle.sh
 
       - name: Core tests and 100% coverage gate
-        run: ./scripts/test.sh
+        run: ./Source/HyperMug/scripts/test.sh
 
       - name: Compile check (Core module, Platform + App type-check)
-        run: ./scripts/compile-check.sh
+        run: ./Source/HyperMug/scripts/compile-check.sh
 
       - name: Commit messages (pull request)
         if: github.event_name == 'pull_request'

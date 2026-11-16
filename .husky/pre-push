@@ -2,6 +2,6 @@
 # Vendored hook first (gitleaks): it reads the ref updates from stdin.
 run_vendored_hook pre-push "$@"
 
-./scripts/check-layers.sh
-./scripts/test.sh
-./scripts/compile-check.sh
+./Source/HyperMug/scripts/check-layers.sh
+./Source/HyperMug/scripts/test.sh
+./Source/HyperMug/scripts/compile-check.sh

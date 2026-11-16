@@ -36,9 +36,9 @@ security list-keychains -d user -s "$keychain" "${original_keychains[@]}"
 search_list_changed=1
 security find-identity -v -p codesigning "$keychain" | grep -F "$SIGN_ID"
 app_version="$VERSION"
-if [[ "$CHANNEL" == beta ]]; then app_version="0.0.${VERSION##*.}"; fi
-export SIGN_KEYCHAIN="$keychain" REQUIRE_SIGNING=1 APP_VERSION="$app_version" UPDATE_CHANNEL="$CHANNEL"
-export APPCAST_URL="https://raw.githubusercontent.com/${RELEASES_REPOSITORY}/updates/appcast-${CHANNEL}.xml"
+
+export SIGN_KEYCHAIN="$keychain" REQUIRE_SIGNING=1 APP_VERSION="$app_version"
+export APPCAST_URL="https://raw.githubusercontent.com/${RELEASES_REPOSITORY}/updates/appcast-stable.xml"
 export SPARKLE_PUBLIC_ED_KEY="${SPARKLE_PUBLIC_ED_KEY:?}"
 ./build.sh
 codesign --verify --deep --strict --verbose=2 build/HyperMug.app

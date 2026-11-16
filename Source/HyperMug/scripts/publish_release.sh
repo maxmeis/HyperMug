@@ -15,7 +15,7 @@ tag="v${VERSION}"
 asset="HyperMug-${VERSION}.zip"
 feed="appcast-${CHANNEL}.xml"
 token=hypermug
-[[ "$CHANNEL" == beta ]] && token='hypermug@nightly'
+
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 if [[ -n "${TAP_SSH_PRIVATE_KEY:-}" ]]; then
@@ -46,23 +46,16 @@ if gh release view "$tag" --repo "$RELEASES_REPOSITORY" >/dev/null 2>&1; then
   [[ "$body" == *"source ${GITHUB_SHA}"* ]] || { echo 'Existing release belongs to another source commit' >&2; exit 1; }
   release_draft="$(gh release view "$tag" --repo "$RELEASES_REPOSITORY" --json isDraft --jq .isDraft)"
 fi
-if [[ "$CHANNEL" == stable ]]; then
-  gh api "repos/${RELEASES_REPOSITORY}/releases?per_page=100" --paginate --jq '.[].tag_name' > "$work/tags"
-  python3 - "$VERSION" "$release_exists" "$work/tags" <<'PY'
+gh api "repos/${RELEASES_REPOSITORY}/releases?per_page=100" --paginate --jq '.[].tag_name' > "$work/tags"
+python3 - "$VERSION" "$release_exists" "$work/tags" <<'PY'
 import sys
 from pathlib import Path
 sys.path.insert(0, 'scripts')
 from release_metadata import stable_order
 stable_order(sys.argv[1], Path(sys.argv[3]).read_text().splitlines(), sys.argv[2] == '1')
 PY
-fi
-# A queued beta is archived even if main has advanced. Stable dispatch is pinned
-# to the exact checkout SHA. Neither path depends on the current main tip.
-if [[ "$CHANNEL" == stable && "$source_tag_exists" == 0 ]]; then
-  object="$(gh api -X POST "repos/${SOURCE_REPOSITORY}/git/tags" -f tag="$tag" -f message="HyperMug ${VERSION}" -f object="$GITHUB_SHA" -f type=commit --jq .sha)"
-  gh api -X POST "repos/${SOURCE_REPOSITORY}/git/refs" -f ref="refs/tags/${tag}" -f sha="$object" >/dev/null
-  source_tag_exists=1
-fi
+# The source tag must already exist and resolve to the checkout SHA.
+[[ "$source_tag_exists" == 1 ]] || { echo "Production source tag is missing" >&2; exit 1; }
 if [[ "$RELEASES_REPOSITORY" == "$SOURCE_REPOSITORY" ]]; then
   release_sha="$GITHUB_SHA"
   release_tag_exists="$source_tag_exists"
@@ -87,22 +80,10 @@ if [[ "$release_tag_exists" == 0 ]]; then
   object="$(gh api -X POST "repos/${RELEASES_REPOSITORY}/git/tags" -f tag="$tag" -f message="HyperMug ${VERSION} built from ${GITHUB_SHA}" -f object="$release_sha" -f type=commit --jq .sha)"
   gh api -X POST "repos/${RELEASES_REPOSITORY}/git/refs" -f ref="refs/tags/${tag}" -f sha="$object" >/dev/null
 fi
-if [[ "$release_exists" == 1 && "$release_draft" == true ]]; then
-  # A failed upload may leave only some draft assets. Drafts have never been
-  # public, so recreate this incomplete draft while retaining its verified tag.
-  for name in "$asset" "$feed" "${token}.rb" sha256.txt; do
-    if ! gh release download "$tag" --repo "$RELEASES_REPOSITORY" --pattern "$name" --dir "$work" >/dev/null; then
-      gh release delete "$tag" --repo "$RELEASES_REPOSITORY" --yes
-      release_exists=0
-      break
-    fi
-  done
-  rm -f "$work/$asset" "$work/$feed" "$work/${token}.rb" "$work/sha256.txt"
-fi
 if [[ "$release_exists" == 0 ]]; then
   cp "build/release/$asset" "build/release/$feed" "build/release/${token}.rb" build/release/sha256.txt "$work/"
   release_args=(--repo "$RELEASES_REPOSITORY" --draft --title "HyperMug ${VERSION}" --notes "HyperMug ${CHANNEL} ${VERSION}; source ${GITHUB_SHA}")
-  [[ "$CHANNEL" == beta ]] && release_args+=(--prerelease)
+
   gh release create "$tag" "$work/$asset" "$work/$feed" "$work/${token}.rb" "$work/sha256.txt" "${release_args[@]}"
 else
   # Never regenerate a signed ZIP or its metadata on retry. Any missing asset
@@ -119,12 +100,12 @@ expected="$(tr -d '\n' < "$work/sha256.txt")"
 # failure. Publish it before either public channel pointer can reference it.
 if [[ "$release_exists" == 0 || "$release_draft" == true ]]; then
   publish_args=(--repo "$RELEASES_REPOSITORY" --draft=false)
-  if [[ "$CHANNEL" == beta ]]; then publish_args+=(--prerelease --latest=false); else publish_args+=(--latest); fi
+  publish_args+=(--latest)
   gh release edit "$tag" "${publish_args[@]}"
 fi
 
 # Feed version determines whether this run advances a channel. A retry of the
-# current version resumes the cask step; an older beta remains archived only.
+# current version resumes the cask step; an older version fails closed.
 git clone "https://x-access-token:${RELEASE_TOKEN}@github.com/${RELEASES_REPOSITORY}.git" "$work/releases" >/dev/null 2>&1
 (
   cd "$work/releases"
@@ -163,7 +144,7 @@ PY
     git push origin HEAD:updates
   fi
 )
-[[ "$(cat "$work/decision")" != archive ]] || exit 0
+[[ "$(cat "$work/decision")" != archive ]] || { echo "Older production version cannot publish" >&2; exit 1; }
 # The tap pointer is updated only after the release asset and feed exist.
 if [[ -n "${TAP_SSH_PRIVATE_KEY:-}" ]]; then
   export GIT_SSH_COMMAND="$tap_ssh_command"
