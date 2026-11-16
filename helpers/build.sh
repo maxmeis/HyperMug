@@ -79,21 +79,22 @@ if [ -n "$KEY" ]; then
 else
   echo "warning: updates disabled; set SPARKLE_PUBLIC_ED_KEY and APPCAST_URL to enable."
 fi
-SIGN_OPTIONS=()
-if [ "$RELEASE" = 1 ]; then SIGN_OPTIONS=(--options runtime --timestamp); fi
+SIGN_OPTIONS=(--force --sign "$SIGN_ID")
+if [ "$RELEASE" = 1 ]; then SIGN_OPTIONS+=(--options runtime --timestamp); fi
+if [ -n "${SIGN_KEYCHAIN:-}" ]; then SIGN_OPTIONS+=(--keychain "$SIGN_KEYCHAIN"); fi
 FRAMEWORK="$APP/Contents/Frameworks/Sparkle.framework"
 # Sign nested code inside-out. Never use --deep: Downloader carries its own entitlements.
 VERSION_DIR="$FRAMEWORK/Versions/B"
 for nested in "$VERSION_DIR/XPCServices/Installer.xpc" "$VERSION_DIR/XPCServices/Downloader.xpc" "$VERSION_DIR/Autoupdate" "$VERSION_DIR/Updater.app"; do
   if [ -e "$nested" ]; then
     if [[ "$nested" == *Downloader.xpc ]]; then
-      codesign --force --sign "$SIGN_ID" "${SIGN_OPTIONS[@]}" --preserve-metadata=entitlements ${SIGN_KEYCHAIN:+--keychain "$SIGN_KEYCHAIN"} "$nested"
+      codesign "${SIGN_OPTIONS[@]}" --preserve-metadata=entitlements "$nested"
     else
-      codesign --force --sign "$SIGN_ID" "${SIGN_OPTIONS[@]}" ${SIGN_KEYCHAIN:+--keychain "$SIGN_KEYCHAIN"} "$nested"
+      codesign "${SIGN_OPTIONS[@]}" "$nested"
     fi
   fi
 done
-codesign --force --sign "$SIGN_ID" "${SIGN_OPTIONS[@]}" ${SIGN_KEYCHAIN:+--keychain "$SIGN_KEYCHAIN"} "$FRAMEWORK"
-codesign --force --sign "$SIGN_ID" "${SIGN_OPTIONS[@]}" ${SIGN_KEYCHAIN:+--keychain "$SIGN_KEYCHAIN"} --identifier "$BUNDLE_ID" "$APP"
+codesign "${SIGN_OPTIONS[@]}" "$FRAMEWORK"
+codesign "${SIGN_OPTIONS[@]}" --identifier "$BUNDLE_ID" "$APP"
 codesign --verify --deep --strict --verbose=2 "$APP"
 echo "Built: $(pwd)/$APP"
