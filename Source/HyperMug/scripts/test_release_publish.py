@@ -92,6 +92,8 @@ elif args[0] == "release" and args[1] == "view":
     if not release: sys.exit(1)
     if ".body" in args: print(release["body"])
     elif ".isDraft" in args: print("true" if release["draft"] else "false")
+    elif ".isLatest" in args: print("true" if release.get("latest") else "false")
+    elif ".assets[].name" in args: print("\n".join(release["assets"]))
     else: print(json.dumps(release))
 elif args[0] == "release" and args[1] == "create":
     tag = args[2]; repo = repo_arg(args)
@@ -109,10 +111,24 @@ elif args[0] == "release" and args[1] == "edit":
     tag = args[2]; repo = repo_arg(args)
     fail_once("release-publish")
     release = state["releases"][tag_key(repo, tag)]
-    release["draft"] = "--draft=false" not in args
-    release["latest"] = "--latest" in args and "--latest=false" not in args
+    if "--draft=false" in args or "--draft" in args:
+        release["draft"] = "--draft=false" not in args
+    if "--latest" in args or "--latest=false" in args:
+        release["latest"] = "--latest" in args and "--latest=false" not in args
     release["prerelease"] = "--prerelease" in args
+    if "--notes" in args: release["body"] = args[args.index("--notes") + 1]
     state["events"].append(["release-publish", repo, tag]); save()
+elif args[0] == "release" and args[1] == "upload":
+    tag = args[2]; repo = repo_arg(args)
+    release = state["releases"][tag_key(repo, tag)]
+    if not release["draft"]: sys.exit("cannot upload to published release")
+    for value in args[3:]:
+        if value.startswith("-"): break
+        path = Path(value)
+        if path.name in release["assets"]: sys.exit("asset already exists")
+        release["assets"][path.name] = path.read_bytes().hex()
+        state["events"].append(["release-upload", repo, tag, path.name]); save()
+        fail_once("release-upload")
 elif args[0] == "release" and args[1] == "delete":
     tag = args[2]; repo = repo_arg(args)
     key = tag_key(repo, tag)
@@ -186,7 +202,7 @@ if args and args[0] == "clone":
         if target is None: sys.exit("unmapped fake git repository " + repo)
         args = ["clone"] + [target if x == url else x for x in rest]
 if args and args[0] == "push":
-    remote = args[1] if len(args) > 1 else ""
+    remote = next((value for value in args[1:] if not value.startswith("-")), "")
     try:
         url = subprocess.check_output([real, "remote", "get-url", remote], text=True).strip()
     except Exception: url = ""
@@ -255,6 +271,7 @@ class PublishReleaseIntegrationTests(unittest.TestCase):
             "LOCAL_GIT_REPOS": os.pathsep.join(f"{name}={path}" for name, path in zip((self.releases_repo, self.tap_repo), self.repositories)),
             "FAKE_GH_STATE": str(self.state_dir),
             "CHANNEL": "stable", "VERSION": "1.2.3", "BUILD_NUMBER": "1.2.3",
+            "BUILD_APP": "true",
             "SOURCE_REPOSITORY": self.releases_repo, "RELEASES_REPOSITORY": self.releases_repo,
             "TAP_REPOSITORY": self.tap_repo, "RELEASE_TOKEN": "release-token", "TAP_TOKEN": "tap-token",
             "GITHUB_ACTOR": "maxmeis", "GITHUB_TRIGGERING_ACTOR": "maxmeis",
@@ -336,8 +353,64 @@ class PublishReleaseIntegrationTests(unittest.TestCase):
             return None
         return (work / path).read_text() if (work / path).exists() else None
 
+    def _advance_main(self):
+        work = self.root / "advance-main"
+        subprocess.run([self.real_git, "clone", "--branch", "main", str(self.releases_bare), str(work)], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        (work / "README.md").write_text("main advanced after release PR\n")
+        subprocess.run([self.real_git, "-C", str(work), "add", "README.md"], check=True)
+        subprocess.run([self.real_git, "-C", str(work), "-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", "commit", "-m", "advance main"], check=True, stdout=subprocess.DEVNULL)
+        subprocess.run([self.real_git, "-C", str(work), "push", "origin", "HEAD:main"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return subprocess.check_output([self.real_git, "-C", str(work), "rev-parse", "HEAD"], text=True).strip()
+
     def _release(self, tag="v1.2.3"):
         return self._state()["releases"].get(self.releases_repo + "|" + tag)
+
+    def test_source_only_release_has_no_installable_assets_or_pointer_changes(self):
+        first = self._run(BUILD_APP="false", TAP_TOKEN="")
+        self.assertEqual(first.returncode, 0, first.stderr)
+        release = self._release()
+        self.assertFalse(release["draft"])
+        self.assertFalse(release["latest"])
+        self.assertEqual(release["assets"], {})
+        self.assertIn("source-only", release["body"])
+        self.assertIn(SHA_A, release["body"])
+        self.assertIsNone(self._remote_file(self.releases_bare, "appcast-stable.xml"))
+        self.assertIsNone(self._remote_file(self.tap_bare, "Casks/hypermug.rb"))
+        self.assertFalse(any(e[0] == "git-push" for e in self._state()["events"]))
+        events = list(self._state()["events"])
+        repeat = self._run(BUILD_APP="false", TAP_TOKEN="")
+        self.assertEqual(repeat.returncode, 0, repeat.stderr)
+        self.assertEqual(self._state()["events"], events)
+
+    def test_source_only_draft_retry_and_binary_same_tag_refusal(self):
+        failed = self._run(BUILD_APP="false", TAP_TOKEN="", FAKE_FAIL_ONCE="release-publish")
+        self.assertNotEqual(failed.returncode, 0)
+        self.assertTrue(self._release()["draft"])
+        retry = self._run(BUILD_APP="false", TAP_TOKEN="")
+        self.assertEqual(retry.returncode, 0, retry.stderr)
+        self.assertFalse(self._release()["draft"])
+        self._build()
+        events = list(self._state()["events"])
+        binary = self._run()
+        self.assertNotEqual(binary.returncode, 0)
+        self.assertIn("use a new version", binary.stderr)
+        self.assertEqual(self._state()["events"], events)
+        self.assertEqual(self._release()["assets"], {})
+
+    def test_source_only_version_counts_for_ordering_but_not_feed(self):
+        first = self._run(BUILD_APP="false", TAP_TOKEN="")
+        self.assertEqual(first.returncode, 0, first.stderr)
+        self._seed_tag(self.releases_repo, "v1.2.2", SHA_B)
+        self._build(version="1.2.2")
+        older = self._run(VERSION="1.2.2", BUILD_NUMBER="1.2.2", GITHUB_REF="refs/tags/v1.2.2", GITHUB_SHA=SHA_B)
+        self.assertNotEqual(older.returncode, 0)
+        self.assertIsNone(self._release("v1.2.2"))
+        self._seed_tag(self.releases_repo, "v1.2.4", SHA_B)
+        self._build(version="1.2.4", build_number="1.2.4")
+        newer = self._run(VERSION="1.2.4", BUILD_NUMBER="1.2.4", GITHUB_REF="refs/tags/v1.2.4", GITHUB_SHA=SHA_B)
+        self.assertEqual(newer.returncode, 0, newer.stderr)
+        self.assertIn("1.2.4", self._remote_file(self.releases_bare, "appcast-stable.xml"))
+        self.assertEqual(self._release()["assets"], {})
 
     def test_ssh_tap_uses_ephemeral_key_and_original_release_token(self):
         self._build()
@@ -419,6 +492,24 @@ class PublishReleaseIntegrationTests(unittest.TestCase):
         again = self._run()
         self.assertEqual(again.returncode, 0, again.stderr)
         self.assertEqual(len([e for e in self._state()["events"] if e[0] == "pr-create"]), 1)
+
+    def test_managed_cask_branch_rebases_on_advanced_main_and_dispatches_fresh_ci(self):
+        self._build()
+        first = self._run()
+        self.assertEqual(first.returncode, 0, first.stderr)
+        old_head = self._state()["branch_heads"][self.releases_repo + "|release-casks/stable"]
+        main_head = self._advance_main()
+        self.assertIn("main advanced", self._remote_file(self.releases_bare, "README.md", "main"))
+        self.assertNotEqual(subprocess.run([self.real_git, "--git-dir", str(self.releases_bare), "merge-base", "--is-ancestor", main_head, old_head]).returncode, 0)
+        again = self._run()
+        self.assertEqual(again.returncode, 0, again.stderr)
+        state = self._state()
+        new_head = state["branch_heads"][self.releases_repo + "|release-casks/stable"]
+        self.assertNotEqual(new_head, old_head)
+        self.assertEqual(len([e for e in state["events"] if e[0] == "ci-dispatch"]), 2)
+        ancestor = subprocess.run([self.real_git, "--git-dir", str(self.releases_bare), "merge-base", "--is-ancestor", main_head, new_head])
+        self.assertEqual(ancestor.returncode, 0)
+        self.assertIn("main advanced", self._remote_file(self.releases_bare, "README.md", "release-casks/stable"))
 
     def test_dispatch_failure_retries_without_duplicate_pr_or_ci(self):
         self._build()

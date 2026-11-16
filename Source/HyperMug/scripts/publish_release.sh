@@ -2,10 +2,11 @@
 # Publish immutable assets first; channel pointers move only after both release and metadata exist.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-: "${CHANNEL:?}" "${VERSION:?}" "${BUILD_NUMBER:?}" "${SOURCE_REPOSITORY:?}" "${RELEASES_REPOSITORY:?}" "${TAP_REPOSITORY:?}" "${RELEASE_TOKEN:?}" "${GITHUB_SHA:?}"
+: "${CHANNEL:?}" "${VERSION:?}" "${BUILD_NUMBER:?}" "${BUILD_APP:?}" "${SOURCE_REPOSITORY:?}" "${RELEASES_REPOSITORY:?}" "${TAP_REPOSITORY:?}" "${RELEASE_TOKEN:?}" "${GITHUB_SHA:?}"
 python3 scripts/release_metadata.py validate --channel "$CHANNEL" --version "$VERSION" --actor "$GITHUB_ACTOR" --triggering-actor "$GITHUB_TRIGGERING_ACTOR" --ref "$GITHUB_REF" --sha "$GITHUB_SHA" --source-repo "$SOURCE_REPOSITORY" --releases-repo "$RELEASES_REPOSITORY" --tap-repo "$TAP_REPOSITORY"
 [[ "$BUILD_NUMBER" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]] || exit 1
-if [[ -z "${TAP_SSH_PRIVATE_KEY:-}" && -z "${TAP_TOKEN:-}" ]]; then
+[[ "$BUILD_APP" == true || "$BUILD_APP" == false ]] || { echo 'BUILD_APP must be true or false' >&2; exit 1; }
+if [[ "$BUILD_APP" == true && -z "${TAP_SSH_PRIVATE_KEY:-}" && -z "${TAP_TOKEN:-}" ]]; then
   echo 'TAP_SSH_PRIVATE_KEY or TAP_TOKEN is required' >&2
   exit 1
 fi
@@ -18,15 +19,6 @@ token=hypermug
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
-if [[ -n "${TAP_SSH_PRIVATE_KEY:-}" ]]; then
-  # Prepare tap-only SSH credentials before making any publication writes.
-  (umask 077; printf '%s\n' "$TAP_SSH_PRIVATE_KEY" > "$work/tap_key")
-  gh api meta --jq '.ssh_keys[]' | sed 's/^/github.com /' > "$work/known_hosts"
-  [[ -s "$work/known_hosts" ]] || { echo 'GitHub SSH host keys are unavailable' >&2; exit 1; }
-  # Git executes GIT_SSH_COMMAND through a shell; quote generated paths safely.
-  shell_quote() { local value=${1//\'/\'"\'"\'}; printf "'%s'" "$value"; }
-  tap_ssh_command="ssh -F /dev/null -i $(shell_quote "$work/tap_key") -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$(shell_quote "$work/known_hosts")"
-fi
 
 # GitHub's commit endpoint peels an annotated tag. Existing tags are reusable only
 # when they resolve to this exact built source commit.
@@ -38,13 +30,32 @@ if gh api "repos/${SOURCE_REPOSITORY}/git/ref/tags/${tag}" >/dev/null 2>&1; then
 fi
 release_exists=0
 release_draft=false
+release_body=''
+release_assets=''
 if gh release view "$tag" --repo "$RELEASES_REPOSITORY" >/dev/null 2>&1; then
   release_exists=1
   # The release body records the source SHA, particularly when assets live in
   # another repository whose tag necessarily points to a different commit.
-  body="$(gh release view "$tag" --repo "$RELEASES_REPOSITORY" --json body --jq .body)"
-  [[ "$body" == *"source ${GITHUB_SHA}"* ]] || { echo 'Existing release belongs to another source commit' >&2; exit 1; }
+  release_body="$(gh release view "$tag" --repo "$RELEASES_REPOSITORY" --json body --jq .body)"
+  [[ "$release_body" == *"source ${GITHUB_SHA}"* ]] || { echo 'Existing release belongs to another source commit' >&2; exit 1; }
   release_draft="$(gh release view "$tag" --repo "$RELEASES_REPOSITORY" --json isDraft --jq .isDraft)"
+  release_latest="$(gh release view "$tag" --repo "$RELEASES_REPOSITORY" --json isLatest --jq .isLatest)"
+  release_assets="$(gh release view "$tag" --repo "$RELEASES_REPOSITORY" --json assets --jq '.assets[].name')"
+fi
+source_only_release=0
+if [[ "$release_body" == *"source-only"* ]]; then source_only_release=1; fi
+if [[ "$BUILD_APP" == false && "$release_exists" == 1 && "$source_only_release" == 1 && -z "$release_assets" && "$release_draft" == false ]]; then
+  # Repeating a completed source-only release is a read-only no-op, even after
+  # newer versions have been published.
+  [[ "$(gh api "repos/${SOURCE_REPOSITORY}/commits/${tag}" --jq .sha)" == "$GITHUB_SHA" ]] || exit 1
+  if [[ "$RELEASES_REPOSITORY" != "$SOURCE_REPOSITORY" ]]; then
+    tag_object="$(gh api "repos/${RELEASES_REPOSITORY}/git/ref/tags/${tag}" --jq .object.sha)"
+    [[ "$(gh api "repos/${RELEASES_REPOSITORY}/git/tags/${tag_object}" --jq .message)" == *"source ${GITHUB_SHA}"* ]] || exit 1
+  fi
+  if [[ "$release_latest" == true ]]; then
+    gh release edit "$tag" --repo "$RELEASES_REPOSITORY" --latest=false
+  fi
+  exit 0
 fi
 gh api "repos/${RELEASES_REPOSITORY}/releases?per_page=100" --paginate --jq '.[].tag_name' > "$work/tags"
 python3 - "$VERSION" "$release_exists" "$work/tags" <<'PY'
@@ -64,12 +75,10 @@ else
   release_tag_exists=0
   if gh api "repos/${RELEASES_REPOSITORY}/git/ref/tags/${tag}" >/dev/null 2>&1; then
     release_tag_exists=1
-    if [[ "$release_exists" == 0 ]]; then
-      tag_object="$(gh api "repos/${RELEASES_REPOSITORY}/git/ref/tags/${tag}" --jq .object.sha)"
-      message="$(gh api "repos/${RELEASES_REPOSITORY}/git/tags/${tag_object}" --jq .message)"
-      [[ "$message" == *"built from ${GITHUB_SHA}"* ]] || { echo 'Release repository tag belongs to another source commit' >&2; exit 1; }
-      release_sha="$(gh api "repos/${RELEASES_REPOSITORY}/commits/${tag}" --jq .sha)"
-    fi
+    tag_object="$(gh api "repos/${RELEASES_REPOSITORY}/git/ref/tags/${tag}" --jq .object.sha)"
+    message="$(gh api "repos/${RELEASES_REPOSITORY}/git/tags/${tag_object}" --jq .message)"
+    [[ "$message" == *"source ${GITHUB_SHA}"* ]] || { echo 'Release repository tag belongs to another source commit' >&2; exit 1; }
+    release_sha="$(gh api "repos/${RELEASES_REPOSITORY}/commits/${tag}" --jq .sha)"
   fi
 fi
 if [[ "$release_tag_exists" == 1 && "$release_exists" == 0 ]]; then
@@ -77,11 +86,29 @@ if [[ "$release_tag_exists" == 1 && "$release_exists" == 0 ]]; then
   [[ "$peeled" == "$release_sha" ]] || { echo 'Existing release tag points elsewhere' >&2; exit 1; }
 fi
 if [[ "$release_tag_exists" == 0 ]]; then
-  object="$(gh api -X POST "repos/${RELEASES_REPOSITORY}/git/tags" -f tag="$tag" -f message="HyperMug ${VERSION} built from ${GITHUB_SHA}" -f object="$release_sha" -f type=commit --jq .sha)"
+  object="$(gh api -X POST "repos/${RELEASES_REPOSITORY}/git/tags" -f tag="$tag" -f message="HyperMug ${VERSION}; source ${GITHUB_SHA}" -f object="$release_sha" -f type=commit --jq .sha)"
   gh api -X POST "repos/${RELEASES_REPOSITORY}/git/refs" -f ref="refs/tags/${tag}" -f sha="$object" >/dev/null
 fi
+if [[ "$BUILD_APP" == false ]]; then
+  [[ "$release_exists" == 0 || ( "$source_only_release" == 1 && -z "$release_assets" ) ]] || { echo 'Existing release contains app assets or has another mode' >&2; exit 1; }
+  if [[ "$release_exists" == 0 ]]; then
+    gh release create "$tag" --repo "$RELEASES_REPOSITORY" --draft --title "HyperMug ${VERSION} (source only)" --notes "HyperMug source-only ${VERSION}; source ${GITHUB_SHA}"
+  fi
+  if [[ "$release_exists" == 0 || "$release_draft" == true ]]; then
+    gh release edit "$tag" --repo "$RELEASES_REPOSITORY" --draft=false --latest=false
+  fi
+  exit 0
+fi
+[[ "$source_only_release" == 0 ]] || { echo 'Published source-only release cannot gain binary assets; use a new version' >&2; exit 1; }
+if [[ -n "${TAP_SSH_PRIVATE_KEY:-}" ]]; then
+  (umask 077; printf '%s\n' "$TAP_SSH_PRIVATE_KEY" > "$work/tap_key")
+  gh api meta --jq '.ssh_keys[]' | sed 's/^/github.com /' > "$work/known_hosts"
+  [[ -s "$work/known_hosts" ]] || { echo 'GitHub SSH host keys are unavailable' >&2; exit 1; }
+  shell_quote() { local value=${1//\'/\'"\'"\'}; printf "'%s'" "$value"; }
+  tap_ssh_command="ssh -F /dev/null -i $(shell_quote "$work/tap_key") -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$(shell_quote "$work/known_hosts")"
+fi
+cp "build/release/$asset" "build/release/$feed" "build/release/${token}.rb" build/release/sha256.txt "$work/"
 if [[ "$release_exists" == 0 ]]; then
-  cp "build/release/$asset" "build/release/$feed" "build/release/${token}.rb" build/release/sha256.txt "$work/"
   release_args=(--repo "$RELEASES_REPOSITORY" --draft --title "HyperMug ${VERSION}" --notes "HyperMug ${CHANNEL} ${VERSION}; source ${GITHUB_SHA}")
 
   gh release create "$tag" "$work/$asset" "$work/$feed" "$work/${token}.rb" "$work/sha256.txt" "${release_args[@]}"
@@ -100,7 +127,7 @@ expected="$(tr -d '\n' < "$work/sha256.txt")"
 # failure. Publish it before either public channel pointer can reference it.
 if [[ "$release_exists" == 0 || "$release_draft" == true ]]; then
   publish_args=(--repo "$RELEASES_REPOSITORY" --draft=false)
-  publish_args+=(--latest)
+  publish_args+=(--latest --notes "HyperMug ${CHANNEL} ${VERSION}; source ${GITHUB_SHA}")
   gh release edit "$tag" "${publish_args[@]}"
 fi
 

@@ -4,7 +4,7 @@ HyperMug is a macOS menu bar utility that combines a Hyperkey, Caffeine, trackpa
 
 ## Install
 
-The stable Homebrew cask is available after the first production release and its generated cask pull request is merged:
+The stable Homebrew cask is available after the first compiled production release and its generated cask pull request is merged:
 
 ```sh
 brew tap maxmeis/hypermug https://github.com/maxmeis/HyperMug
@@ -34,4 +34,4 @@ Swift app sources and tests live under `Source/HyperMug/`; repository commit hoo
 
 ## Releases
 
-Production releases use stable `vX.Y.Z` versions and publish signed, notarized builds with Sparkle updates. The owner starts the production workflow after preparing a version tag. See [Release process](docs/releases.md).
+Production releases use stable `vX.Y.Z` tags. The owner chooses either a signed, notarized app with Sparkle updates or a source-only GitHub Release for local builds. See [Release process](docs/releases.md).

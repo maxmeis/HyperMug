@@ -2,7 +2,7 @@
 
 ## Homebrew
 
-HyperMug is distributed as a stable Homebrew cask. The cask becomes installable after the first production release and the generated cask pull request is merged into this repository's default branch.
+HyperMug is distributed as a stable Homebrew cask. The cask becomes installable after the first compiled production release and the generated cask pull request is merged into this repository's default branch. Source-only releases do not provide an app ZIP or Homebrew cask; use [Development](development.md) to build locally.
 
 ```sh
 brew tap maxmeis/hypermug https://github.com/maxmeis/HyperMug

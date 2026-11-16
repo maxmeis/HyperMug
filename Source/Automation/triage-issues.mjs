@@ -20,8 +20,20 @@ export function reportedVersion(body) {
 }
 
 export function productionVersions(releases) {
-  return releases.filter(r => !r.draft && !r.prerelease && /^v\d+\.\d+\.\d+$/.test(r.tag_name))
-    .sort((a, b) => Date.parse(b.published_at || 0) - Date.parse(a.published_at || 0))
+  return releases.filter(r => {
+    if (r.draft || r.prerelease || !/^v\d+\.\d+\.\d+$/.test(r.tag_name)) return false;
+    // Source-only GitHub Releases are valid versions, but cannot be an
+    // installed production app or make an older binary "outdated".
+    return r.assets?.some(asset => asset.name === `HyperMug-${r.tag_name.slice(1)}.zip`);
+  })
+    .sort((a, b) => {
+      const left = a.tag_name.slice(1).split('.').map(Number);
+      const right = b.tag_name.slice(1).split('.').map(Number);
+      for (let i = 0; i < 3; i++) {
+        if (left[i] !== right[i]) return right[i] - left[i];
+      }
+      return 0;
+    })
     .map(r => r.tag_name.slice(1));
 }
 

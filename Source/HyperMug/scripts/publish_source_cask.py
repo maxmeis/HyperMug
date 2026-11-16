@@ -64,7 +64,11 @@ def publish(channel, version, repository, asset, work):
                          "--head", branch, "--base", "main", "--json", "number,title,body", cwd=work, capture=True))
     if len(prs) > 1:
         raise ValueError("multiple open PRs for managed cask branch")
-    if previous_sha and previous == desired:
+    branch_current = previous_sha and subprocess.run(
+        ("git", "merge-base", "--is-ancestor", "origin/main", previous_sha),
+        cwd=work, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    ).returncode == 0
+    if previous_sha and previous == desired and branch_current:
         head_sha = previous_sha
     else:
         run("git", "checkout", "-B", branch, "origin/main", cwd=work)

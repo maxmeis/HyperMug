@@ -3,7 +3,11 @@ import assert from 'node:assert/strict';
 import { classify, missingComment, productionVersions, reportedVersion, triage } from './triage-issues.mjs';
 
 const body = `### HyperMug marketing version\n1.2.3\n\n### HyperMug build number\n456\n\n### Install source\nGitHub production release`;
-const releases = [{ tag_name: 'v1.2.4', draft: false, prerelease: false }, { tag_name: 'v1.2.3', draft: false, prerelease: false }, { tag_name: 'v1.3.0-beta.1', draft: false, prerelease: true }];
+const releases = [
+  { tag_name: 'v1.2.4', draft: false, prerelease: false, assets: [{ name: 'HyperMug-1.2.4.zip' }] },
+  { tag_name: 'v1.2.3', draft: false, prerelease: false, assets: [{ name: 'HyperMug-1.2.3.zip' }] },
+  { tag_name: 'v1.3.0-beta.1', draft: false, prerelease: true, assets: [] },
+];
 
 test('parses exact form fields and checks only published production tags', () => {
   assert.deepEqual(reportedVersion(body), { marketing: '1.2.3', build: '456', complete: true });
@@ -17,6 +21,18 @@ test('parses exact form fields and checks only published production tags', () =>
   assert.equal(classify(body, null), null);
   assert.match(missingComment(body.replace('456', '_No response_')), /build number/);
   assert.match(missingComment(body.replace('1.2.3', 'unknown')), /marketing version/);
+});
+
+test('current means highest installed app version, regardless of release publication date', () => {
+  const history = [
+    { tag_name: 'v1.9.0', published_at: '2026-02-01', assets: [{ name: 'HyperMug-1.9.0.zip' }] },
+    { tag_name: 'v2.0.0', published_at: '2026-01-01', assets: [{ name: 'HyperMug-2.0.0.zip' }] },
+    { tag_name: 'v2.1.0', published_at: '2026-03-01', assets: [] },
+    { tag_name: 'v1.10.0', published_at: '2026-01-02', assets: [{ name: 'HyperMug-1.10.0.zip' }] },
+  ];
+  assert.deepEqual(productionVersions(history), ['2.0.0', '1.10.0', '1.9.0']);
+  assert.equal(classify(body.replace('1.2.3', '2.0.0'), history), 'version:current');
+  assert.equal(classify(body.replace('1.2.3', '2.1.0'), history), 'version:unverified');
 });
 
 test('API author controls access even when the event claims ownership', async () => {
