@@ -2,16 +2,14 @@
 
 ## Homebrew
 
-The new Stable and Canary Homebrew casks are not available yet. Stable `v0.1` is source only, with no app ZIP or `Casks/hypermug.rb`; use [Development](development.md) to build it locally. Canary `v0.0.0-canary.3` has a compiled ZIP and cask asset, but [pull request #15](https://github.com/maxmeis/hypermug/pull/15) must be merged before Homebrew can install it from this tap.
-
-After the Canary cask is merged, install it with:
+Stable currently has no compiled app or `Casks/hypermug.rb`; use [Development](development.md) to build it locally. Canary has signed, notarized app releases. After automatic cask publication completes, install Canary with:
 
 ```sh
 brew tap maxmeis/hypermug https://github.com/maxmeis/hypermug
 brew install --cask maxmeis/hypermug/hypermug@canary
 ```
 
-Stable Homebrew installation requires a future compiled Stable release and merged cask pull request. The channels use separate signed Sparkle feeds and keys. Stable installations follow Stable; Canary installations follow Canary. They share the same bundle identity and config file, so uninstall the current channel before installing the other. Existing `hypermug@nightly` users can migrate manually by uninstalling the old cask, then installing Canary; the historical beta feed remains separate.
+Stable Homebrew installation requires a future compiled Stable release and successful automatic cask publication. The channels use separate signed Sparkle feeds and keys. Stable installations follow Stable; Canary installations follow Canary. They share the same bundle identity and config file, so uninstall the current channel before installing the other. Existing `hypermug@nightly` users can migrate manually by uninstalling the old cask, then installing Canary; the historical beta feed remains separate.
 
 Homebrew installs the signed application. Set `"autoUpdate": false` in `~/.config/hypermug.json` to disable scheduled checks; **Check for Updates…** remains available in the menu. Homebrew casks declare `auto_updates true`, so ordinary upgrades leave updates to Sparkle. Once a Stable cask is available, explicitly upgrade it with Homebrew using:
 

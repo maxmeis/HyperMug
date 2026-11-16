@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Propose a published cask asset in the protected source repository."""
+"""Prepare a published cask on an internal branch and dispatch its required CI."""
 import argparse
+import base64
 import json
 import os
 import re
@@ -10,7 +11,16 @@ from release_metadata import bundle_identity
 
 
 def run(*args, cwd=None, capture=False):
+    env = os.environ.copy()
+    if args[0] == "git" and env.get("RELEASE_TOKEN"):
+        # Keep credentials out of remote URLs, process arguments, and error text.
+        index = int(env.get("GIT_CONFIG_COUNT", "0"))
+        env["GIT_CONFIG_COUNT"] = str(index + 1)
+        env[f"GIT_CONFIG_KEY_{index}"] = "http.https://github.com/.extraheader"
+        credential = base64.b64encode(("x-access-token:" + env["RELEASE_TOKEN"]).encode()).decode()
+        env[f"GIT_CONFIG_VALUE_{index}"] = "AUTHORIZATION: basic " + credential
     result = subprocess.run(args, cwd=cwd, check=True, text=True,
+                            env=env,
                             stdout=subprocess.PIPE if capture else None)
     return result.stdout.strip() if capture else None
 
@@ -41,8 +51,7 @@ def publish(channel, version, repository, asset, work):
         raise ValueError("published cask version does not match release")
     if not re.search(r'^\s*sha256 "[0-9a-f]{64}"\s*$', desired, re.M):
         raise ValueError("published cask lacks a SHA256 digest")
-    auth = os.environ["RELEASE_TOKEN"]
-    run("git", "clone", f"https://x-access-token:{auth}@github.com/{repository}.git", str(work))
+    run("git", "clone", f"https://github.com/{repository}.git", str(work))
     main_file = work / path
     main_content = main_file.read_text() if main_file.exists() else None
     requested = version_of(desired, channel)
@@ -65,10 +74,6 @@ def publish(channel, version, repository, asset, work):
         previous_sha = run("git", "rev-parse", "FETCH_HEAD", cwd=work, capture=True)
     else:
         previous_sha = None
-    prs = json.loads(run("gh", "pr", "list", "--repo", repository, "--state", "open",
-                         "--head", branch, "--base", "main", "--json", "number,title,body", cwd=work, capture=True))
-    if len(prs) > 1:
-        raise ValueError("multiple open PRs for managed cask branch")
     branch_current = previous_sha and subprocess.run(
         ("git", "merge-base", "--is-ancestor", "origin/main", previous_sha),
         cwd=work, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
@@ -80,8 +85,8 @@ def publish(channel, version, repository, asset, work):
         main_file.parent.mkdir(parents=True, exist_ok=True)
         main_file.write_text(desired)
         run("git", "add", "--", path, cwd=work)
-        run("git", "-c", "user.name=HyperMug release bot",
-            "-c", "user.email=actions@users.noreply.github.com", "commit",
+        run("git", "-c", "user.name=maxmeis",
+            "-c", "user.email=41482988+maxmeis@users.noreply.github.com", "commit",
             "-m", f"chore: update {token} cask to {version}", cwd=work)
         head_sha = run("git", "rev-parse", "HEAD", cwd=work, capture=True)
         refspec = f"HEAD:refs/heads/{branch}"
@@ -89,18 +94,6 @@ def publish(channel, version, repository, asset, work):
             run("git", "push", f"--force-with-lease=refs/heads/{branch}:{previous_sha}", "origin", refspec, cwd=work)
         else:
             run("git", "push", "origin", refspec, cwd=work)
-    body = work / "cask-pr-body.md"
-    body.write_text(f"Updates `{path}` to published {channel} release `{version}`.\n\n"
-                    "The cask is copied from the release asset, including its published SHA256. "
-                    "Review and merge to make this version available from the source repository tap.\n")
-    title = f"chore: update {token} cask to {version}"
-    if prs:
-        if prs[0]["title"] != title or prs[0]["body"] != body.read_text():
-            run("gh", "pr", "edit", str(prs[0]["number"]), "--repo", repository,
-                "--title", title, "--body-file", str(body), cwd=work)
-    else:
-        run("gh", "pr", "create", "--repo", repository, "--base", "main", "--head", branch,
-            "--title", title, "--body-file", str(body), cwd=work)
     checks = json.loads(run("gh", "api", f"repos/{repository}/commits/{head_sha}/check-runs",
                             cwd=work, capture=True))
     if not any(check.get("name") == "ci" and check.get("app", {}).get("slug") == "github-actions"

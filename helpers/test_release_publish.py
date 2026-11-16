@@ -485,7 +485,7 @@ class PublishReleaseIntegrationTests(unittest.TestCase):
         self.assertFalse(self._release()["draft"])
         self.assertIn("1.2.3", self._remote_file(self.releases_bare, "appcast-stable.xml"))
         self.assertIsNone(self._remote_file(self.tap_bare, "Casks/hypermug.rb"))
-        self.assertEqual(len(self._state()["prs"]), 1)
+        self.assertEqual(self._state().get("prs", {}), {})
 
     def test_explicit_archived_external_tap_fails_before_release_writes(self):
         self._build()
@@ -515,7 +515,7 @@ class PublishReleaseIntegrationTests(unittest.TestCase):
         self.assertIsNone(self._remote_file(self.releases_bare, "appcast-stable.xml"))
         self.assertIsNone(self._remote_file(self.tap_bare, "Casks/hypermug@canary.rb"))
         self.assertIn('version "0.0.12"', self._remote_file(self.releases_bare, "Casks/hypermug@canary.rb", "release-casks/canary"))
-        self.assertEqual(len(self._state()["prs"]), 1)
+        self.assertEqual(self._state().get("prs", {}), {})
 
         events = list(self._state()["events"])
         retry = self._run(CHANNEL="canary", VERSION=version, BUILD_NUMBER="12",
@@ -554,7 +554,7 @@ class PublishReleaseIntegrationTests(unittest.TestCase):
         self.assertEqual(self._remote_file(self.releases_bare, "Casks/hypermug.rb", "release-casks/stable"),
                          bytes.fromhex(release["assets"]["hypermug.rb"]).decode())
         self.assertIsNone(self._remote_file(self.releases_bare, "Casks/hypermug.rb", "main"))
-        self.assertEqual(len(self._state()["prs"]), 1)
+        self.assertEqual(self._state().get("prs", {}), {})
         self.assertEqual(len([e for e in self._state()["events"] if e[0] == "ci-dispatch"]), 1)
 
     def test_first_release_creates_updates_branch(self):
@@ -584,21 +584,21 @@ class PublishReleaseIntegrationTests(unittest.TestCase):
         self.assertNotIn(b"different rebuilt archive", published_zip)
         self.assertIn('cask "hypermug"', self._remote_file(self.tap_bare, "Casks/hypermug.rb"))
 
-    def test_retry_after_source_pr_failure_keeps_external_tap_and_published_asset(self):
+    def test_publication_never_needs_a_release_pr_and_reuses_published_assets(self):
         self._build()
-        failed = self._run(FAKE_FAIL_ONCE="pr-write")
-        self.assertNotEqual(failed.returncode, 0)
+        first = self._run(FAKE_FAIL_ONCE="pr-write")
+        self.assertEqual(first.returncode, 0, first.stderr)
         self.assertIn('cask "hypermug"', self._remote_file(self.tap_bare, "Casks/hypermug.rb"))
         self.assertEqual(self._state().get("prs", {}), {})
         self._build(content=b"different retry build")
         retry = self._run()
         self.assertEqual(retry.returncode, 0, retry.stderr)
-        self.assertEqual(len(self._state()["prs"]), 1)
+        self.assertEqual(self._state().get("prs", {}), {})
         published = bytes.fromhex(self._release()["assets"]["hypermug.rb"]).decode()
         self.assertEqual(self._remote_file(self.releases_bare, "Casks/hypermug.rb", "release-casks/stable"), published)
         again = self._run()
         self.assertEqual(again.returncode, 0, again.stderr)
-        self.assertEqual(len([e for e in self._state()["events"] if e[0] == "pr-create"]), 1)
+        self.assertEqual(len([e for e in self._state()["events"] if e[0].startswith("pr-")]), 0)
 
     def test_managed_cask_branch_rebases_on_advanced_main_and_dispatches_fresh_ci(self):
         self._build()
@@ -618,18 +618,18 @@ class PublishReleaseIntegrationTests(unittest.TestCase):
         self.assertEqual(ancestor.returncode, 0)
         self.assertIn("main advanced", self._remote_file(self.releases_bare, "README.md", "release-casks/stable"))
 
-    def test_dispatch_failure_retries_without_duplicate_pr_or_ci(self):
+    def test_dispatch_failure_retries_without_a_pr_or_duplicate_ci(self):
         self._build()
         failed = self._run(FAKE_FAIL_ONCE="ci-dispatch")
         self.assertNotEqual(failed.returncode, 0)
-        self.assertEqual(len(self._state()["prs"]), 1)
+        self.assertEqual(self._state().get("prs", {}), {})
         self.assertEqual(len([e for e in self._state()["events"] if e[0] == "ci-dispatch"]), 0)
         retry = self._run()
         self.assertEqual(retry.returncode, 0, retry.stderr)
         again = self._run()
         self.assertEqual(again.returncode, 0, again.stderr)
         events = self._state()["events"]
-        self.assertEqual(len([e for e in events if e[0] == "pr-create"]), 1)
+        self.assertEqual(len([e for e in events if e[0].startswith("pr-")]), 0)
         self.assertEqual(len([e for e in events if e[0] == "ci-dispatch"]), 1)
         self.assertEqual(events[-1][0], "ci-dispatch")
 
