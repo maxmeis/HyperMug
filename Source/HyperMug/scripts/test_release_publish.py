@@ -86,6 +86,16 @@ if args[0] == "api":
         state["tags"][repo + "|" + tag] = entry
         state["events"].append(["ref", repo, tag, entry["target"]]); save()
         print("{}")
+    elif endpoint.endswith("/releases/latest"):
+        if os.environ.get("FAKE_LATEST_API_ERROR"):
+            print("gh: latest lookup failed (HTTP " + os.environ["FAKE_LATEST_API_ERROR"] + ")", file=sys.stderr)
+            sys.exit(1)
+        latest = next((k.split("|", 1)[1] for k, v in state["releases"].items()
+                       if k.startswith(repo + "|") and v.get("latest") and not v["draft"]), None)
+        if latest is None:
+            print("gh: Not Found (HTTP 404)", file=sys.stderr)
+            sys.exit(1)
+        print(latest)
     elif "/releases?" in endpoint:
         names = [k.split("|", 1)[1] for k in state["releases"] if k.startswith(repo + "|")]
         print("\n".join(names))
@@ -94,9 +104,10 @@ elif args[0] == "release" and args[1] == "view":
     tag = args[2]; repo = repo_arg(args)
     release = state["releases"].get(tag_key(repo, tag))
     if not release: sys.exit(1)
+    if "--json" in args and args[args.index("--json") + 1] == "isLatest":
+        sys.exit('Unknown JSON field: "isLatest"')
     if ".body" in args: print(release["body"])
     elif ".isDraft" in args: print("true" if release["draft"] else "false")
-    elif ".isLatest" in args: print("true" if release.get("latest") else "false")
     elif ".assets[].name" in args: print("\n".join(release["assets"]))
     else: print(json.dumps(release))
 elif args[0] == "release" and args[1] == "create":
@@ -387,6 +398,39 @@ class PublishReleaseIntegrationTests(unittest.TestCase):
         self.assertEqual(repeat.returncode, 0, repeat.stderr)
         self.assertEqual(self._state()["events"], events)
 
+    def test_source_only_retry_preserves_an_existing_latest_binary(self):
+        state = self._state()
+        prior = self.releases_repo + "|v1.2.2"
+        state["releases"][prior] = {"body": "prior binary", "draft": False,
+                                     "assets": {"HyperMug-1.2.2.zip": "00"},
+                                     "latest": True, "prerelease": False}
+        self._save_state(state)
+        first = self._run(BUILD_APP="false", TAP_TOKEN="")
+        self.assertEqual(first.returncode, 0, first.stderr)
+        events = list(self._state()["events"])
+        repeat = self._run(BUILD_APP="false", TAP_TOKEN="")
+        self.assertEqual(repeat.returncode, 0, repeat.stderr)
+        self.assertEqual(self._state()["events"], events)
+        self.assertTrue(self._state()["releases"][prior]["latest"])
+        self.assertFalse(self._release()["latest"])
+
+    def test_source_only_retry_fails_closed_on_latest_lookup_error_or_bad_pointer(self):
+        first = self._run(BUILD_APP="false", TAP_TOKEN="")
+        self.assertEqual(first.returncode, 0, first.stderr)
+        events = list(self._state()["events"])
+        unavailable = self._run(BUILD_APP="false", TAP_TOKEN="", FAKE_LATEST_API_ERROR="503")
+        self.assertNotEqual(unavailable.returncode, 0)
+        self.assertIn("HTTP 503", unavailable.stderr)
+        self.assertEqual(self._state()["events"], events)
+        state = self._state()
+        state["releases"][self.releases_repo + "|v1.2.3"]["latest"] = True
+        self._save_state(state)
+        bad_pointer = self._run(BUILD_APP="false", TAP_TOKEN="")
+        self.assertNotEqual(bad_pointer.returncode, 0)
+        self.assertIn("cannot repair immutable release", bad_pointer.stderr)
+        self.assertEqual(self._state()["events"], events)
+        self.assertTrue(self._release()["latest"])
+
     def test_source_only_draft_retry_and_binary_same_tag_refusal(self):
         failed = self._run(BUILD_APP="false", TAP_TOKEN="", FAKE_FAIL_ONCE="release-publish")
         self.assertNotEqual(failed.returncode, 0)
@@ -472,6 +516,13 @@ class PublishReleaseIntegrationTests(unittest.TestCase):
         self.assertIsNone(self._remote_file(self.tap_bare, "Casks/hypermug@canary.rb"))
         self.assertIn('version "0.0.12"', self._remote_file(self.releases_bare, "Casks/hypermug@canary.rb", "release-casks/canary"))
         self.assertEqual(len(self._state()["prs"]), 1)
+
+        events = list(self._state()["events"])
+        retry = self._run(CHANNEL="canary", VERSION=version, BUILD_NUMBER="12",
+                          GITHUB_REF="refs/heads/main", PUBLISH_EXTERNAL_TAP="",
+                          TAP_TOKEN="", TAP_SSH_PRIVATE_KEY="")
+        self.assertEqual(retry.returncode, 0, retry.stderr)
+        self.assertEqual(self._state()["events"], events)
 
         old = "0.0.0-canary.11"
         self._seed_tag(self.releases_repo, "v" + old, SHA_B)
