@@ -22,7 +22,6 @@ jobs:
     environment: beta
     permissions:
       contents: write
-      pull-requests: write
       actions: write
     steps:
       - uses: actions/checkout@v4
@@ -70,7 +69,7 @@ jobs:
       - name: Ensure unique Canary tag points to tested source
         if: steps.freshness.outputs.skip != 'true'
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
           VERSION: 0.0.0-canary.${{ github.run_number }}
         run: |
           tag="v$VERSION"

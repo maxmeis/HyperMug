@@ -1,0 +1,42 @@
+name: Publish verified Homebrew metadata
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+permissions:
+  contents: read
+concurrency:
+  group: hypermug-cask-publication
+  cancel-in-progress: false
+  queue: max
+jobs:
+  publish:
+    if: >-
+      github.repository == 'maxmeis/hypermug' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      (github.event.workflow_run.event == 'push' ||
+       github.event.workflow_run.event == 'workflow_dispatch') &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      (github.event.workflow_run.head_branch == 'release-casks/stable' ||
+       github.event.workflow_run.head_branch == 'release-casks/canary')
+    runs-on: ubuntu-latest
+    steps:
+      # workflow_run is privileged. Execute trusted main code, never the
+      # triggering branch's scripts, workflow, artifacts, or shell input.
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify and fast-forward the release cask
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          SOURCE_REPOSITORY: ${{ github.repository }}
+          RELEASES_REPOSITORY: ${{ vars.RELEASES_REPOSITORY || github.repository }}
+          CI_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: >-
+          python3 helpers/finalize_source_cask.py
+          --repository "$SOURCE_REPOSITORY"
+          --releases-repository "$RELEASES_REPOSITORY"
+          --run-id "$CI_RUN_ID"

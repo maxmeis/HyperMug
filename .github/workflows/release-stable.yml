@@ -57,7 +57,6 @@ jobs:
     environment: production
     permissions:
       contents: write
-      pull-requests: write
       actions: write
     steps:
       - uses: actions/checkout@v4
