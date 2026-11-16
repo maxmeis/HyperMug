@@ -60,7 +60,7 @@ def check_site():
         parsed = urlparse(ref)
         if parsed.scheme or parsed.netloc:
             # The published site links to repository docs; keep those paths valid.
-            prefix = "/maxmeis/HyperMug/blob/main/"
+            prefix = "/maxmeis/hypermug/blob/main/"
             if parsed.netloc == "github.com" and parsed.path.startswith(prefix):
                 local = ROOT / unquote(parsed.path[len(prefix):])
                 if not local.is_file():

@@ -33,7 +33,7 @@ def validate(channel, version, actor, triggering_actor, ref, sha, source_repo, r
             raise ValueError("stable release requires a version tag and X.Y.Z")
         if actor != "maxmeis" or triggering_actor != "maxmeis":
             raise ValueError("production requires both actor and triggering_actor maxmeis")
-    elif source_repo != "maxmeis/HyperMug" or ref != "refs/heads/main" or not CANARY.fullmatch(version):
+    elif source_repo != "maxmeis/hypermug" or ref != "refs/heads/main" or not CANARY.fullmatch(version):
         raise ValueError("canary release requires this repository's main and 0.0.0-canary.N")
 
 
@@ -72,7 +72,7 @@ def cask(channel, version, url, digest):
   url "{url}"
   name "HyperMug"
   desc "Caps Lock remapping, caffeine, and mouse controls for macOS"
-  homepage "https://github.com/maxmeis/HyperMug"
+  homepage "https://github.com/maxmeis/hypermug"
 
   livecheck do
     skip "GitHub release assets are published by production automation"

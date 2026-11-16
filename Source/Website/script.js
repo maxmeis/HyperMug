@@ -1,5 +1,5 @@
 const copyButton = document.querySelector('[data-copy]');
-const commands = 'brew tap maxmeis/hypermug https://github.com/maxmeis/HyperMug\nbrew install --cask maxmeis/hypermug/hypermug';
+const commands = 'brew tap maxmeis/hypermug https://github.com/maxmeis/hypermug\nbrew install --cask maxmeis/hypermug/hypermug@canary';
 copyButton?.addEventListener('click', async () => {
   try {
     await navigator.clipboard.writeText(commands);

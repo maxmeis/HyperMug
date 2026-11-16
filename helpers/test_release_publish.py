@@ -266,7 +266,7 @@ class PublishReleaseIntegrationTests(unittest.TestCase):
         self.real_git = shutil.which("git")
         self.git = self.bin / "git"
         self.git.write_text(FAKE_GIT); self.git.chmod(0o755)
-        self.releases_repo = "maxmeis/HyperMug"
+        self.releases_repo = "maxmeis/hypermug"
         self.tap_repo = "maxmeis/homebrew-formulae"
         self.releases_bare = self._bare(self.releases_repo)
         self.tap_bare = self._bare(self.tap_repo)
