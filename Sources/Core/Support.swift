@@ -14,8 +14,8 @@ public enum HIDAccess: Equatable { case granted, denied, unknown }
 /// Single source for every name that identifies the app on disk, in the log and in the system.
 public enum AppIdentity {
     public static let appName = "HyperMug"
-    public static let bundleID = "com.max.hypermug"
-    public static let logSubsystem = "com.max.hypermug"
+    public static let bundleID = "com.maxmeis.hypermug"
+    public static let logSubsystem = "com.maxmeis.hypermug"
     public static let configFileName = "hypermug.json"            // in ~/.config
     public static let schemaFileName = "hypermug.schema.json"
     public static let debugLogDirectory = "Library/Logs/HyperMug"  // relative to home

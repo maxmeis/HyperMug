@@ -23,7 +23,7 @@ cp Info.plist "$APP/Contents/"
 SIGN_ID="${SIGN_ID:-HyperMug Local Signing}"
 # Not `-v`: a self-signed identity is untrusted but valid for codesign.
 if security find-identity -p codesigning | grep -q "$SIGN_ID"; then
-  codesign --force --sign "$SIGN_ID" --identifier com.max.hypermug "$APP"
+  codesign --force --sign "$SIGN_ID" --identifier com.maxmeis.hypermug "$APP"
 else
   echo "warning: identity $SIGN_ID not found; signing ad-hoc (-)."
   echo "         Run ./scripts/create-signing-cert.sh once so permissions survive rebuilds."

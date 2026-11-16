@@ -171,7 +171,7 @@ Only the **MX Master 3S over Bluetooth** is supported. HyperMug diverts the thum
 ## Logs
 
 ```bash
-log stream --predicate 'subsystem == "com.max.hypermug"'
+log stream --predicate 'subsystem == "com.maxmeis.hypermug"'
 ```
 
 Shows config errors, button/thumb diversion, and permission problems.
@@ -237,6 +237,7 @@ HyperMug is a clean rename of MyMug (bundle id, config path, signing identity). 
 5. Create the new signing identity: `./scripts/create-signing-cert.sh`.
 6. Build and start HyperMug, then grant **Accessibility** and **Input Monitoring** again (grants belong to the bundle id and signature).
 7. Optional: `tccutil reset All com.max.mymug` removes the old app's leftover permission entries.
+8. If you ran a HyperMug build from before the bundle id became `com.maxmeis.hypermug`, it used `com.max.hypermug`; `tccutil reset All com.max.hypermug` removes those leftover grants.
 
 ---
 

@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleIdentifier</key>
-	<string>com.max.hypermug</string>
+	<string>com.maxmeis.hypermug</string>
 	<key>CFBundleName</key>
 	<string>HyperMug</string>
 	<key>CFBundleDisplayName</key>
