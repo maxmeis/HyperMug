@@ -56,6 +56,8 @@ jobs:
           app=Source/HyperMug/build/HyperMug.app
           test "$(plutil -extract CFBundleIconFile raw -o - "$app/Contents/Info.plist")" = HyperMug.icns
           test "$(plutil -extract HyperMugReleaseChannel raw -o - "$app/Contents/Info.plist")" = local
+          test "$(plutil -extract CFBundleShortVersionString raw -o - "$app/Contents/Info.plist")" = 0.1.0
+          test "$(plutil -extract CFBundleVersion raw -o - "$app/Contents/Info.plist")" = 1
           ! plutil -extract SUFeedURL raw -o - "$app/Contents/Info.plist" >/dev/null 2>&1
           test -s "$app/Contents/Resources/HyperMug.icns"
           codesign --verify --deep --strict "$app"

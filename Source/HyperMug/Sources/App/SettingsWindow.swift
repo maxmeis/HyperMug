@@ -62,8 +62,10 @@ private final class SettingsState: ObservableObject {
             var names = Set<String>()
             draft.helpers = [:]
             for helper in helpers {
-                let name = helper.name.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !name.isEmpty else { throw ConfigError(reason: "Helper name cannot be empty") }
+                let name = helper.name
+                guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    throw ConfigError(reason: "Helper name cannot be empty")
+                }
                 guard names.insert(name).inserted else { throw ConfigError(reason: "Duplicate helper name: \(name)") }
                 guard !helper.command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                     throw ConfigError(reason: "Helper \(name): command cannot be empty")

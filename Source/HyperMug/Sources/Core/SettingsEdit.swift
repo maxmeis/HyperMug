@@ -85,7 +85,7 @@ public func settingsAction(kind: String, text: String) -> Result<ButtonAction?, 
         return .success(.shell(value))
     case "helper":
         guard !value.isEmpty else { return .failure(ConfigError(reason: "Choose a helper")) }
-        return .success(.helper(value))
+        return .success(.helper(text))
     case "shortcut":
         let tokens = value.split(whereSeparator: { $0.isWhitespace || $0 == "," || $0 == "+" }).map(String.init)
         switch parseShortcut(tokens) {

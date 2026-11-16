@@ -1,6 +1,10 @@
 import hashlib
+import subprocess
+import sys
+import tempfile
 import unittest
-from release_metadata import appcast, asset_url, cask, validate, stable_order, canary_superseded, release_order, publication_decision
+from pathlib import Path
+from release_metadata import appcast, asset_url, bundle_identity, cask, validate, stable_order, canary_superseded, release_order, publication_decision
 
 SHA = 'a' * 40
 ARGS = ('maxmeis', 'maxmeis', 'refs/tags/v1.2.3', SHA, 'maxmeis/HyperMug', 'maxmeis/HyperMug', 'maxmeis/homebrew-formulae')
@@ -36,13 +40,47 @@ class ReleaseMetadataTests(unittest.TestCase):
 
     def test_appcast_escapes_and_signs(self):
         url = asset_url('maxmeis/HyperMug', 'v1.2.3', 'HyperMug-1.2.3.zip')
-        xml = appcast('stable', '1.2.3<&', 123, url + '?x="&', 'abc+/=', 17)
+        xml = appcast('stable', '1.2.3', 123, url + '?x="&', 'abc+/=', 17)
         self.assertIn('sparkle:edSignature="abc+/="', xml)
-        self.assertIn('1.2.3&lt;&amp;', xml)
+        self.assertIn('<sparkle:shortVersionString>1.2.3</sparkle:shortVersionString>', xml)
         self.assertIn('x=&quot;&amp;', xml)
         self.assertIn('<sparkle:version>123</sparkle:version>', xml)
         stable_xml = appcast('stable', '1.2.3', '1.2.3', url, 'abc+/=', 17)
         self.assertIn('<sparkle:version>1.2.3</sparkle:version>', stable_xml)
+
+    def test_bundle_versions_match_apple_and_canary_feed_identity(self):
+        self.assertEqual(bundle_identity('stable', '2.3.4'), ('2.3.4', '2.3.4'))
+        self.assertEqual(bundle_identity('canary', '0.0.0-canary.12'), ('0.0.12', '12'))
+        short, build = bundle_identity('canary', '0.0.0-canary.12')
+        self.assertRegex(short, r'^\d+\.\d+\.\d+$')
+        self.assertRegex(build, r'^\d+(?:\.\d+){0,2}$')
+        xml = appcast('canary', '0.0.0-canary.12', build, 'https://example.test/zip', 'abc+/=', 17)
+        self.assertIn('<sparkle:shortVersionString>0.0.12</sparkle:shortVersionString>', xml)
+        self.assertIn('<sparkle:version>12</sparkle:version>', xml)
+        self.assertIn('<title>HyperMug 0.0.0-canary.12</title>', xml)
+
+    def test_canary_render_emits_numeric_bundle_matching_feed_and_cask(self):
+        with tempfile.TemporaryDirectory() as directory:
+            archive = Path(directory) / 'HyperMug-0.0.0-canary.12.zip'
+            archive.write_bytes(b'signed archive fixture')
+            output = Path(directory) / 'output'
+            command = [sys.executable, str(Path(__file__).with_name('release_metadata.py')), 'render',
+                       '--channel', 'canary', '--version', '0.0.0-canary.12',
+                       '--actor', 'maxmeis', '--triggering-actor', 'maxmeis', '--ref', 'refs/heads/main',
+                       '--sha', SHA, '--source-repo', 'maxmeis/HyperMug',
+                       '--releases-repo', 'maxmeis/HyperMug', '--tap-repo', 'maxmeis/homebrew-formulae',
+                       '--build-number', '12', '--zip', str(archive), '--signature', 'abc+/=',
+                       '--output', str(output)]
+            subprocess.run(command, check=True, capture_output=True, text=True)
+            feed = (output / 'appcast-canary.xml').read_text()
+            cask_text = (output / 'hypermug@canary.rb').read_text()
+            self.assertIn('<sparkle:shortVersionString>0.0.12</sparkle:shortVersionString>', feed)
+            self.assertIn('<sparkle:version>12</sparkle:version>', feed)
+            self.assertIn('version "0.0.12"', cask_text)
+            self.assertIn('/releases/download/v0.0.0-canary.12/', feed)
+            wrong = command.copy()
+            wrong[wrong.index('--build-number') + 1] = '13'
+            self.assertNotEqual(subprocess.run(wrong, capture_output=True).returncode, 0)
 
     def test_production_cask_and_order(self):
         digest = hashlib.sha256(b'archive').hexdigest()
@@ -58,7 +96,7 @@ class ReleaseMetadataTests(unittest.TestCase):
         digest = hashlib.sha256(b'canary archive').hexdigest()
         result = cask('canary', '0.0.0-canary.12', 'https://example.test/canary.zip', digest)
         self.assertIn('cask "hypermug@canary"', result)
-        self.assertIn('version "0.0.0-canary.12"', result)
+        self.assertIn('version "0.0.12"', result)
         self.assertIn('conflicts_with cask: "hypermug"', result)
         self.assertIn('conflicts_with cask: "hypermug@nightly"', result)
         self.assertTrue(canary_superseded('0.0.0-canary.9', ['v0.0.0-canary.10', 'v2.0.0']))
@@ -66,10 +104,10 @@ class ReleaseMetadataTests(unittest.TestCase):
         release_order('canary', '0.0.0-canary.11', ['v0.0.0-canary.10', 'v2.0.0'])
         with self.assertRaises(ValueError):
             release_order('canary', '0.0.0-canary.9', ['v0.0.0-canary.10'])
-        self.assertEqual(publication_decision('canary', '0.0.0-canary.12', '1200', '0.0.0-canary.11', '1100'), 'advance')
-        self.assertEqual(publication_decision('canary', '0.0.0-canary.11', '1100', '0.0.0-canary.12', '1200'), 'archive')
+        self.assertEqual(publication_decision('canary', '0.0.0-canary.12', '12', '0.0.0-canary.11', '11'), 'advance')
+        self.assertEqual(publication_decision('canary', '0.0.0-canary.11', '11', '0.0.0-canary.12', '12'), 'archive')
         self.assertEqual(publication_decision('canary', '0.0.0-canary.13', '1000', '0.0.0-canary.12', '1200'), 'archive')
-        self.assertEqual(publication_decision('canary', '0.0.0-canary.12', '1200', '0.0.0-canary.12', '1200'), 'resume')
+        self.assertEqual(publication_decision('canary', '0.0.0-canary.12', '12', '0.0.0-canary.12', '12'), 'resume')
         with self.assertRaises(ValueError):
             publication_decision('canary', '0.0.0-canary.12', '1300', '0.0.0-canary.12', '1200')
 

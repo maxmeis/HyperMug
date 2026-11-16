@@ -24,6 +24,19 @@ func settingsEditTests() {
     default: expect(false)
     }
     if case .success = settingsAction(kind: "helper", text: " ") { expect(false) }
+    let spacedSource = Data(#"{"helpers":{" my helper ":"echo referenced"," spare ":"echo unused"},"mouse":{"buttons":{"back":{"helper":" my helper "}}}}"#.utf8)
+    let spacedEdit = try! SettingsEdit(spacedSource)
+    var spacedDraft = spacedEdit.config
+    spacedDraft.caffeineOnLaunch.toggle()
+    let spacedSaved = try! spacedEdit.save(spacedDraft, current: spacedSource)
+    let spacedRoundtrip = try! SettingsEdit(spacedSaved).config
+    expectEqual(spacedRoundtrip.helpers, [" my helper ": "echo referenced", " spare ": "echo unused"])
+    expectEqual(spacedRoundtrip.mouse.buttons.back, .helper(" my helper "))
+    expectEqual(spacedRoundtrip.caffeineOnLaunch, spacedDraft.caffeineOnLaunch)
+    switch settingsAction(kind: "helper", text: " my helper ") {
+    case .success(.helper(let name)): expectEqual(name, " my helper ")
+    default: expect(false)
+    }
     let source = Data(#"{"future":{"enabled":true},"mouse":{"buttons":{"back":{"shortcut":["cmd","["],"future":7},"future":1},"future":2},"trackpad":{"threeFingerSwipe":{"up":{"shell":"echo hi","future":3}},"future":4}}"#.utf8)
     let edit = try! SettingsEdit(source)
     var draft = edit.config

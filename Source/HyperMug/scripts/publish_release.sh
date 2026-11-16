@@ -19,6 +19,8 @@ if [[ "$BUILD_APP" == true && "$PUBLISH_EXTERNAL_TAP" == true ]]; then
   [[ "$tap_archived" == false ]] || { echo 'External tap is archived; disable PUBLISH_EXTERNAL_TAP or choose a writable destination' >&2; exit 1; }
 fi
 export PYTHONPATH="$PWD/scripts"
+expected_build="$(python3 -c 'import sys; from release_metadata import bundle_identity; print(bundle_identity(sys.argv[1], sys.argv[2])[1])' "$CHANNEL" "$VERSION")"
+[[ "$BUILD_NUMBER" == "$expected_build" ]] || { echo 'Build number does not match release tag' >&2; exit 1; }
 tag="v${VERSION}"
 asset="HyperMug-${VERSION}.zip"
 feed="appcast-${CHANNEL}.xml"

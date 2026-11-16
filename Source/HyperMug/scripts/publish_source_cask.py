@@ -6,6 +6,7 @@ import os
 import re
 import subprocess
 from pathlib import Path
+from release_metadata import bundle_identity
 
 
 def run(*args, cwd=None, capture=False):
@@ -23,7 +24,7 @@ def version_of(content, channel):
     value = match.group(1)
     if channel == "stable" and re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", value):
         return tuple(map(int, value.split(".")))
-    if channel == "canary" and re.fullmatch(r"0\.0\.0-canary\.[1-9][0-9]*", value):
+    if channel == "canary" and re.fullmatch(r"0\.0\.[1-9][0-9]*", value):
         return (int(value.rsplit(".", 1)[1]),)
     raise ValueError("unexpected release cask version")
 
@@ -33,7 +34,7 @@ def publish(channel, version, repository, asset, work):
     path = f"Casks/{token}.rb"
     branch = f"release-casks/{channel}"
     desired = asset.read_text()
-    expected_version = version
+    expected_version, _ = bundle_identity(channel, version)
     expected = ((int(expected_version.rsplit(".", 1)[1]),) if channel == "canary"
                 else tuple(map(int, expected_version.split("."))))
     if version_of(desired, channel) != expected:

@@ -8,6 +8,7 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
+from release_metadata import bundle_identity
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -301,6 +302,7 @@ class PublishReleaseIntegrationTests(unittest.TestCase):
         channel = channel or self.env["CHANNEL"]
         version = version or self.env["VERSION"]
         build_number = build_number or self.env["BUILD_NUMBER"]
+        cask_version, _ = bundle_identity(channel, version)
         token = "hypermug@canary" if channel == "canary" else "hypermug"
         out = self.project / "build/release"
         archive = out / f"HyperMug-{version}.zip"
@@ -310,11 +312,10 @@ class PublishReleaseIntegrationTests(unittest.TestCase):
         (out / f"appcast-{channel}.xml").write_text(
             '<?xml version="1.0"?><rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"><channel><item>'
             f"<title>HyperMug {version}</title><sparkle:version>{build_number}</sparkle:version>"
-            f"<sparkle:shortVersionString>{version}</sparkle:shortVersionString>"
+            f"<sparkle:shortVersionString>{cask_version}</sparkle:shortVersionString>"
             f'<enclosure url="https://example.invalid/{archive.name}" sparkle:edSignature="sig" length="{archive.stat().st_size}" />'
             "</item></channel></rss>"
         )
-        cask_version = version
         (out / f"{token}.rb").write_text(f'cask "{token}" do\n  version "{cask_version}"\n  sha256 "{digest}"\nend\n')
         (out / "sha256.txt").write_text(digest + "\n")
 
@@ -456,8 +457,8 @@ class PublishReleaseIntegrationTests(unittest.TestCase):
     def test_canary_publishes_separate_feed_and_cask_without_external_tap(self):
         version = "0.0.0-canary.12"
         self._seed_tag(self.releases_repo, "v" + version, SHA_A)
-        self._build(channel="canary", version=version, build_number="1200")
-        result = self._run(CHANNEL="canary", VERSION=version, BUILD_NUMBER="1200",
+        self._build(channel="canary", version=version, build_number="12")
+        result = self._run(CHANNEL="canary", VERSION=version, BUILD_NUMBER="12",
                            GITHUB_REF="refs/heads/main", PUBLISH_EXTERNAL_TAP="",
                            TAP_TOKEN="", TAP_SSH_PRIVATE_KEY="")
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -469,14 +470,14 @@ class PublishReleaseIntegrationTests(unittest.TestCase):
         self.assertIn(version, self._remote_file(self.releases_bare, "appcast-canary.xml"))
         self.assertIsNone(self._remote_file(self.releases_bare, "appcast-stable.xml"))
         self.assertIsNone(self._remote_file(self.tap_bare, "Casks/hypermug@canary.rb"))
-        self.assertIn(version, self._remote_file(self.releases_bare, "Casks/hypermug@canary.rb", "release-casks/canary"))
+        self.assertIn('version "0.0.12"', self._remote_file(self.releases_bare, "Casks/hypermug@canary.rb", "release-casks/canary"))
         self.assertEqual(len(self._state()["prs"]), 1)
 
         old = "0.0.0-canary.11"
         self._seed_tag(self.releases_repo, "v" + old, SHA_B)
-        self._build(channel="canary", version=old, build_number="1100")
+        self._build(channel="canary", version=old, build_number="11")
         events = list(self._state()["events"])
-        outdated = self._run(CHANNEL="canary", VERSION=old, BUILD_NUMBER="1100",
+        outdated = self._run(CHANNEL="canary", VERSION=old, BUILD_NUMBER="11",
                              GITHUB_REF="refs/heads/main", GITHUB_SHA=SHA_B,
                              PUBLISH_EXTERNAL_TAP="", TAP_TOKEN="")
         self.assertNotEqual(outdated.returncode, 0)

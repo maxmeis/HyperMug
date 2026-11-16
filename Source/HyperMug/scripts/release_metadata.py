@@ -13,6 +13,16 @@ REPO = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 SHA = re.compile(r"^[0-9a-f]{40}$")
 
 
+def bundle_identity(channel, version):
+    """Return Apple-compatible marketing/build versions for a release tag."""
+    if channel == "stable" and SEMVER.fullmatch(version):
+        return version, version
+    if channel == "canary" and (match := CANARY.fullmatch(version)):
+        serial = match.group(1)
+        return f"0.0.{serial}", serial
+    raise ValueError("invalid release version")
+
+
 def validate(channel, version, actor, triggering_actor, ref, sha, source_repo, releases_repo, tap_repo):
     if channel not in ("stable", "canary") or not all(REPO.fullmatch(r) for r in (source_repo, releases_repo, tap_repo)):
         raise ValueError("valid release channel and repositories required")
@@ -34,7 +44,7 @@ def asset_url(repo, tag, name):
 def appcast(channel, version, build_number, url, signature, size):
     if not re.fullmatch(r"[0-9]+(?:\.[0-9]+){0,2}", str(build_number)) or not re.fullmatch(r"[A-Za-z0-9+/=]+", signature):
         raise ValueError("invalid build number or EdDSA signature")
-    short_version = version
+    short_version, _ = bundle_identity(channel, version)
     e = lambda s: escape(str(s), {'"': '&quot;', "'": '&apos;'})
     return f'''<?xml version="1.0" encoding="utf-8"?>
 <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
@@ -51,7 +61,7 @@ def cask(channel, version, url, digest):
     if not re.fullmatch(r"[0-9a-f]{64}", digest):
         raise ValueError("invalid SHA256")
     token = "hypermug@canary" if channel == "canary" else "hypermug"
-    cask_version = version
+    cask_version, _ = bundle_identity(channel, version)
     conflicts = ('  conflicts_with cask: "hypermug"\n  conflicts_with cask: "hypermug@nightly"\n'
                  if channel == "canary" else
                  '  conflicts_with cask: "hypermug@canary"\n  conflicts_with cask: "hypermug@nightly"\n')
@@ -152,6 +162,8 @@ def main():
         return
     if not all((a.build_number, a.zip, a.signature, a.output)):
         p.error("render requires --build-number, --zip, --signature, --output")
+    if a.build_number != bundle_identity(a.channel, a.version)[1]:
+        p.error("build number does not match the release version")
     archive = Path(a.zip)
     digest = hashlib.sha256(archive.read_bytes()).hexdigest()
     url = asset_url(a.releases_repo, "v" + a.version, archive.name)

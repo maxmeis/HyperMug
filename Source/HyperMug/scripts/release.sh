@@ -35,12 +35,23 @@ security set-key-partition-list -S apple-tool:,apple: -s -k "$RUNNER_TEMP" "$key
 security list-keychains -d user -s "$keychain" "${original_keychains[@]}"
 search_list_changed=1
 security find-identity -v -p codesigning "$keychain" | grep -F "$SIGN_ID"
-app_version="$VERSION"
+identity="$(python3 - "$CHANNEL" "$VERSION" <<'PY'
+import sys
+from scripts.release_metadata import bundle_identity
+print(*bundle_identity(sys.argv[1], sys.argv[2]))
+PY
+)"
+read -r app_version expected_build <<< "$identity"
+[[ "$BUILD_NUMBER" == "$expected_build" ]] || { echo 'Build number does not match release tag' >&2; exit 1; }
 
 export SIGN_KEYCHAIN="$keychain" REQUIRE_SIGNING=1 APP_VERSION="$app_version" RELEASE_CHANNEL="$CHANNEL"
 export APPCAST_URL="https://raw.githubusercontent.com/${RELEASES_REPOSITORY}/updates/appcast-${CHANNEL}.xml"
 export SPARKLE_PUBLIC_ED_KEY="${SPARKLE_PUBLIC_ED_KEY:?}"
 ./build.sh
+bundle_plist=build/HyperMug.app/Contents/Info.plist
+[[ "$(plutil -extract CFBundleShortVersionString raw -o - "$bundle_plist")" == "$app_version" ]] || { echo 'Built marketing version mismatch' >&2; exit 1; }
+[[ "$(plutil -extract CFBundleVersion raw -o - "$bundle_plist")" == "$BUILD_NUMBER" ]] || { echo 'Built build version mismatch' >&2; exit 1; }
+[[ "$(plutil -extract HyperMugReleaseChannel raw -o - "$bundle_plist")" == "$CHANNEL" ]] || { echo 'Built channel mismatch' >&2; exit 1; }
 codesign --verify --deep --strict --verbose=2 build/HyperMug.app
 ditto -c -k --keepParent build/HyperMug.app "$work/notary.zip"
 submit_for_notarization "$work/notary.zip"
