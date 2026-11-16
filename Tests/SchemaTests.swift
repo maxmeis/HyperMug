@@ -94,7 +94,17 @@ private func schemaStructureTests() {
                            buttons: ButtonMap(back: shortcut(["cmd", "["]), forward: shortcut(["cmd", "]"]), thumb: .shell("echo hi"))))
     let swapped = AppConfig(mouse: MouseConfig(buttons: ButtonMap(
         back: .shell("echo back"), forward: .shell("echo forward"), thumb: shortcut(["meh", "k"]))))
-    for sample in [AppConfig(), mapped, fullyMapped, swapped] {
+    let swipes = AppConfig(trackpad: TrackpadConfig(
+        threeFingerSwipe: SwipeMap(up: .shell("up"), down: shortcut(["cmd", "a"]),
+                                   left: .shell("left"), right: shortcut(["cmd", "b"])),
+        fourFingerSwipe: SwipeMap(up: shortcut(["cmd", "c"]), down: .shell("down"),
+                                  left: shortcut(["cmd", "d"]), right: .shell("right"))))
+    let swappedSwipes = AppConfig(trackpad: TrackpadConfig(
+        threeFingerSwipe: SwipeMap(up: shortcut(["cmd", "a"]), down: .shell("down"),
+                                   left: shortcut(["cmd", "b"]), right: .shell("right")),
+        fourFingerSwipe: SwipeMap(up: .shell("up"), down: shortcut(["cmd", "c"]),
+                                  left: .shell("left"), right: shortcut(["cmd", "d"]))))
+    for sample in [AppConfig(), mapped, fullyMapped, swapped, swipes, swappedSwipes] {
         validate(schema, encoded(sample), "")
     }
     expectEqual(Set(propertyPaths(schema, "")).subtracting(seen), [], "schema properties without an encoded counterpart")
@@ -109,11 +119,31 @@ private func schemaStructureTests() {
     expect(((schema["properties"] as? JSON) ?? [:])["caffeine"] == nil, "the schema does not know the removed caffeine key")
     expectEqual(Set(node(["capsLock"])["enum"] as? [String] ?? []), Set(CapsMode.allCases.map { $0.rawValue }), "capsLock enum == CapsMode cases")
     expectEqual(Set((node(["mouse"])["properties"] as? JSON ?? [:]).keys), ["invertScroll", "buttons"], "mouse properties")
+    expect(!rootRequired.contains("trackpad"), "trackpad is optional for old configs")
+    expect(!rootRequired.contains("autoUpdate"), "autoUpdate is optional for old configs")
+    expectEqual(node(["autoUpdate"])["type"] as? String, "boolean", "autoUpdate schema type")
+    expectEqual((encoded(AppConfig()) as? JSON)?["autoUpdate"] as? Bool, true, "new defaults encode autoUpdate")
+    expectEqual((encoded(AppConfig(autoUpdate: false)) as? JSON)?["autoUpdate"] as? Bool, false,
+                "disabled autoUpdate encodes as false")
+    expectEqual(try? decodeConfig(Data("{\"capsLock\":\"meh\"}".utf8)).get().config.autoUpdate, true,
+                "legacy config without autoUpdate keeps automatic checks enabled")
+    expect((node(["trackpad"])["description"] as? String)?.contains("System Settings") == true,
+           "schema explains one-time native gesture setup")
+    expectEqual(Set((node(["trackpad"])["properties"] as? JSON ?? [:]).keys), ["threeFingerSwipe", "fourFingerSwipe"], "trackpad groups")
+    for group in ["threeFingerSwipe", "fourFingerSwipe"] {
+        expect(node(["trackpad", group])["required"] == nil, "swipe group has no required directions")
+        expectEqual(Set((node(["trackpad", group])["properties"] as? JSON ?? [:]).keys),
+                    Set(SwipeDirection.allCases.map(\.rawValue)), "four directions")
+    }
 
     // Buttons: one shell string or one non-empty shortcut array of known tokens.
     let tokenSet = Set(shortcutTokenNames)
-    for button in ["back", "forward", "thumb"] {
-        let b = node(["mouse", "buttons", button])
+    for path in (["back", "forward", "thumb"].map { ["mouse", "buttons", $0] } +
+                 ["threeFingerSwipe", "fourFingerSwipe"].flatMap { group in
+                     SwipeDirection.allCases.map { ["trackpad", group, $0.rawValue] }
+                 }) {
+        let button = path.joined(separator: ".")
+        let b = node(path)
         expect(b["required"] == nil, "\(button) is not required to contain a particular key itself")
         expectEqual(Set((b["properties"] as? JSON ?? [:]).keys), ["shell", "shortcut"], "\(button) properties")
         expectEqual(child(b, "shell")["type"] as? String, "string", "\(button).shell is a string")

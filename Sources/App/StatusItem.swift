@@ -18,7 +18,7 @@ final class StatusItemController: NSObject {
         return (self?.tracker.info, self?.tracker.since)
     }
 
-    init(store: ConfigStore, engine: Engine) {
+    init(store: ConfigStore, engine: Engine, updateChecker: UpdateChecker) {
         self.store = store
         self.engine = engine
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -27,13 +27,16 @@ final class StatusItemController: NSObject {
         let settings = NSMenuItem(title: MenuText.settings, action: #selector(openSettings), keyEquivalent: ",")
         settings.keyEquivalentModifierMask = [.command]
         let privileges = NSMenuItem(title: MenuText.privileges, action: #selector(checkPrivileges), keyEquivalent: "")
-        let updates = NSMenuItem(title: MenuText.updates, action: #selector(checkUpdates), keyEquivalent: "")
+        let trackpad = NSMenuItem(title: "Trackpad Swipes…", action: #selector(showTrackpadSetup), keyEquivalent: "")
+        let updates = NSMenuItem(title: MenuText.updates, action: nil, keyEquivalent: "")
         let quit = NSMenuItem(title: MenuText.quit, action: #selector(quit), keyEquivalent: "q")
         quit.keyEquivalentModifierMask = [.command]
-        for item in [settings, privileges, updates, quit] { item.target = self }
+        for item in [settings, trackpad, privileges, quit] { item.target = self }
+        updateChecker.configureMenuItem(updates)
 
         menu.autoenablesItems = false
         menu.addItem(settings)
+        menu.addItem(trackpad)
         menu.addItem(privileges)
         menu.addItem(updates)
         menu.addItem(.separator())
@@ -121,9 +124,7 @@ final class StatusItemController: NSObject {
         PrivilegesPresenter.present()
     }
 
-    @objc private func checkUpdates() {
-        UpdateChecker.check(presentUpdateAlert)
-    }
+    @objc private func showTrackpadSetup() { TrackpadSetup.present() }
 
     @objc private func quit() {
         NSApp.terminate(nil)

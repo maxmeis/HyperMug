@@ -1,6 +1,6 @@
 # HyperMug
 
-Menu bar app for macOS: **Caps Lock → Meh/Hyper**, **Caffeine**, and **mouse remapping** for the Logitech MX Master 3S (side buttons, thumb button, scroll direction). All settings live in one JSON file: `~/.config/hypermug.json`.
+Menu bar app for macOS: **Caps Lock → Meh/Hyper**, **Caffeine**, **three- and four-finger trackpad swipes**, and **mouse remapping** for the Logitech MX Master 3S (side buttons, thumb button, scroll direction). All settings live in one JSON file: `~/.config/hypermug.json`.
 
 ## Replaces
 
@@ -11,6 +11,35 @@ HyperMug replaces:
 - **OpenLogi's button remapping** for the MX Master 3S — Back / Forward / Thumb → shell command or shortcut — plus scroll inversion.
 
 Do not run Hyperkey or OpenLogi at the same time: they fight over Caps Lock and the thumb button. Quit them and disable their login items.
+
+## Install and update
+
+This repository is also a Homebrew tap. Release downloads and Sparkle update feeds are public HTTPS resources hosted in `maxmeis/HyperMug`.
+
+Each channel becomes installable after its first real release and the generated cask-update PR has been merged into `main`. The [Casks directory](Casks/README.md) deliberately has no placeholder versions or checksums.
+
+```bash
+brew tap maxmeis/hypermug https://github.com/maxmeis/HyperMug
+brew install --cask maxmeis/hypermug/hypermug
+```
+
+For builds from `main`, install the beta/nightly cask instead:
+
+```bash
+brew install --cask maxmeis/hypermug/hypermug@nightly
+```
+
+The existing separate tap, `maxmeis/homebrew-formulae`, continues receiving both casks automatically. While that tap is private, it requires GitHub access:
+
+```bash
+brew tap maxmeis/formulae git@github.com:maxmeis/homebrew-formulae.git
+```
+
+Stable and beta install the same `HyperMug.app` and share its config and bundle identity. Install one channel at a time; quit HyperMug and uninstall the current cask before installing the other. The public in-repo tap and release ZIPs work without access to the private separate tap.
+
+Release builds include [Sparkle](https://sparkle-project.org/documentation/) for automatic update checks and signed download, installation, and relaunch. `autoUpdate` controls scheduled checks and defaults to `true`. Set `"autoUpdate": false` in `~/.config/hypermug.json` to disable scheduled checks; **Check for Updates…** remains available for manual checks. Edits apply while the app is running. This setting controls checking, while Sparkle handles download and installation prompts. Each build stays on its own channel: stable reads `appcast-stable.xml`, beta reads `appcast-beta.xml`, both on the repository's `updates` branch. Beta never feeds updates to a stable installation. Local development builds without an update signing key have updating disabled.
+
+Both casks declare `auto_updates true`, so ordinary Homebrew upgrades leave updating to the app. To explicitly update through Homebrew, use `brew upgrade --cask --greedy maxmeis/hypermug/hypermug` (or `hypermug@nightly`). The casks pin immutable versioned release downloads with SHA-256 checksums.
 
 ## Menu bar icon
 
@@ -24,12 +53,13 @@ The menu contains only (plus **Blocked by Secure Input: ‹App›…** and a sep
 - **Settings…** (⌘,) — opens `~/.config/hypermug.json` in your editor (see below). If the file is missing it is recreated first; an invalid file is opened as is and never rewritten.
 - **Check Privileges…** — shows whether Accessibility and Input Monitoring are granted (✅/❌). For each missing one a button opens its System Settings pane and triggers the system prompt. A **Restart HyperMug** button is always there (Input Monitoring only takes effect after a relaunch); Return presses OK.
 - **Check for Updates…**
+- **Trackpad Swipes…** — opens the one-time setup instructions and a button for macOS Trackpad settings.
 - ———
 - **Quit HyperMug** (⌘Q)
 
 **Editor.** `Settings…` asks your login shell (`$SHELL -lic`, so PATH and variables match a terminal; 3 s timeout, off the main thread) for `$EDITOR` and runs it detached on the config file, e.g. `EDITOR=cursor` opens it in Cursor. Terminal editors (vi, vim, nvim, nano, emacs, micro, hx, helix, kak, joe, ed, pico, mg) are not run from a menu bar app. If `$EDITOR` is unset, is a terminal editor, or its command fails, the file opens in the default app for `.json` files (TextEdit if none handles them).
 
-Caps Lock mode, Caffeine at launch, mouse settings and start at login (`launchAtLogin`) are set only in the config file. The only thing done from the icon is the session Caffeine toggle.
+Caps Lock mode, Caffeine at launch, automatic update checks (`autoUpdate`), mouse settings, trackpad bindings, and start at login (`launchAtLogin`) are set only in the config file. The only thing done from the icon is the session Caffeine toggle.
 
 ## Config file
 
@@ -40,6 +70,7 @@ Path: `~/.config/hypermug.json` (the folder is created if missing). It is the si
   "$schema": "./hypermug.schema.json",
   "capsLock": "meh",
   "caffeineOnLaunch": true,
+  "autoUpdate": true,
   "launchAtLogin": false,
   "mouse": {
     "invertScroll": { "vertical": false, "horizontal": false },
@@ -58,7 +89,7 @@ On each launch HyperMug writes `~/.config/hypermug.schema.json` next to the conf
 
 ### Defaults
 
-HyperMug writes a new or empty config file with these values and nothing else: `$schema`, `caffeineOnLaunch: true`, `capsLock: "meh"`, `launchAtLogin: false`, and both scroll inversions `false`. Button mappings are not written until you add them; `buttons` is absent while no button is mapped, and a mapped button contains only its one action key.
+HyperMug writes a new or empty config file with these values and nothing else: `$schema`, `autoUpdate: true`, `caffeineOnLaunch: true`, `capsLock: "meh"`, `launchAtLogin: false`, and both scroll inversions `false`. Button mappings are not written until you add them; `buttons` is absent while no button is mapped, and a mapped button contains only its one action key. Trackpad bindings are off by default, and `trackpad` is omitted while no swipe is mapped.
 
 Missing top-level keys take the same defaults when reading. A button that is absent, `null`, `{}`, or whose `shortcut`/`shell` is empty keeps its normal behavior (back/forward pass through unchanged; the thumb button is not touched). An empty or whitespace-only config file means all defaults: it is not an error, and HyperMug fills it with the default config automatically.
 
@@ -94,6 +125,37 @@ Buttons: `back` and `forward` (mouse buttons 3 and 4 of any mouse) and `thumb` (
 | `"shell"` | Run a command with `/bin/sh -c`. Runs detached, output is discarded. A GUI app gets a minimal `PATH` (`/usr/bin:/bin:/usr/sbin:/sbin`), so use absolute paths for other tools. To open an app, file or URL, use `open`, e.g. `"shell": "open -a Safari"`. |
 
 A mapped `back`/`forward` button no longer reaches apps: both its press and release are swallowed and the action runs once on press. The `thumb` action runs once per press.
+
+### `trackpad`
+
+Map three- and four-finger swipes independently in all four directions. Add `trackpad` alongside `mouse` in your config; each direction uses the same `shortcut` or `shell` action format as mouse buttons:
+
+```json
+{
+  "trackpad": {
+    "threeFingerSwipe": {
+      "left": { "shortcut": ["cmd", "shift", "["] },
+      "right": { "shortcut": ["cmd", "shift", "]"] },
+      "up": { "shell": "open -a Terminal" },
+      "down": { "shortcut": ["cmd", "w"] }
+    },
+    "fourFingerSwipe": {
+      "left": { "shortcut": ["ctrl", "left"] },
+      "right": { "shortcut": ["ctrl", "right"] },
+      "up": { "shell": "open -a 'Mission Control'" },
+      "down": { "shell": "open -a Finder" }
+    }
+  }
+}
+```
+
+Only listed directions run an action. Each swipe fires once; lift all fingers before the next swipe. Taps, pinches, and rotation are not bindings. Normal two-finger scrolling and mouse-wheel scrolling remain available.
+
+**One-time macOS setup:** open **Trackpad Swipes…** from HyperMug's menu. In **System Settings → Trackpad → More Gestures**, disable the conflicting **Swipe between full-screen applications**, **Mission Control**, and **App Exposé** assignments. If three-finger dragging is enabled, turn it off under **Accessibility → Pointer Control → Trackpad Options**. Grant the app Accessibility and Input Monitoring through **Check Privileges…**; relaunch after granting Input Monitoring.
+
+HyperMug reads raw trackpad contacts; it does not selectively intercept Apple's native swipe actions. Disabling those conflicts is the same setup documented by [BetterTouchTool](https://www.folivora.ai/features/trackpad-gestures/). Native assignments you disable stay disabled until you re-enable them in System Settings. HyperMug does not write trackpad preferences. It also leaves scroll events alone so another trackpad or Magic Mouse cannot have its input swallowed by a remapped swipe. On some setups, the focused app may receive scrolling during that swipe.
+
+Built-in MacBook trackpads and Apple Magic Trackpads use the private `MultitouchSupport` framework. Recognition and action routing are tested independently of that hardware adapter; physical gesture behavior needs validation on the target trackpad.
 
 ### Shortcut grammar
 
@@ -201,13 +263,68 @@ SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk ./build.sh
 
 Requires macOS 14+, Apple Silicon.
 
+## Release channels and maintainer setup
+
+`release-beta.yml` runs on pushes to `main`; `release-stable.yml` runs only through **Actions → Release stable → Run workflow**, with `main` selected and a new `X.Y.Z` version. Stable authorization checks both the original actor and the person rerunning the workflow against `maxmeis`, before entering the production job. Pushing a tag does not publish a production release.
+
+Each successful release builds and tests the app, signs with Developer ID, submits it to Apple's notarization service, staples the result, and signs the final ZIP with Sparkle's Ed25519 key. Publication creates a versioned GitHub Release and git tag at the built commit, publishes the channel's appcast on the `updates` branch, commits that channel's cask to `maxmeis/homebrew-formulae/Casks/`, and proposes the same cask under this repository's `Casks/` through a channel-specific PR. The other channel's feed and cask are preserved. Production uses `vX.Y.Z`; beta releases are marked prerelease and do not replace GitHub's latest stable release. Cask-only pushes to `main` do not start another beta release.
+
+Before enabling releases:
+
+1. Make `maxmeis/HyperMug` public so downloads and raw appcasts work without authentication.
+2. Create GitHub environments named `beta` and `production`. Restrict both to the `main` branch. For `production`, set **Required reviewers** to **only `maxmeis`**, allow self-review (you initiate and approve your own release), and disable administrator bypass. [GitHub environment protection](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments) is configured in repository Settings, not in the workflow YAML.
+3. Store production signing credentials and tokens **only in the `production` environment**, never as repository-wide secrets. Populate `beta` separately. Generate a separate Sparkle key pair for each channel, so beta signing access cannot sign a stable app update. Keep the stable key pair for future releases; replacing it without a key-rotation release strands installed clients.
+4. Protect `main`: restrict direct pushes to `maxmeis` and require your code-owner approval for contributions. `.github/CODEOWNERS` assigns all files to `maxmeis`, but GitHub must enforce required code-owner reviews in branch settings. Beta's Contents-write tokens can also change release and tap metadata, so separate environment secrets alone do not enforce channel-level publication permissions. Every change that can execute with those tokens needs your approval.
+5. Enable **Settings → Actions → General → Allow GitHub Actions to create and approve pull requests** so the release job can propose cask changes. Required code-owner review still applies. The publisher explicitly dispatches CI on the PR's branch when its head has no CI check; dispatched CI also checks commit messages. Only the release jobs have the additional Actions-write permission needed for that dispatch.
+6. Add the following secrets and variables to each environment. Neither environments nor signing credentials are created by checking in these workflows.
+
+| Environment secret | Value |
+|---|---|
+| `DEVELOPER_ID_P12_BASE64` | Base64-encoded Developer ID Application certificate and private key exported as a `.p12` |
+| `DEVELOPER_ID_P12_PASSWORD` | Password for that `.p12` |
+| `APP_STORE_CONNECT_PRIVATE_KEY` | App Store Connect API private key (`.p8` PEM contents), for API-key notarization |
+| `APPLE_ID` | Apple account used for password-based notarization; omitted when using the API key |
+| `APPLE_APP_SPECIFIC_PASSWORD` | App-specific password for password-based notarization; omitted when using the API key |
+| `SPARKLE_EDDSA_PRIVATE_KEY` | Sparkle private key exported with `generate_keys -x`; the file's contents, not its path |
+| `RELEASE_TOKEN` | Optional token with Contents read/write when publishing to a different releases repository; defaults to the job's built-in `GITHUB_TOKEN` for HyperMug |
+| `TAP_SSH_PRIVATE_KEY` | Preferred tap authentication: private SSH deploy key whose public key has write access to `maxmeis/homebrew-formulae`; use a separate key per environment |
+| `TAP_TOKEN` | Optional alternative to the SSH key: fine-grained token with Contents read/write on `maxmeis/homebrew-formulae` |
+
+| Environment variable | Value |
+|---|---|
+| `SIGN_ID` | Full identity, e.g. `Developer ID Application: Your Name (TEAMID)` |
+| `APPLE_TEAM_ID` | Apple Developer team identifier |
+| `APP_STORE_CONNECT_KEY_ID` | API key identifier, when using API-key notarization |
+| `APP_STORE_CONNECT_ISSUER_ID` | API key issuer identifier, when using API-key notarization |
+| `SPARKLE_PUBLIC_ED_KEY` | Base64 public key printed by Sparkle's `generate_keys`, matching this environment's private key |
+| `RELEASES_REPOSITORY` | Optional; defaults to `maxmeis/HyperMug` |
+| `TAP_REPOSITORY` | Optional; defaults to `maxmeis/homebrew-formulae` |
+
+API-key notarization takes precedence when configured. Supply the private key, key ID, and issuer ID together. Otherwise supply the Apple account, app-specific password, and team ID. The API key authenticates notarization; the Developer ID Application certificate and its private key sign the app in either mode.
+
+The release job alone receives `contents: write`, `pull-requests: write`, and `actions: write`; the stable authorization job remains read-only. Tap publishing prefers the environment's SSH deploy key and validates GitHub's host keys against its HTTPS metadata API. The temporary private-key file is removed after publication. This lets the default setup publish releases and update the private tap without copying a personal GitHub token into CI.
+
+To obtain Sparkle's pinned signing tools locally:
+
+```bash
+source scripts/sparkle.sh
+sparkle_prepare
+"$SPARKLE_ROOT/bin/generate_keys"
+```
+
+Follow [Sparkle's key export instructions](https://sparkle-project.org/documentation/#eddsa-ed25519-signatures) to export the private key for CI; keep that file outside the repository. Use a separate keychain account when generating the other channel's key (`generate_keys --help` describes the account option). The public key goes into the corresponding environment variable; users never receive the private key or either GitHub token.
+
+The workflows share a publication queue with `queue: max`, which preserves up to 100 pending runs instead of replacing pending beta builds. Each beta archive is retained even if its source commit is no longer the tip of `main`; an older run cannot move a channel's feed or cask backwards. Stable dispatch uses the selected run's checked-out SHA and rejects version downgrades. Publication first uploads a draft release and publishes it before advancing the feed or tap. A retry reuses the original published ZIP and metadata, including after a tap push failure; an incomplete unpublished draft can be recreated without deleting its tag. Published assets are never overwritten.
+
+For an update-enabled local build, pass `SPARKLE_PUBLIC_ED_KEY`, `UPDATE_CHANNEL=stable` or `beta`, and optionally `APPCAST_URL`; `APP_VERSION` and numeric or dotted `BUILD_NUMBER` override the bundle versions. Production uses the semantic version as its Sparkle build version; beta uses the workflow run ID. This keeps stable updates in version order even if queued workflows execute out of order. Production builds additionally require `REQUIRE_SIGNING=1` and the Developer ID identity. Local self-signed certificates from `create-signing-cert.sh` are for development.
+
 ## Development
 
 The source is split into three layers under `Sources/`:
 
 | Layer | Folder | What lives there |
 |-------|--------|------------------|
-| **Core** | `Sources/Core/` | All logic and decisions: config model, codec, schema and store, shortcut grammar, HID++ codec and thumb session state machine, Caps/tap/scroll/side-button decisions, caffeine and launch-at-login decisions, Secure Input parsing and quit-protection rules, editor command parsing, update-check decision. Compiled as its own Swift module, `HyperMugCore`. |
+| **Core** | `Sources/Core/` | All logic and decisions: config model, codec, schema and store, shortcut grammar, HID++ codec and thumb session state machine, Caps/tap/scroll/side-button decisions, per-device trackpad swipe recognition, caffeine and launch-at-login decisions, Secure Input parsing and quit-protection rules, editor command parsing. Compiled as its own Swift module, `HyperMugCore`. |
 | **Platform** | `Sources/Platform/` | Thin adapters to the OS and hardware: event tap, CGEvent posting, IOHIDManager (Caps key and thumb), IOPM assertion, SMAppService, `hidutil`, process spawning and editor launch, IORegistry and `NSRunningApplication` reads, file watching, logging. |
 | **App** | `Sources/App/` | AppKit UI and the composition root: entry point, status item, menu, alerts, panels, wiring. |
 

@@ -21,6 +21,8 @@ public protocol EnginePorts: AnyObject {
     func setLoginItem(registered: Bool) -> String?
     func setThumbDiversion(_ on: Bool)
     func shutdownThumb()
+    func configureTrackpad(_ config: TrackpadConfig, enabled: Bool)
+    func shutdownTrackpad()
     func run(_ action: ButtonAction)
     func postEscape()
     func log(_ level: LogLevel, _ message: String)
@@ -41,6 +43,8 @@ public final class Engine {
     /// Mask of the installed tap; nil = no tap.
     private var installedMask: CGEventMask?
     private var lastTrusted: Bool?
+    private var trackpadConfig = TrackpadConfig()
+    private var stopped = false
 
     public init(ports: EnginePorts) {
         self.ports = ports
@@ -53,6 +57,8 @@ public final class Engine {
     }
 
     public func apply(_ config: AppConfig) {
+        stopped = false
+        trackpadConfig = config.trackpad
         let newSettings = TapSettings(config: config)
         if newSettings.capsMode != settings.capsMode { tapState.resetCaps() }
         settings = newSettings
@@ -91,6 +97,7 @@ public final class Engine {
         let capsWanted = settings.capsMode.isModifier && installedMask != nil && trusted
         if !capsWanted { tapState.resetCaps() }
         ports.setCapsKeyboardMonitoring(capsWanted)
+        ports.configureTrackpad(trackpadConfig, enabled: !stopped && trusted && ports.inputMonitoringAccess() == .granted && trackpadConfig.hasMappings)
 
         onStateChange?()
     }
@@ -102,6 +109,9 @@ public final class Engine {
     }
 
     public func shutdown() {
+        stopped = true
+        trackpadConfig = TrackpadConfig()
+        ports.shutdownTrackpad()
         setCaffeine(false)
         settings = TapSettings()
         thumbAction = nil
@@ -131,6 +141,12 @@ public final class Engine {
 
     public func thumbPressed() {
         if let action = thumbAction { ports.run(action) }
+    }
+
+    public func trackpadSwiped(_ swipe: TrackpadSwipe) {
+        guard !stopped, trackpadConfig.hasMappings(fingers: swipe.fingers),
+              let action = trackpadConfig.action(fingers: swipe.fingers, direction: swipe.direction) else { return }
+        ports.run(action)
     }
 
     // MARK: Internals

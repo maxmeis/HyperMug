@@ -8,7 +8,10 @@ private final class HyperMugRuntime {
     let tap: EventTapHost
     let caps: CapsKeyMonitor
     let thumb: ThumbHID
+    let trackpad: TrackpadCapture
+    let ports: SystemPorts
     let engine: Engine
+    let updateChecker: UpdateChecker
     let statusItem: StatusItemController
     let configErrorAlert: ConfigErrorAlert
     private var syncTimer: Timer?
@@ -25,16 +28,23 @@ private final class HyperMugRuntime {
         tap = EventTapHost(log: makeLogSink(category: "tap"))
         caps = CapsKeyMonitor(log: makeLogSink(category: "caps"))
         thumb = ThumbHID(log: makeLogSink(category: "thumb"))
-        engine = Engine(ports: SystemPorts(log: makeLogSink(category: "engine"), tap: tap, caps: caps, thumb: thumb))
-        statusItem = StatusItemController(store: store, engine: engine)
+        trackpad = TrackpadCapture(log: makeLogSink(category: "trackpad"))
+        ports = SystemPorts(log: makeLogSink(category: "engine"), tap: tap, caps: caps, thumb: thumb, trackpad: trackpad)
+        engine = Engine(ports: ports)
+        updateChecker = UpdateChecker()
+        statusItem = StatusItemController(store: store, engine: engine, updateChecker: updateChecker)
         configErrorAlert = ConfigErrorAlert(store: store)
 
         tap.handler = { [engine] in engine.handleTapEvent($0) }
         caps.onCapsChange = { [engine] down, nowNanos in engine.capsKeyChanged(down: down, nowNanos: nowNanos) }
         caps.onKeyboardRemoved = { [engine] in engine.capsKeyboardRemoved() }
         thumb.onPress = { [engine] in engine.thumbPressed() }
+        ports.onTrackpadSwipe = { [engine] swipe in engine.trackpadSwiped(swipe) }
         engine.onStateChange = { [statusItem] in statusItem.refresh() }
-        store.onChange = { [engine] config in engine.apply(config) }
+        store.onChange = { [engine, updateChecker] config in
+            engine.apply(config)
+            updateChecker.apply(autoUpdate: config.autoUpdate)
+        }
         store.onError = { [configErrorAlert] error in configErrorAlert.present(error) }
     }
 
