@@ -1,0 +1,85 @@
+name: Bug report
+description: Report a reproducible problem in HyperMug
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please report the exact installed app version and build. Run these commands, or copy both values from the installed app bundle's Info.plist:
+
+        ```sh
+        /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' /Applications/HyperMug.app/Contents/Info.plist
+        /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' /Applications/HyperMug.app/Contents/Info.plist
+        ```
+
+        If you installed the app elsewhere, replace `/Applications/HyperMug.app` with its actual path. Source builds and older releases are welcome.
+  - type: input
+    id: marketing-version
+    attributes:
+      label: HyperMug marketing version
+      description: Exact CFBundleShortVersionString from the installed app, for example 1.2.3.
+      placeholder: 1.2.3
+    validations:
+      required: true
+  - type: input
+    id: build-number
+    attributes:
+      label: HyperMug build number
+      description: Exact CFBundleVersion from the installed app. Do not substitute the marketing version unless both values match.
+      placeholder: 1.2.3
+    validations:
+      required: true
+  - type: input
+    id: macos-version
+    attributes:
+      label: macOS version
+      placeholder: macOS 15.1
+    validations:
+      required: true
+  - type: dropdown
+    id: architecture
+    attributes:
+      label: Mac architecture
+      options:
+        - Apple silicon
+        - Intel
+        - Other or unknown
+    validations:
+      required: true
+  - type: dropdown
+    id: install-source
+    attributes:
+      label: Install source
+      options:
+        - GitHub production release
+        - Homebrew
+        - Built from source
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: List the smallest repeatable sequence.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Redacted configuration and logs
+      description: Remove passwords, tokens, personal information, and private URLs before posting. Include only relevant excerpts.
+      render: text

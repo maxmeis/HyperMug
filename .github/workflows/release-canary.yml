@@ -1,0 +1,118 @@
+name: Canary
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Source/HyperMug/**'
+      - 'Source/Branding/**'
+      - 'build.sh'
+permissions:
+  contents: read
+concurrency:
+  group: hypermug-publication
+  cancel-in-progress: false
+  queue: max
+jobs:
+  release:
+    if: github.repository == 'maxmeis/HyperMug' && github.ref == 'refs/heads/main'
+    runs-on: macos-latest
+    # The existing beta environment supplies the Canary signing and Sparkle key.
+    # Its deployment policy permits only main; beta is an internal secret scope.
+    environment: beta
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: package.json
+      - name: Validate exact main source
+        env:
+          VERSION: 0.0.0-canary.${{ github.run_number }}
+          SOURCE_REPOSITORY: ${{ github.repository }}
+          RELEASES_REPOSITORY: ${{ vars.RELEASES_REPOSITORY || github.repository }}
+          TAP_REPOSITORY: ${{ vars.TAP_REPOSITORY || 'maxmeis/homebrew-formulae' }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python3 Source/HyperMug/scripts/release_metadata.py validate --channel canary --version "$VERSION" --actor "$GITHUB_ACTOR" --triggering-actor "$GITHUB_TRIGGERING_ACTOR" --ref "$GITHUB_REF" --sha "$GITHUB_SHA" --source-repo "$SOURCE_REPOSITORY" --releases-repo "$RELEASES_REPOSITORY" --tap-repo "$TAP_REPOSITORY"
+      - name: Skip a superseded queued run
+        id: freshness
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+          VERSION: 0.0.0-canary.${{ github.run_number }}
+          RELEASES_REPOSITORY: ${{ vars.RELEASES_REPOSITORY || github.repository }}
+        run: |
+          gh api "repos/${RELEASES_REPOSITORY}/releases?per_page=100" --paginate --jq '.[].tag_name' > "$RUNNER_TEMP/release-tags"
+          python3 - "$VERSION" "$RUNNER_TEMP/release-tags" "$GITHUB_OUTPUT" <<'PY'
+          import sys
+          from pathlib import Path
+          sys.path.insert(0, 'Source/HyperMug/scripts')
+          from release_metadata import canary_superseded
+          skip = canary_superseded(sys.argv[1], Path(sys.argv[2]).read_text().splitlines())
+          with open(sys.argv[3], 'a') as output:
+              output.write(f"skip={str(skip).lower()}\n")
+          print('Canary run superseded by a newer release' if skip else 'Canary run is current')
+          PY
+      - name: Test
+        if: steps.freshness.outputs.skip != 'true'
+        run: |
+          python3 -m unittest discover -s Source/HyperMug/scripts -p 'test_release*.py'
+          ./Source/HyperMug/scripts/check-layers.sh
+          ./Source/HyperMug/scripts/test.sh
+          ./Source/HyperMug/scripts/compile-check.sh
+          node --check Source/Automation/triage-issues.mjs
+          node --test Source/Automation/triage-issues.test.mjs
+          node --check Source/Website/script.js
+          python3 Source/Automation/check-content.py
+      - name: Ensure unique Canary tag points to tested source
+        if: steps.freshness.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: 0.0.0-canary.${{ github.run_number }}
+        run: |
+          tag="v$VERSION"
+          if ! gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" >/dev/null 2>&1; then
+            object="$(gh api -X POST "repos/$GITHUB_REPOSITORY/git/tags" -f tag="$tag" -f message="HyperMug Canary $VERSION; source $GITHUB_SHA" -f object="$GITHUB_SHA" -f type=commit --jq .sha)"
+            gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$tag" -f sha="$object" >/dev/null
+          fi
+          test "$(gh api "repos/$GITHUB_REPOSITORY/commits/$tag" --jq .sha)" = "$GITHUB_SHA"
+      - name: Build and notarize
+        if: steps.freshness.outputs.skip != 'true'
+        env:
+          CHANNEL: canary
+          VERSION: 0.0.0-canary.${{ github.run_number }}
+          BUILD_NUMBER: ${{ github.run_number }}
+          SOURCE_REPOSITORY: ${{ github.repository }}
+          RELEASES_REPOSITORY: ${{ vars.RELEASES_REPOSITORY || github.repository }}
+          TAP_REPOSITORY: ${{ vars.TAP_REPOSITORY || 'maxmeis/homebrew-formulae' }}
+          DEVELOPER_ID_P12_BASE64: ${{ secrets.DEVELOPER_ID_P12_BASE64 }}
+          DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+          SIGN_ID: ${{ vars.SIGN_ID }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+          APP_STORE_CONNECT_KEY_ID: ${{ vars.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ vars.APP_STORE_CONNECT_ISSUER_ID }}
+          SPARKLE_EDDSA_PRIVATE_KEY: ${{ secrets.SPARKLE_EDDSA_PRIVATE_KEY }}
+          SPARKLE_PUBLIC_ED_KEY: ${{ vars.SPARKLE_PUBLIC_ED_KEY }}
+        run: ./Source/HyperMug/scripts/release.sh
+      - name: Publish Canary
+        if: steps.freshness.outputs.skip != 'true'
+        env:
+          CHANNEL: canary
+          VERSION: 0.0.0-canary.${{ github.run_number }}
+          BUILD_NUMBER: ${{ github.run_number }}
+          BUILD_APP: 'true'
+          PUBLISH_EXTERNAL_TAP: ${{ vars.PUBLISH_EXTERNAL_TAP || 'false' }}
+          SOURCE_REPOSITORY: ${{ github.repository }}
+          RELEASES_REPOSITORY: ${{ vars.RELEASES_REPOSITORY || github.repository }}
+          TAP_REPOSITORY: ${{ vars.TAP_REPOSITORY || 'maxmeis/homebrew-formulae' }}
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+          TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
+          TAP_SSH_PRIVATE_KEY: ${{ secrets.TAP_SSH_PRIVATE_KEY }}
+        run: ./Source/HyperMug/scripts/publish_release.sh

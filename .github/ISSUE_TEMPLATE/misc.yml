@@ -1,0 +1,19 @@
+name: Misc
+description: Track maintenance, documentation, or other work
+title: "[Misc] "
+labels: [misc]
+body:
+  - type: textarea
+    id: context
+    attributes:
+      label: Context and requirements
+      description: Explain the work and any constraints.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: What observable result would make this complete?
+    validations:
+      required: true
