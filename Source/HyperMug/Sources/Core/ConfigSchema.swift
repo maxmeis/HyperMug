@@ -12,12 +12,17 @@ private func buttonSchema(_ description: String) -> String {
     #"""
 {
           "type": "object",
-          "description": "\#(description) Set exactly one of shell or shortcut. An omitted mapping runs no HyperMug action.",
+          "description": "\#(description) Set exactly one of shell, shortcut or helper. An omitted mapping runs no HyperMug action.",
           "additionalProperties": false,
           "properties": {
             "shell": {
               "type": "string",
               "description": "Command run via /bin/sh -c in the background, output discarded (minimal PATH: /usr/bin:/bin:/usr/sbin:/sbin). Must not be empty."
+            },
+            "helper": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Name of a shell command in the top-level helpers object."
             },
             "shortcut": {
               "type": "array",
@@ -38,6 +43,9 @@ private func buttonSchema(_ description: String) -> String {
             },
             {
               "required": ["shortcut"]
+            },
+            {
+              "required": ["helper"]
             }
           ]
         }
@@ -75,6 +83,12 @@ public let configSchemaJSON: String = #"""
     "autoUpdate": {
       "type": "boolean",
       "description": "Check for updates automatically with Sparkle. Defaults to true when omitted."
+    },
+    "helpers": {
+      "type": "object",
+      "description": "Named shell commands shared by mouse and trackpad mappings.",
+      "propertyNames": { "minLength": 1, "pattern": "\\S" },
+      "additionalProperties": { "type": "string", "minLength": 1, "pattern": "\\S" }
     },
     "trackpad": {
       "type": "object",

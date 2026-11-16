@@ -43,6 +43,7 @@ private func jsonObject(_ data: Data) -> [String: Any] {
 private func text(_ config: AppConfig) -> String { String(decoding: encodeConfig(config), as: UTF8.self) }
 
 func configTests() {
+    helperTests()
     decodeDefaultsTests()
     decodeActionTests()
     decodeRejectionTests()
@@ -50,6 +51,35 @@ func configTests() {
     encodeTests()
     anyKeyTests()
     trackpadTests()
+}
+
+private func helperTests() {
+    let json = #"{"helpers":{"shared":"echo hi"},"mouse":{"buttons":{"back":{"helper":"shared"},"forward":{"helper":"shared"},"thumb":{"helper":"shared"}}},"trackpad":{"threeFingerSwipe":{"up":{"helper":"shared"},"down":{"helper":"shared"},"left":{"helper":"shared"},"right":{"helper":"shared"}},"fourFingerSwipe":{"up":{"helper":"shared"},"down":{"helper":"shared"},"left":{"helper":"shared"},"right":{"helper":"shared"}}}}"#
+    let config = decode(json)!.config
+    expectEqual(config.helpers, ["shared": "echo hi"])
+    expectEqual(config.mouse.buttons.back, .helper("shared"))
+    let encoded = jsonObject(encodeConfig(config))
+    expectEqual(encoded["helpers"] as? [String: String], ["shared": "echo hi"])
+    let buttons = (encoded["mouse"] as! [String: Any])["buttons"] as! [String: Any]
+    expectEqual((buttons["back"] as! [String: String])["helper"], "shared")
+    expectEqual(decode(String(decoding: encodeConfig(config), as: UTF8.self))?.config, config)
+    let effective = config.resolvedActions()
+    for action in [effective.mouse.buttons.back, effective.mouse.buttons.forward, effective.mouse.buttons.thumb] {
+        expectEqual(action, .shell("echo hi"))
+    }
+    for fingers in [3, 4] {
+        for direction in SwipeDirection.allCases {
+            expectEqual(effective.trackpad.action(fingers: fingers, direction: direction), .shell("echo hi"))
+        }
+    }
+    var changed = config
+    changed.helpers["shared"] = "echo changed"
+    expectEqual(changed.resolvedActions().trackpad.threeFingerSwipe, SwipeMap(up: .shell("echo changed"), down: .shell("echo changed"), left: .shell("echo changed"), right: .shell("echo changed")))
+    expectRejected(#"{"helpers":{"shared":" "}}"#, "helpers.shared: command cannot be empty")
+    expectRejected(#"{"helpers":{" ":"echo"}}"#, "helpers: name cannot be empty")
+    expectRejected(#"{"mouse":{"buttons":{"back":{"helper":"missing"}}}}"#, "mouse.buttons.back.helper: unknown helper \"missing\"")
+    expectRejected(#"{"mouse":{"buttons":{"back":{"helper":" "}}}}"#, "mouse.buttons.back.helper: name cannot be empty")
+    expectRejected(#"{"helpers":{"shared":"echo"},"mouse":{"buttons":{"back":{"helper":"shared","shell":"echo"}}}}"#, "mouse.buttons.back: needs exactly one of shortcut/shell/helper")
 }
 
 private func trackpadTests() {
@@ -98,7 +128,7 @@ private func trackpadTests() {
     expectRejected("{\"trackpad\":{\"threeFingerSwipe\":{\"left\":{\"shortcut\":[\"cmd\",5]}}}}",
                    "trackpad.threeFingerSwipe.left.shortcut[1]: expected a string")
     expectRejected("{\"trackpad\":{\"fourFingerSwipe\":{\"right\":{\"shell\":\"x\",\"shortcut\":[\"cmd\",\"a\"]}}}}",
-                   "trackpad.fourFingerSwipe.right: needs exactly one of shortcut/shell")
+                   "trackpad.fourFingerSwipe.right: needs exactly one of shortcut/shell/helper")
     expectRejected("{\"trackpad\":{\"threeFingerSwipe\":{\"down\":{\"shortcut\":[\"cmd\"]}}}}",
                    "trackpad.threeFingerSwipe.down.shortcut: shortcut [\"cmd\"] needs exactly one key besides modifiers")
 }
@@ -231,7 +261,7 @@ private func decodeRejectionTests() {
 
     // Actions
     expectRejected("{\"mouse\":{\"buttons\":{\"thumb\":{\"shell\":\"x\",\"shortcut\":[\"cmd\",\"k\"]}}}}",
-                   "mouse.buttons.thumb: needs exactly one of shortcut/shell")
+                   "mouse.buttons.thumb: needs exactly one of shortcut/shell/helper")
     expectRejected(withBack("{\"shortcut\":[\"cmd\",\"nope\"]}"),
                    "mouse.buttons.back.shortcut: unknown key or modifier \"nope\" in shortcut [\"cmd\", \"nope\"]")
     expectRejected(withBack("{\"shortcut\":[\"cmd\"]}"),
@@ -252,7 +282,7 @@ private func decodeRejectionTests() {
     expectRejected(withBack("{\"shortcut\":\"cmd+[\"}"), hint)
     expectRejected(withBack("{\"shortcut\":\"cmd+[\",\"shell\":\"\"}"), hint)
     // Two real kinds is the error, reported before the shortcut itself is looked at.
-    expectRejected(withBack("{\"shell\":\"a\",\"shortcut\":[\"nope\"]}"), "mouse.buttons.back: needs exactly one of shortcut/shell")
+    expectRejected(withBack("{\"shell\":\"a\",\"shortcut\":[\"nope\"]}"), "mouse.buttons.back: needs exactly one of shortcut/shell/helper")
 }
 
 private func unknownKeyTests() {

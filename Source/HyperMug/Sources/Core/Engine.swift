@@ -58,6 +58,7 @@ public final class Engine {
 
     public func apply(_ config: AppConfig) {
         stopped = false
+        let config = config.resolvedActions()
         trackpadConfig = config.trackpad
         let newSettings = TapSettings(config: config)
         if newSettings.capsMode != settings.capsMode { tapState.resetCaps() }

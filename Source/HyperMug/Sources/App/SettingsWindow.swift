@@ -9,14 +9,22 @@ private struct ActionDraft {
         switch action {
         case .shortcut(let value): kind = "shortcut"; text = value.tokens.joined(separator: " + ")
         case .shell(let value): kind = "shell"; text = value
+        case .helper(let value): kind = "helper"; text = value
         case nil: break
         }
     }
 }
 
+private struct HelperDraft: Identifiable {
+    let id = UUID()
+    var name: String
+    var command: String
+}
+
 private final class SettingsState: ObservableObject {
     @Published var config = AppConfig()
     @Published var actions: [String: ActionDraft] = [:]
+    @Published var helpers: [HelperDraft] = []
     @Published var error: String?
     @Published var selectedTab = 0
     private var edit: SettingsEdit?
@@ -29,6 +37,7 @@ private final class SettingsState: ObservableObject {
             let snapshot = try SettingsEdit(Data(contentsOf: url))
             edit = snapshot
             config = snapshot.config
+            helpers = config.helpers.keys.sorted().map { HelperDraft(name: $0, command: config.helpers[$0]!) }
             actions = [
                 "back": ActionDraft(config.mouse.buttons.back), "forward": ActionDraft(config.mouse.buttons.forward),
                 "thumb": ActionDraft(config.mouse.buttons.thumb)
@@ -50,6 +59,17 @@ private final class SettingsState: ObservableObject {
         guard let edit else { error = "Repair the config file, then reload Settings."; return }
         var draft = config
         do {
+            var names = Set<String>()
+            draft.helpers = [:]
+            for helper in helpers {
+                let name = helper.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !name.isEmpty else { throw ConfigError(reason: "Helper name cannot be empty") }
+                guard names.insert(name).inserted else { throw ConfigError(reason: "Duplicate helper name: \(name)") }
+                guard !helper.command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    throw ConfigError(reason: "Helper \(name): command cannot be empty")
+                }
+                draft.helpers[name] = helper.command
+            }
             func action(_ key: String) throws -> ButtonAction? {
                 let entry = actions[key] ?? ActionDraft(nil)
                 switch settingsAction(kind: entry.kind, text: entry.text) {
@@ -68,6 +88,9 @@ private final class SettingsState: ObservableObject {
                 map.right = try action("\(fingers).right")
                 if fingers == 3 { draft.trackpad.threeFingerSwipe = map }
                 else { draft.trackpad.fourFingerSwipe = map }
+            }
+            for (key, entry) in actions where entry.kind == "helper" && draft.helpers[entry.text] == nil {
+                throw ConfigError(reason: "\(key): helper \"\(entry.text)\" is missing. Choose another helper or restore its name.")
             }
             let data = try edit.save(draft, current: Data(contentsOf: url))
             try data.write(to: url.resolvingSymlinksInPath(), options: .atomic)
@@ -95,8 +118,17 @@ private struct ActionRow: View {
                 Text("Unmapped").tag("none")
                 Text("Shortcut").tag("shortcut")
                 Text("Shell command").tag("shell")
+                Text("Helper").tag("helper")
             }.labelsHidden().frame(width: 150)
-            if state.actions[key]?.kind != "none" {
+            if state.actions[key]?.kind == "helper" {
+                Picker("Helper for \(title)", selection: Binding(
+                    get: { state.actions[key]?.text ?? "" },
+                    set: { state.actions[key, default: ActionDraft(nil)].text = $0 }
+                )) {
+                    Text("Choose helper").tag("")
+                    ForEach(state.helpers.map(\.name).sorted(), id: \.self) { name in Text(name).tag(name) }
+                }
+            } else if state.actions[key]?.kind != "none" {
                 TextField(state.actions[key]?.kind == "shell" ? "Command" : "cmd + [", text: Binding(
                     get: { state.actions[key]?.text ?? "" },
                     set: { state.actions[key, default: ActionDraft(nil)].text = $0 }
@@ -112,7 +144,7 @@ private struct SettingsView: View {
     var body: some View {
         VStack(spacing: 0) {
             Picker("Settings section", selection: $state.selectedTab) {
-                Text("General").tag(0); Text("Mouse").tag(1); Text("Trackpad").tag(2)
+                Text("General").tag(0); Text("Mouse").tag(1); Text("Trackpad").tag(2); Text("Helpers").tag(3)
             }.pickerStyle(.segmented).padding()
             Divider()
             ScrollView {
@@ -120,6 +152,7 @@ private struct SettingsView: View {
                     if state.selectedTab == 0 { general }
                     if state.selectedTab == 1 { mouse }
                     if state.selectedTab == 2 { trackpad }
+                    if state.selectedTab == 3 { helpers }
                 }.formStyle(.grouped)
             }
             Divider()
@@ -193,6 +226,24 @@ private struct SettingsView: View {
                 Text("Disable conflicting macOS gestures in Trackpad settings before mapping these swipes.").font(.caption).foregroundStyle(.secondary)
                 Button("Open Trackpad Setup…") { TrackpadSetup.present() }
             }
+        }
+    }
+    private var helpers: some View {
+        Section("Shared shell commands") {
+            Text("Define a command once, then choose its name for mouse buttons or trackpad swipes.")
+                .font(.caption).foregroundStyle(.secondary)
+            ForEach($state.helpers) { $helper in
+                HStack {
+                    TextField("Name", text: $helper.name).frame(width: 160)
+                        .accessibilityLabel("Helper name")
+                    TextField("Shell command", text: $helper.command)
+                        .accessibilityLabel("Command for \(helper.name)")
+                    Button("Remove", systemImage: "minus.circle") {
+                        state.helpers.removeAll { $0.id == helper.id }
+                    }.labelStyle(.iconOnly).accessibilityLabel("Remove helper \(helper.name)")
+                }
+            }
+            Button("Add Helper") { state.helpers.append(HelperDraft(name: "", command: "")) }
         }
     }
 }

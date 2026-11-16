@@ -22,6 +22,7 @@ private final class FakePorts: EnginePorts {
 
     var calls: [String] = []
     var ran: [ButtonAction] = []
+    var configuredTrackpad = TrackpadConfig()
     var logs: [String] = []
     var errors: [String] = []
     var debugLines: [String] = []
@@ -43,6 +44,7 @@ private final class FakePorts: EnginePorts {
     func setThumbDiversion(_ on: Bool) { calls.append("thumb:\(on)") }
     func shutdownThumb() { calls.append("shutdownThumb") }
     func configureTrackpad(_ config: TrackpadConfig, enabled: Bool) {
+        configuredTrackpad = config
         calls.append("trackpad:\(enabled)")
     }
     func shutdownTrackpad() { calls.append("shutdownTrackpad") }
@@ -72,6 +74,7 @@ private func makeEngine() -> (Engine, FakePorts) {
 }
 
 func engineTests() {
+    helperExecutionTests()
     startTests()
     caffeineTests()
     thumbTests()
@@ -84,6 +87,29 @@ func engineTests() {
     stateChangeTests()
     shutdownTests()
     trackpadTests()
+}
+
+private func helperExecutionTests() {
+    let (engine, ports) = makeEngine()
+    var mapping = config(back: .helper("shared"), thumb: .helper("shared"))
+    mapping.helpers = ["shared": "echo one"]
+    mapping.mouse.buttons.forward = .helper("shared")
+    mapping.trackpad.threeFingerSwipe.up = .helper("shared")
+    mapping.trackpad.fourFingerSwipe.left = .helper("shared")
+    engine.apply(mapping)
+    expectEqual(engine.settings.back, .shell("echo one"))
+    expectEqual(engine.settings.forward, .shell("echo one"))
+    engine.thumbPressed()
+    engine.trackpadSwiped(TrackpadSwipe(fingers: 3, direction: .up))
+    engine.trackpadSwiped(TrackpadSwipe(fingers: 4, direction: .left))
+    expectEqual(ports.ran, [.shell("echo one"), .shell("echo one"), .shell("echo one")])
+    expectEqual(ports.configuredTrackpad.threeFingerSwipe.up, .shell("echo one"))
+    mapping.helpers["shared"] = "echo two"
+    engine.apply(mapping)
+    expectEqual(engine.settings.back, .shell("echo two"))
+    expectEqual(ports.configuredTrackpad.fourFingerSwipe.left, .shell("echo two"))
+    engine.thumbPressed()
+    expectEqual(ports.ran.last, .shell("echo two"))
 }
 
 private func trackpadTests() {

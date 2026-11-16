@@ -10,6 +10,7 @@ enum ActionRunner {
         switch action {
         case .shortcut(let shortcut): post(keyCode: shortcut.keyCode, flags: postedFlags(for: shortcut))
         case .shell(let command): runShell(command)
+        case .helper(let name): log(.error, "unresolved helper: \(name)")
         }
     }
 

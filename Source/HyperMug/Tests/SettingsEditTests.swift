@@ -2,6 +2,28 @@ import Foundation
 @testable import HyperMugCore
 
 func settingsEditTests() {
+    let blank = Data(" \n".utf8)
+    let blankEdit = try! SettingsEdit(blank)
+    expectEqual(try! SettingsEdit(blankEdit.save(blankEdit.config, current: blank)).config, AppConfig())
+    let helperSource = Data(#"{"future":17,"helpers":{"old":"echo old"},"mouse":{"buttons":{"back":{"helper":"old","future":5}}}}"#.utf8)
+    let helperEdit = try! SettingsEdit(helperSource)
+    var helperDraft = helperEdit.config
+    helperDraft.helpers["old"] = "echo new"
+    let helperSaved = try! helperEdit.save(helperDraft, current: helperSource)
+    let helperRoot = try! JSONSerialization.jsonObject(with: helperSaved) as! [String: Any]
+    expectEqual(helperRoot["future"] as? Int, 17)
+    expectEqual(((helperRoot["mouse"] as! [String: Any])["buttons"] as! [String: Any])["back"] as? [String: Any] != nil, true)
+    expectEqual(try! SettingsEdit(helperSaved).config.mouse.buttons.back, .helper("old"))
+    expect((try? helperEdit.save(helperDraft, current: Data("{}".utf8))) == nil)
+    helperDraft.helpers.removeValue(forKey: "old")
+    expect((try? helperEdit.save(helperDraft, current: helperSource)) == nil)
+    helperDraft.mouse.buttons.back = nil
+    expect((try? helperEdit.save(helperDraft, current: helperSource)) != nil)
+    switch settingsAction(kind: "helper", text: "old") {
+    case .success(.helper("old")): break
+    default: expect(false)
+    }
+    if case .success = settingsAction(kind: "helper", text: " ") { expect(false) }
     let source = Data(#"{"future":{"enabled":true},"mouse":{"buttons":{"back":{"shortcut":["cmd","["],"future":7},"future":1},"future":2},"trackpad":{"threeFingerSwipe":{"up":{"shell":"echo hi","future":3}},"future":4}}"#.utf8)
     let edit = try! SettingsEdit(source)
     var draft = edit.config

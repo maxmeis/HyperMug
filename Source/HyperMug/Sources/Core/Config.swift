@@ -11,6 +11,7 @@ public enum CapsMode: String, Equatable, CaseIterable {
 public enum ButtonAction: Equatable {
     case shortcut(Shortcut)
     case shell(String)
+    case helper(String)
 }
 
 public struct ButtonMap: Equatable {
@@ -104,6 +105,7 @@ public struct MouseConfig: Equatable {
 }
 
 public struct AppConfig: Equatable {
+    public var helpers: [String: String]
     public var capsLock: CapsMode
     public var caffeineOnLaunch: Bool
     public var launchAtLogin: Bool
@@ -113,13 +115,44 @@ public struct AppConfig: Equatable {
 
     public init(capsLock: CapsMode = .meh, caffeineOnLaunch: Bool = true, launchAtLogin: Bool = false,
                 autoUpdate: Bool = true,
-                mouse: MouseConfig = MouseConfig(), trackpad: TrackpadConfig = TrackpadConfig()) {
+                mouse: MouseConfig = MouseConfig(), trackpad: TrackpadConfig = TrackpadConfig(),
+                helpers: [String: String] = [:]) {
+        self.helpers = helpers
         self.capsLock = capsLock
         self.caffeineOnLaunch = caffeineOnLaunch
         self.launchAtLogin = launchAtLogin
         self.autoUpdate = autoUpdate
         self.mouse = mouse
         self.trackpad = trackpad
+    }
+
+    /// A validated config's effective actions for the input engine. The source model retains references.
+    public func resolvedActions() -> AppConfig {
+        var result = self
+        func resolve(_ action: ButtonAction?) -> ButtonAction? {
+            if case .helper(let name)? = action { return helpers[name].map(ButtonAction.shell) }
+            return action
+        }
+        result.mouse.buttons.back = resolve(mouse.buttons.back)
+        result.mouse.buttons.forward = resolve(mouse.buttons.forward)
+        result.mouse.buttons.thumb = resolve(mouse.buttons.thumb)
+        for direction in SwipeDirection.allCases {
+            switch direction {
+            case .up:
+                result.trackpad.threeFingerSwipe.up = resolve(trackpad.threeFingerSwipe.up)
+                result.trackpad.fourFingerSwipe.up = resolve(trackpad.fourFingerSwipe.up)
+            case .down:
+                result.trackpad.threeFingerSwipe.down = resolve(trackpad.threeFingerSwipe.down)
+                result.trackpad.fourFingerSwipe.down = resolve(trackpad.fourFingerSwipe.down)
+            case .left:
+                result.trackpad.threeFingerSwipe.left = resolve(trackpad.threeFingerSwipe.left)
+                result.trackpad.fourFingerSwipe.left = resolve(trackpad.fourFingerSwipe.left)
+            case .right:
+                result.trackpad.threeFingerSwipe.right = resolve(trackpad.threeFingerSwipe.right)
+                result.trackpad.fourFingerSwipe.right = resolve(trackpad.fourFingerSwipe.right)
+            }
+        }
+        return result
     }
 }
 
@@ -193,10 +226,15 @@ private func decodeAction(_ c: KeyedDecodingContainer<AnyKey>, _ name: String, i
     guard c.contains(key), try !c.decodeNil(forKey: key) else { return nil }
     let path = dotted(c.codingPath, name)
     let a = try c.nestedContainer(keyedBy: AnyKey.self, forKey: key)
-    noteUnknownKeys(a, known: ["shortcut", "shell"], in: decoder)
+    noteUnknownKeys(a, known: ["shortcut", "shell", "helper"], in: decoder)
     // An empty/blank value counts as absent: zero real kinds = button left unmapped.
     var shell: String?
     if let v = try a.decodeIfPresent(String.self, forKey: AnyKey("shell")), !isBlank(v) { shell = v }
+    var helper: String?
+    if let v = try a.decodeIfPresent(String.self, forKey: AnyKey("helper")) {
+        if isBlank(v) { throw ConfigError(reason: "\(path).helper: name cannot be empty") }
+        helper = v
+    }
     var tokens: [String]?
     let shortcutKey = AnyKey("shortcut")
     if a.contains(shortcutKey), try !a.decodeNil(forKey: shortcutKey) {
@@ -208,19 +246,18 @@ private func decodeAction(_ c: KeyedDecodingContainer<AnyKey>, _ name: String, i
             if !list.isEmpty { tokens = list }
         }
     }
-    switch (tokens, shell) {
-    case (nil, nil):
-        return nil
-    case (nil, let shell?):
-        return .shell(shell)
-    case (let tokens?, nil):
+    if [tokens != nil, shell != nil, helper != nil].filter({ $0 }).count > 1 {
+        throw ConfigError(reason: "\(path): needs exactly one of shortcut/shell/helper")
+    }
+    if let shell { return .shell(shell) }
+    if let helper { return .helper(helper) }
+    if let tokens {
         switch parseShortcut(tokens) {
         case .success(let s): return .shortcut(s)
         case .failure(let e): throw ConfigError(reason: "\(path).shortcut: \(e.reason)")
         }
-    case (_?, _?):
-        throw ConfigError(reason: "\(path): needs exactly one of shortcut/shell")
     }
+    return nil
 }
 
 extension InvertScroll: Codable {
@@ -248,6 +285,7 @@ private struct ActionFields: Encodable {
         switch action {
         case .shortcut(let s): try c.encode(s.tokens, forKey: AnyKey("shortcut"))
         case .shell(let s): try c.encode(s, forKey: AnyKey("shell"))
+        case .helper(let name): try c.encode(name, forKey: AnyKey("helper"))
         }
     }
 }
@@ -330,7 +368,12 @@ extension AppConfig: Codable {
     public init(from decoder: Decoder) throws {
         self.init()
         let c = try decoder.container(keyedBy: AnyKey.self)
-        noteUnknownKeys(c, known: ["$schema", "capsLock", "caffeineOnLaunch", "launchAtLogin", "autoUpdate", "mouse", "trackpad"], in: decoder)
+        noteUnknownKeys(c, known: ["$schema", "capsLock", "caffeineOnLaunch", "launchAtLogin", "autoUpdate", "mouse", "trackpad", "helpers"], in: decoder)
+        helpers = try c.decodeIfPresent([String: String].self, forKey: AnyKey("helpers")) ?? [:]
+        for (name, command) in helpers {
+            if isBlank(name) { throw ConfigError(reason: "helpers: name cannot be empty") }
+            if isBlank(command) { throw ConfigError(reason: "helpers.\(name): command cannot be empty") }
+        }
         if let raw = try c.decodeIfPresent(String.self, forKey: AnyKey("capsLock")) {
             guard let mode = CapsMode(rawValue: raw) else {
                 throw ConfigError(reason: "capsLock must be \"default\", \"meh\" or \"hyper\" (got \"\(raw)\")")
@@ -342,6 +385,18 @@ extension AppConfig: Codable {
         autoUpdate = try c.decodeIfPresent(Bool.self, forKey: AnyKey("autoUpdate")) ?? true
         mouse = try c.decodeIfPresent(MouseConfig.self, forKey: AnyKey("mouse")) ?? MouseConfig()
         trackpad = try c.decodeIfPresent(TrackpadConfig.self, forKey: AnyKey("trackpad")) ?? TrackpadConfig()
+        let references: [(String, ButtonAction?)] = [
+            ("mouse.buttons.back", mouse.buttons.back), ("mouse.buttons.forward", mouse.buttons.forward),
+            ("mouse.buttons.thumb", mouse.buttons.thumb)
+        ] + [3, 4].flatMap { fingers in SwipeDirection.allCases.map { direction in
+            ("trackpad.\(fingers == 3 ? "threeFingerSwipe" : "fourFingerSwipe").\(direction.rawValue)",
+             trackpad.action(fingers: fingers, direction: direction))
+        } }
+        for (path, action) in references {
+            if case .helper(let name)? = action, helpers[name] == nil {
+                throw ConfigError(reason: "\(path).helper: unknown helper \"\(name)\"")
+            }
+        }
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -352,6 +407,7 @@ extension AppConfig: Codable {
         try c.encode(launchAtLogin, forKey: AnyKey("launchAtLogin"))
         try c.encode(autoUpdate, forKey: AnyKey("autoUpdate"))
         try c.encode(mouse, forKey: AnyKey("mouse"))
+        if !helpers.isEmpty { try c.encode(helpers, forKey: AnyKey("helpers")) }
         if trackpad.hasMappings { try c.encode(trackpad, forKey: AnyKey("trackpad")) }
     }
 }

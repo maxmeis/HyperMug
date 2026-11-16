@@ -53,6 +53,10 @@ private func schemaStructureTests() {
         expect((node["description"] as? String)?.isEmpty == false, "schema \(label) needs a description")
         if let object = value as? JSON {
             expectEqual(node["type"] as? String, "object", "schema \(label) is an object")
+            if path == "helpers" {
+                expect(object.values.allSatisfy { $0 is String }, "helper values are commands")
+                return
+            }
             expectEqual(node["additionalProperties"] as? Bool, false, "schema \(label) forbids additional properties")
             let properties = node["properties"] as? JSON ?? [:]
             let keys = Set(object.keys)
@@ -104,7 +108,14 @@ private func schemaStructureTests() {
                                    left: shortcut(["cmd", "b"]), right: .shell("right")),
         fourFingerSwipe: SwipeMap(up: .shell("up"), down: shortcut(["cmd", "c"]),
                                   left: .shell("left"), right: shortcut(["cmd", "d"]))))
-    for sample in [AppConfig(), mapped, fullyMapped, swapped, swipes, swappedSwipes] {
+    let helperMap = SwipeMap(up: .helper("shared"), down: .helper("shared"),
+                             left: .helper("shared"), right: .helper("shared"))
+    let helper = AppConfig(mouse: MouseConfig(buttons: ButtonMap(back: .helper("shared"),
+                                                                 forward: .helper("shared"), thumb: .helper("shared"))),
+                           trackpad: TrackpadConfig(threeFingerSwipe: helperMap,
+                                                    fourFingerSwipe: helperMap),
+                           helpers: ["shared": "echo shared"])
+    for sample in [AppConfig(), mapped, fullyMapped, swapped, swipes, swappedSwipes, helper] {
         validate(schema, encoded(sample), "")
     }
     expectEqual(Set(propertyPaths(schema, "")).subtracting(seen), [], "schema properties without an encoded counterpart")
@@ -145,10 +156,10 @@ private func schemaStructureTests() {
         let button = path.joined(separator: ".")
         let b = node(path)
         expect(b["required"] == nil, "\(button) is not required to contain a particular key itself")
-        expectEqual(Set((b["properties"] as? JSON ?? [:]).keys), ["shell", "shortcut"], "\(button) properties")
+        expectEqual(Set((b["properties"] as? JSON ?? [:]).keys), ["shell", "shortcut", "helper"], "\(button) properties")
         expectEqual(child(b, "shell")["type"] as? String, "string", "\(button).shell is a string")
         let branches = b["oneOf"] as? [JSON] ?? []
-        expectEqual(branches.count, 2, "\(button) is exactly-one-of via oneOf")
+        expectEqual(branches.count, 3, "\(button) is exactly-one-of via oneOf")
         let shellBranch = branches.first { ($0["required"] as? [String]) == ["shell"] }
         let shellRule = (shellBranch?["properties"] as? JSON)?["shell"] as? JSON
         expectEqual(shellRule?["minLength"] as? Int, 1, "\(button).shell must be non-empty")

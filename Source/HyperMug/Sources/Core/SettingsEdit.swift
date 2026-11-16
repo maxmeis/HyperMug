@@ -18,12 +18,16 @@ public struct SettingsEdit {
         guard current == original else {
             throw ConfigError(reason: "The config file changed outside Settings. Reload it before saving your edits.")
         }
-        // decodeConfig already established that this snapshot is a JSON object.
-        var root = try JSONSerialization.jsonObject(with: current) as! [String: Any]
+        if case .failure(let error) = decodeConfig(encodeConfig(draft)) { throw error }
+        // A blank file is a valid defaults snapshot; all other valid snapshots are objects.
+        var root: [String: Any] = isBlankConfigData(current) ? [:] :
+            (try JSONSerialization.jsonObject(with: current) as! [String: Any])
         root["capsLock"] = draft.capsLock.rawValue
         root["caffeineOnLaunch"] = draft.caffeineOnLaunch
         root["launchAtLogin"] = draft.launchAtLogin
         root["autoUpdate"] = draft.autoUpdate
+        if draft.helpers.isEmpty { root.removeValue(forKey: "helpers") }
+        else { root["helpers"] = draft.helpers }
         var mouse = root["mouse"] as? [String: Any] ?? [:]
         var scroll = mouse["invertScroll"] as? [String: Any] ?? [:]
         scroll["vertical"] = draft.mouse.invertScroll.vertical
@@ -52,9 +56,11 @@ private func patch(_ object: inout [String: Any], _ key: String, old: ButtonActi
     var action = object[key] as? [String: Any] ?? [:]
     action.removeValue(forKey: "shortcut")
     action.removeValue(forKey: "shell")
+    action.removeValue(forKey: "helper")
     switch new {
     case .shortcut(let shortcut): action["shortcut"] = shortcut.tokens
     case .shell(let command): action["shell"] = command
+    case .helper(let name): action["helper"] = name
     case nil: break
     }
     if action.isEmpty { object.removeValue(forKey: key) } else { object[key] = action }
@@ -77,6 +83,9 @@ public func settingsAction(kind: String, text: String) -> Result<ButtonAction?, 
     case "shell":
         guard !value.isEmpty else { return .failure(ConfigError(reason: "Shell command cannot be empty")) }
         return .success(.shell(value))
+    case "helper":
+        guard !value.isEmpty else { return .failure(ConfigError(reason: "Choose a helper")) }
+        return .success(.helper(value))
     case "shortcut":
         let tokens = value.split(whereSeparator: { $0.isWhitespace || $0 == "," || $0 == "+" }).map(String.init)
         switch parseShortcut(tokens) {
