@@ -1,0 +1,3 @@
+# Require owner review for code that can execute with release credentials.
+# Enable required code owner review and restrict direct pushes to main in GitHub.
+* @maxmeis
