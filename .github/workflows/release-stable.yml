@@ -1,4 +1,4 @@
-name: Release production
+name: Stable
 on:
   workflow_dispatch:
     inputs:
@@ -28,7 +28,7 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-          ref: main
+          ref: ${{ github.sha }}
       - name: Validate tag and source
         id: source
         env:
@@ -125,6 +125,7 @@ jobs:
           VERSION: ${{ inputs.version }}
           BUILD_NUMBER: ${{ inputs.version }}
           BUILD_APP: ${{ inputs.build_app }}
+          PUBLISH_EXTERNAL_TAP: ${{ vars.PUBLISH_EXTERNAL_TAP || 'false' }}
           SOURCE_REPOSITORY: ${{ github.repository }}
           RELEASES_REPOSITORY: ${{ vars.RELEASES_REPOSITORY || github.repository }}
           TAP_REPOSITORY: ${{ vars.TAP_REPOSITORY || 'maxmeis/homebrew-formulae' }}

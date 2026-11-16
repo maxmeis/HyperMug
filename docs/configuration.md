@@ -31,8 +31,8 @@ The `$schema` property is optional. Editors that support JSON Schema use it for 
 | Key | Values and behavior |
 | --- | --- |
 | `capsLock` | `"default"` leaves Caps Lock alone; `"meh"` maps hold to ⌃⌥⌘ and tap to Escape; `"hyper"` maps hold to ⌃⌥⇧⌘ and tap to Escape. |
-| `caffeineOnLaunch` | Whether Caffeine starts enabled. Clicking the menu bar icon changes the running session only; it does not edit this file. |
-| `autoUpdate` | Whether Sparkle performs scheduled stable update checks. Defaults to `true`; manual **Check for Updates…** remains available when false. |
+| `caffeineOnLaunch` | Whether Stay Awake starts enabled. The menu's checked **Stay Awake** item changes the running session only; it does not edit this preference. |
+| `autoUpdate` | Whether Sparkle performs scheduled checks on the installed Stable or Canary feed. Defaults to `true`; manual **Check for Updates…** remains available when false. |
 | `launchAtLogin` | Registers HyperMug as a login item when true. |
 | `mouse.invertScroll.vertical` | Inverts mouse wheel vertical scrolling relative to the current macOS direction. |
 | `mouse.invertScroll.horizontal` | Inverts the MX Master 3S horizontal/thumb wheel relative to the current macOS direction. |
@@ -75,4 +75,6 @@ An absent, `null`, empty, or empty-action button mapping remains unmapped. A map
 
 If JSON is malformed, a value has the wrong type, `capsLock` is unknown, a shortcut is invalid, or an action contains both `shell` and `shortcut`, HyperMug keeps the last valid settings and shows a config error. It logs the reason and never overwrites a non-empty invalid file. Fix the file and save again. Unknown keys are ignored by the app even though the schema may flag them.
 
-**Settings…** opens the config file in the editor selected by `$EDITOR` when that is a GUI editor. Otherwise, it opens the file with the default `.json` app. If the file is missing, this command recreates it; deleting it while the app runs does not reset the in-memory settings.
+**Settings…** (⌘,) opens the native General, Mouse, and Trackpad tabs. General edits the launch preference for Stay Awake, not the current session's menu checkmark. Each mouse button or swipe direction can be **Unmapped**, a **Shortcut**, or a **Shell command**; shortcut names may be separated by `+`, spaces, or commas. **Save** validates the full settings snapshot and writes atomically while preserving unknown keys. If another process changed the file since the window loaded, use **Reload** and retry rather than overwriting that edit. **Cancel** closes the window without saving.
+
+**Open Config File…** remains available for advanced JSON editing through `$EDITOR` when it is a GUI editor, or through the default `.json` app. If the file is invalid, repair it there and choose **Reload**; the native editor will not overwrite a non-empty invalid file. External edits continue to reload in the running app.

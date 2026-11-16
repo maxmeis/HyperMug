@@ -14,9 +14,11 @@ REPOSITORY="${RELEASES_REPOSITORY:-maxmeis/HyperMug}"
 FEED="${APPCAST_URL:-https://raw.githubusercontent.com/${REPOSITORY}/updates/appcast-stable.xml}"
 KEY="${SPARKLE_PUBLIC_ED_KEY:-}"
 RELEASE="${REQUIRE_SIGNING:-0}"
+CHANNEL_META="${RELEASE_CHANNEL:-local}"
 
 [[ "$VERSION" =~ ^[0-9]+(\.[0-9]+)*([.-][A-Za-z0-9]+)*$ ]] || { echo "error: invalid APP_VERSION" >&2; exit 1; }
 [[ "$NUMBER" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]] || { echo "error: invalid BUILD_NUMBER" >&2; exit 1; }
+[[ "$CHANNEL_META" == local || "$CHANNEL_META" == stable || "$CHANNEL_META" == canary ]] || { echo "error: invalid RELEASE_CHANNEL" >&2; exit 1; }
 if [ -n "$KEY" ] || [ "$RELEASE" = 1 ]; then
   KEY_BYTES="$(printf '%s' "$KEY" | base64 -D 2>/dev/null | wc -c | tr -d ' ' || true)"
   [[ "$KEY" =~ ^[A-Za-z0-9+/]{43}=$ && "$KEY_BYTES" = 32 ]] || { echo "error: SPARKLE_PUBLIC_ED_KEY must be a 32-byte base64 Ed25519 key" >&2; exit 1; }
@@ -32,17 +34,19 @@ if [ "$RELEASE" = 1 ]; then
   security find-identity -v -p codesigning ${SIGN_KEYCHAIN:+"$SIGN_KEYCHAIN"} | grep -Fq "\"$SIGN_ID\"" || { echo "error: Developer ID identity unavailable" >&2; exit 1; }
 fi
 rm -rf "$APP" "$CORE"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Frameworks"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Frameworks" "$APP/Contents/Resources"
 compile_core_module "$CORE"
 swiftc -O -parse-as-library "${SWIFT_BASE_FLAGS[@]}" -module-name HyperMug \
   -I "$CORE" -F "$SPARKLE_FRAMEWORK_DIR" Sources/Platform/*.swift Sources/App/*.swift "$CORE/HyperMugCore.o" \
   -o "$APP/Contents/MacOS/HyperMug" -framework IOKit -framework Carbon -framework Sparkle \
   -Xlinker -rpath -Xlinker @executable_path/../Frameworks
 cp -R "$SPARKLE_FRAMEWORK_DIR/Sparkle.framework" "$APP/Contents/Frameworks/"
+cp ../Branding/HyperMug.icns "$APP/Contents/Resources/HyperMug.icns"
 cp Info.plist "$APP/Contents/"
 PLIST="$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$PLIST"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $NUMBER" "$PLIST"
+/usr/libexec/PlistBuddy -c "Set :HyperMugReleaseChannel $CHANNEL_META" "$PLIST"
 if [ -n "$KEY" ]; then
   /usr/libexec/PlistBuddy -c "Add :SUFeedURL string $FEED" "$PLIST"
   /usr/libexec/PlistBuddy -c "Add :SUPublicEDKey string $KEY" "$PLIST"
@@ -50,7 +54,7 @@ else
   echo "warning: updates disabled; set SPARKLE_PUBLIC_ED_KEY and APPCAST_URL to enable."
 fi
 SIGN_ID="${SIGN_ID:-HyperMug Local Signing}"
-if [ "$RELEASE" != 1 ] && ! security find-identity -p codesigning ${SIGN_KEYCHAIN:+"$SIGN_KEYCHAIN"} | grep -Fq "\"$SIGN_ID\""; then
+if [ "$RELEASE" != 1 ] && [ "$SIGN_ID" != - ] && ! security find-identity -p codesigning ${SIGN_KEYCHAIN:+"$SIGN_KEYCHAIN"} | grep -Fq "\"$SIGN_ID\""; then
   echo "warning: identity $SIGN_ID not found; signing ad-hoc (-)."
   SIGN_ID=-
 fi

@@ -17,7 +17,7 @@ Read only the references relevant to the work:
 | TCC, event taps, input devices, login items, or sleep/wake | [Permissions and system integration](references/permissions.md) |
 | Planning, parallel implementation, or independent review | [Work phases and agents](references/orchestration.md) |
 | Tags, GitHub Releases, source-only/binary modes, artifacts, or Sparkle | [Versioned releases](references/releases.md) |
-| Developer ID, App Store signing, CLI notarization, or Gatekeeper | [Signing and notarization](references/signing.md) |
+| Local/PR ad-hoc signing, Developer ID, App Store signing, CLI notarization, or Gatekeeper | [Signing and notarization](references/signing.md) |
 | Taps, casks, Brew automation, or Brew installation | [Homebrew casks](references/homebrew.md) |
 | Editing, evaluating, or installing this skill for Claude Code and Codex | [Skill maintenance and installation](references/maintenance.md) |
 

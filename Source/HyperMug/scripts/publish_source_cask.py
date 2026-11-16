@@ -21,18 +21,22 @@ def version_of(content, channel):
     if not match:
         raise ValueError("existing source cask has no literal version")
     value = match.group(1)
-    if channel != "stable" or not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", value):
-        raise ValueError("unexpected production cask version")
-    return tuple(map(int, value.split(".")))
+    if channel == "stable" and re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", value):
+        return tuple(map(int, value.split(".")))
+    if channel == "canary" and re.fullmatch(r"0\.0\.0-canary\.[1-9][0-9]*", value):
+        return (int(value.rsplit(".", 1)[1]),)
+    raise ValueError("unexpected release cask version")
 
 
 def publish(channel, version, repository, asset, work):
-    token = "hypermug"
+    token = "hypermug@canary" if channel == "canary" else "hypermug"
     path = f"Casks/{token}.rb"
     branch = f"release-casks/{channel}"
     desired = asset.read_text()
     expected_version = version
-    if version_of(desired, channel) != tuple(map(int, expected_version.split("."))):
+    expected = ((int(expected_version.rsplit(".", 1)[1]),) if channel == "canary"
+                else tuple(map(int, expected_version.split("."))))
+    if version_of(desired, channel) != expected:
         raise ValueError("published cask version does not match release")
     if not re.search(r'^\s*sha256 "[0-9a-f]{64}"\s*$', desired, re.M):
         raise ValueError("published cask lacks a SHA256 digest")

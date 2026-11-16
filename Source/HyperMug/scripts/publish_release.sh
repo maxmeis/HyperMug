@@ -6,16 +6,24 @@ cd "$(dirname "$0")/.."
 python3 scripts/release_metadata.py validate --channel "$CHANNEL" --version "$VERSION" --actor "$GITHUB_ACTOR" --triggering-actor "$GITHUB_TRIGGERING_ACTOR" --ref "$GITHUB_REF" --sha "$GITHUB_SHA" --source-repo "$SOURCE_REPOSITORY" --releases-repo "$RELEASES_REPOSITORY" --tap-repo "$TAP_REPOSITORY"
 [[ "$BUILD_NUMBER" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]] || exit 1
 [[ "$BUILD_APP" == true || "$BUILD_APP" == false ]] || { echo 'BUILD_APP must be true or false' >&2; exit 1; }
-if [[ "$BUILD_APP" == true && -z "${TAP_SSH_PRIVATE_KEY:-}" && -z "${TAP_TOKEN:-}" ]]; then
+PUBLISH_EXTERNAL_TAP="${PUBLISH_EXTERNAL_TAP:-false}"
+[[ "$PUBLISH_EXTERNAL_TAP" == true || "$PUBLISH_EXTERNAL_TAP" == false ]] || { echo 'PUBLISH_EXTERNAL_TAP must be true or false' >&2; exit 1; }
+[[ "$CHANNEL" != canary || "$BUILD_APP" == true ]] || { echo 'Canary requires an app build' >&2; exit 1; }
+if [[ "$BUILD_APP" == true && "$PUBLISH_EXTERNAL_TAP" == true && -z "${TAP_SSH_PRIVATE_KEY:-}" && -z "${TAP_TOKEN:-}" ]]; then
   echo 'TAP_SSH_PRIVATE_KEY or TAP_TOKEN is required' >&2
   exit 1
 fi
 export GH_TOKEN="$RELEASE_TOKEN"
+if [[ "$BUILD_APP" == true && "$PUBLISH_EXTERNAL_TAP" == true ]]; then
+  tap_archived="$(gh api "repos/${TAP_REPOSITORY}" --jq .archived)" || { echo 'External tap is unavailable; disable PUBLISH_EXTERNAL_TAP or repair its access' >&2; exit 1; }
+  [[ "$tap_archived" == false ]] || { echo 'External tap is archived; disable PUBLISH_EXTERNAL_TAP or choose a writable destination' >&2; exit 1; }
+fi
 export PYTHONPATH="$PWD/scripts"
 tag="v${VERSION}"
 asset="HyperMug-${VERSION}.zip"
 feed="appcast-${CHANNEL}.xml"
 token=hypermug
+if [[ "$CHANNEL" == canary ]]; then token='hypermug@canary'; fi
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
@@ -58,12 +66,12 @@ if [[ "$BUILD_APP" == false && "$release_exists" == 1 && "$source_only_release" 
   exit 0
 fi
 gh api "repos/${RELEASES_REPOSITORY}/releases?per_page=100" --paginate --jq '.[].tag_name' > "$work/tags"
-python3 - "$VERSION" "$release_exists" "$work/tags" <<'PY'
+python3 - "$CHANNEL" "$VERSION" "$release_exists" "$work/tags" <<'PY'
 import sys
 from pathlib import Path
 sys.path.insert(0, 'scripts')
-from release_metadata import stable_order
-stable_order(sys.argv[1], Path(sys.argv[3]).read_text().splitlines(), sys.argv[2] == '1')
+from release_metadata import release_order
+release_order(sys.argv[1], sys.argv[2], Path(sys.argv[4]).read_text().splitlines(), sys.argv[3] == '1')
 PY
 # The source tag must already exist and resolve to the checkout SHA.
 [[ "$source_tag_exists" == 1 ]] || { echo "Production source tag is missing" >&2; exit 1; }
@@ -100,7 +108,7 @@ if [[ "$BUILD_APP" == false ]]; then
   exit 0
 fi
 [[ "$source_only_release" == 0 ]] || { echo 'Published source-only release cannot gain binary assets; use a new version' >&2; exit 1; }
-if [[ -n "${TAP_SSH_PRIVATE_KEY:-}" ]]; then
+if [[ "$PUBLISH_EXTERNAL_TAP" == true && -n "${TAP_SSH_PRIVATE_KEY:-}" ]]; then
   (umask 077; printf '%s\n' "$TAP_SSH_PRIVATE_KEY" > "$work/tap_key")
   gh api meta --jq '.ssh_keys[]' | sed 's/^/github.com /' > "$work/known_hosts"
   [[ -s "$work/known_hosts" ]] || { echo 'GitHub SSH host keys are unavailable' >&2; exit 1; }
@@ -110,6 +118,7 @@ fi
 cp "build/release/$asset" "build/release/$feed" "build/release/${token}.rb" build/release/sha256.txt "$work/"
 if [[ "$release_exists" == 0 ]]; then
   release_args=(--repo "$RELEASES_REPOSITORY" --draft --title "HyperMug ${VERSION}" --notes "HyperMug ${CHANNEL} ${VERSION}; source ${GITHUB_SHA}")
+  if [[ "$CHANNEL" == canary ]]; then release_args+=(--prerelease); fi
 
   gh release create "$tag" "$work/$asset" "$work/$feed" "$work/${token}.rb" "$work/sha256.txt" "${release_args[@]}"
 else
@@ -127,7 +136,12 @@ expected="$(tr -d '\n' < "$work/sha256.txt")"
 # failure. Publish it before either public channel pointer can reference it.
 if [[ "$release_exists" == 0 || "$release_draft" == true ]]; then
   publish_args=(--repo "$RELEASES_REPOSITORY" --draft=false)
-  publish_args+=(--latest --notes "HyperMug ${CHANNEL} ${VERSION}; source ${GITHUB_SHA}")
+  if [[ "$CHANNEL" == canary ]]; then
+    publish_args+=(--prerelease --latest=false)
+  else
+    publish_args+=(--latest)
+  fi
+  publish_args+=(--notes "HyperMug ${CHANNEL} ${VERSION}; source ${GITHUB_SHA}")
   gh release edit "$tag" "${publish_args[@]}"
 fi
 
@@ -172,7 +186,8 @@ PY
   fi
 )
 [[ "$(cat "$work/decision")" != archive ]] || { echo "Older production version cannot publish" >&2; exit 1; }
-# The tap pointer is updated only after the release asset and feed exist.
+# The optional external tap pointer is updated only after the release asset and feed exist.
+if [[ "$PUBLISH_EXTERNAL_TAP" == true ]]; then
 if [[ -n "${TAP_SSH_PRIVATE_KEY:-}" ]]; then
   export GIT_SSH_COMMAND="$tap_ssh_command"
   tap_url="git@github.com:${TAP_REPOSITORY}.git"
@@ -189,6 +204,7 @@ git clone "$tap_url" "$work/tap" >/dev/null 2>&1
   git -c user.name='HyperMug release bot' -c user.email='actions@users.noreply.github.com' commit -m "Update ${token} to ${VERSION}"
   git push origin HEAD
 )
+fi
 # The source repository is a protected tap. Propose its cask from the immutable
 # published asset; a failed PR can be resumed without replaying earlier writes.
 python3 scripts/publish_source_cask.py --channel "$CHANNEL" --version "$VERSION" \

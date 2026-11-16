@@ -2,14 +2,16 @@
 
 ## Homebrew
 
-HyperMug is distributed as a stable Homebrew cask. The cask becomes installable after the first compiled production release and the generated cask pull request is merged into this repository's default branch. Source-only releases do not provide an app ZIP or Homebrew cask; use [Development](development.md) to build locally.
+HyperMug offers Stable and opt-in Canary Homebrew casks. Each becomes installable only after its first compiled release and generated cask pull request is merged into this repository's default branch. A source-only Stable release has no app ZIP or new cask; use [Development](development.md) to build it locally.
 
 ```sh
 brew tap maxmeis/hypermug https://github.com/maxmeis/HyperMug
 brew install --cask maxmeis/hypermug/hypermug
 ```
 
-Homebrew installs the signed application. Sparkle checks for stable updates by default. Set `"autoUpdate": false` in `~/.config/hypermug.json` to disable scheduled checks; **Check for Updates…** remains available in the menu. Homebrew casks declare `auto_updates true`, so ordinary upgrades leave updates to Sparkle. To explicitly upgrade with Homebrew, run:
+For Canary, use `brew install --cask maxmeis/hypermug/hypermug@canary` after that cask is available. The channels use separate signed Sparkle feeds and keys. Stable installations follow Stable; Canary installations follow Canary. They share the same bundle identity and config file, so uninstall the current channel before installing the other. Existing `hypermug@nightly` users can migrate manually by uninstalling the old cask, then installing Canary; the historical beta feed remains separate.
+
+Homebrew installs the signed application. Set `"autoUpdate": false` in `~/.config/hypermug.json` to disable scheduled checks; **Check for Updates…** remains available in the menu. Homebrew casks declare `auto_updates true`, so ordinary upgrades leave updates to Sparkle. To explicitly upgrade Stable with Homebrew, run:
 
 ```sh
 brew upgrade --cask --greedy maxmeis/hypermug/hypermug
@@ -22,7 +24,7 @@ HyperMug creates `~/.config/hypermug.json` with defaults at first launch. No set
 - **Accessibility** enables the keyboard and mouse event tap used by Caps Lock Meh/Hyper, side-button mappings, and scroll inversion.
 - **Input Monitoring** enables raw Caps Lock detection and access to the MX Master 3S thumb button.
 
-Permission grants are tied to the app's code signature. Release builds have a stable Developer ID signature. For local builds, see [Development](development.md) for a persistent local signing identity.
+Permission grants are tied to the app's code signature. Release builds use Developer ID signing. Local `make build` uses ad-hoc signing; see [Development](development.md) for a persistent local signing identity when permission continuity matters.
 
 ## Trackpad setup
 

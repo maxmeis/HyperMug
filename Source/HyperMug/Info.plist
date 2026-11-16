@@ -10,6 +10,10 @@
 	<string>HyperMug</string>
 	<key>CFBundleExecutable</key>
 	<string>HyperMug</string>
+	<key>CFBundleIconFile</key>
+	<string>HyperMug.icns</string>
+	<key>HyperMugReleaseChannel</key>
+	<string>local</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

@@ -1,6 +1,6 @@
 import hashlib
 import unittest
-from release_metadata import appcast, asset_url, cask, validate, stable_order, publication_decision
+from release_metadata import appcast, asset_url, cask, validate, stable_order, canary_superseded, release_order, publication_decision
 
 SHA = 'a' * 40
 ARGS = ('maxmeis', 'maxmeis', 'refs/tags/v1.2.3', SHA, 'maxmeis/HyperMug', 'maxmeis/HyperMug', 'maxmeis/homebrew-formulae')
@@ -22,6 +22,18 @@ class ReleaseMetadataTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate('stable', '1.2.3', *args)
 
+    def test_canary_requires_exact_main_and_its_own_version_namespace(self):
+        args = ('contributor', 'contributor', 'refs/heads/main', SHA,
+                'maxmeis/HyperMug', 'maxmeis/HyperMug', 'maxmeis/homebrew-formulae')
+        validate('canary', '0.0.0-canary.12', *args)
+        for version in ('1.2.3', '0.0.0-canary.0', '0.0.0-beta.12'):
+            with self.assertRaises(ValueError):
+                validate('canary', version, *args)
+        for index, value in ((2, 'refs/heads/feature'), (4, 'fork/HyperMug')):
+            changed = list(args); changed[index] = value
+            with self.assertRaises(ValueError):
+                validate('canary', '0.0.0-canary.12', *changed)
+
     def test_appcast_escapes_and_signs(self):
         url = asset_url('maxmeis/HyperMug', 'v1.2.3', 'HyperMug-1.2.3.zip')
         xml = appcast('stable', '1.2.3<&', 123, url + '?x="&', 'abc+/=', 17)
@@ -41,6 +53,25 @@ class ReleaseMetadataTests(unittest.TestCase):
         self.assertEqual(publication_decision('stable', '2.0.1', '2.0.1', '2.0.0', '2.0.0'), 'advance')
         self.assertEqual(publication_decision('stable', '2.0.0', '2.0.0', '2.0.0', '2.0.0'), 'resume')
         self.assertEqual(publication_decision('stable', '1.9.9', '1.9.9', '2.0.0', '2.0.0'), 'archive')
+
+    def test_canary_cask_feed_and_out_of_order_queue(self):
+        digest = hashlib.sha256(b'canary archive').hexdigest()
+        result = cask('canary', '0.0.0-canary.12', 'https://example.test/canary.zip', digest)
+        self.assertIn('cask "hypermug@canary"', result)
+        self.assertIn('version "0.0.0-canary.12"', result)
+        self.assertIn('conflicts_with cask: "hypermug"', result)
+        self.assertIn('conflicts_with cask: "hypermug@nightly"', result)
+        self.assertTrue(canary_superseded('0.0.0-canary.9', ['v0.0.0-canary.10', 'v2.0.0']))
+        self.assertFalse(canary_superseded('0.0.0-canary.11', ['v0.0.0-canary.10', 'v2.0.0']))
+        release_order('canary', '0.0.0-canary.11', ['v0.0.0-canary.10', 'v2.0.0'])
+        with self.assertRaises(ValueError):
+            release_order('canary', '0.0.0-canary.9', ['v0.0.0-canary.10'])
+        self.assertEqual(publication_decision('canary', '0.0.0-canary.12', '1200', '0.0.0-canary.11', '1100'), 'advance')
+        self.assertEqual(publication_decision('canary', '0.0.0-canary.11', '1100', '0.0.0-canary.12', '1200'), 'archive')
+        self.assertEqual(publication_decision('canary', '0.0.0-canary.13', '1000', '0.0.0-canary.12', '1200'), 'archive')
+        self.assertEqual(publication_decision('canary', '0.0.0-canary.12', '1200', '0.0.0-canary.12', '1200'), 'resume')
+        with self.assertRaises(ValueError):
+            publication_decision('canary', '0.0.0-canary.12', '1300', '0.0.0-canary.12', '1200')
 
     def test_stable_downgrade_and_retry(self):
         stable_order('2.1.0', ['v2.0.0', 'v0.0.0-beta.20'])

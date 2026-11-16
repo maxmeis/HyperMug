@@ -43,7 +43,10 @@ if args[0] == "api":
     endpoint = next(x for x in args if x.startswith("repos/"))
     bits = endpoint.split("/")
     repo = bits[1] + "/" + bits[2]
-    if "/git/ref/tags/" in endpoint:
+    if endpoint == "repos/" + repo:
+        archived = state.get("archived", {}).get(repo, False)
+        print("true" if archived else "false")
+    elif "/git/ref/tags/" in endpoint:
         tag = endpoint.rsplit("/", 1)[1]
         entry = state["tags"].get(tag_key(repo, tag))
         if not entry: sys.exit(1)
@@ -115,7 +118,7 @@ elif args[0] == "release" and args[1] == "edit":
         release["draft"] = "--draft=false" not in args
     if "--latest" in args or "--latest=false" in args:
         release["latest"] = "--latest" in args and "--latest=false" not in args
-    release["prerelease"] = "--prerelease" in args
+    if "--prerelease" in args: release["prerelease"] = True
     if "--notes" in args: release["body"] = args[args.index("--notes") + 1]
     state["events"].append(["release-publish", repo, tag]); save()
 elif args[0] == "release" and args[1] == "upload":
@@ -272,6 +275,7 @@ class PublishReleaseIntegrationTests(unittest.TestCase):
             "FAKE_GH_STATE": str(self.state_dir),
             "CHANNEL": "stable", "VERSION": "1.2.3", "BUILD_NUMBER": "1.2.3",
             "BUILD_APP": "true",
+            "PUBLISH_EXTERNAL_TAP": "true",
             "SOURCE_REPOSITORY": self.releases_repo, "RELEASES_REPOSITORY": self.releases_repo,
             "TAP_REPOSITORY": self.tap_repo, "RELEASE_TOKEN": "release-token", "TAP_TOKEN": "tap-token",
             "GITHUB_ACTOR": "maxmeis", "GITHUB_TRIGGERING_ACTOR": "maxmeis",
@@ -297,7 +301,7 @@ class PublishReleaseIntegrationTests(unittest.TestCase):
         channel = channel or self.env["CHANNEL"]
         version = version or self.env["VERSION"]
         build_number = build_number or self.env["BUILD_NUMBER"]
-        token = "hypermug"
+        token = "hypermug@canary" if channel == "canary" else "hypermug"
         out = self.project / "build/release"
         archive = out / f"HyperMug-{version}.zip"
         with zipfile.ZipFile(archive, "w") as zf:
@@ -428,6 +432,57 @@ class PublishReleaseIntegrationTests(unittest.TestCase):
         self.assertIn("TAP_SSH_PRIVATE_KEY or TAP_TOKEN is required", result.stderr)
         self.assertEqual(self._state()["events"], [])
         self.assertIsNone(self._release())
+
+    def test_default_in_repo_publication_needs_no_external_tap_or_credentials(self):
+        self._build()
+        result = self._run(PUBLISH_EXTERNAL_TAP="", TAP_TOKEN="", TAP_SSH_PRIVATE_KEY="")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(self._release()["draft"])
+        self.assertIn("1.2.3", self._remote_file(self.releases_bare, "appcast-stable.xml"))
+        self.assertIsNone(self._remote_file(self.tap_bare, "Casks/hypermug.rb"))
+        self.assertEqual(len(self._state()["prs"]), 1)
+
+    def test_explicit_archived_external_tap_fails_before_release_writes(self):
+        self._build()
+        state = self._state()
+        state["archived"] = {self.tap_repo: True}
+        self._save_state(state)
+        result = self._run()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("External tap is archived", result.stderr)
+        self.assertEqual(self._state()["events"], [])
+        self.assertIsNone(self._release())
+
+    def test_canary_publishes_separate_feed_and_cask_without_external_tap(self):
+        version = "0.0.0-canary.12"
+        self._seed_tag(self.releases_repo, "v" + version, SHA_A)
+        self._build(channel="canary", version=version, build_number="1200")
+        result = self._run(CHANNEL="canary", VERSION=version, BUILD_NUMBER="1200",
+                           GITHUB_REF="refs/heads/main", PUBLISH_EXTERNAL_TAP="",
+                           TAP_TOKEN="", TAP_SSH_PRIVATE_KEY="")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        release = self._release("v" + version)
+        self.assertFalse(release["draft"])
+        self.assertTrue(release["prerelease"])
+        self.assertFalse(release["latest"])
+        self.assertIn("HyperMug-" + version + ".zip", release["assets"])
+        self.assertIn(version, self._remote_file(self.releases_bare, "appcast-canary.xml"))
+        self.assertIsNone(self._remote_file(self.releases_bare, "appcast-stable.xml"))
+        self.assertIsNone(self._remote_file(self.tap_bare, "Casks/hypermug@canary.rb"))
+        self.assertIn(version, self._remote_file(self.releases_bare, "Casks/hypermug@canary.rb", "release-casks/canary"))
+        self.assertEqual(len(self._state()["prs"]), 1)
+
+        old = "0.0.0-canary.11"
+        self._seed_tag(self.releases_repo, "v" + old, SHA_B)
+        self._build(channel="canary", version=old, build_number="1100")
+        events = list(self._state()["events"])
+        outdated = self._run(CHANNEL="canary", VERSION=old, BUILD_NUMBER="1100",
+                             GITHUB_REF="refs/heads/main", GITHUB_SHA=SHA_B,
+                             PUBLISH_EXTERNAL_TAP="", TAP_TOKEN="")
+        self.assertNotEqual(outdated.returncode, 0)
+        self.assertIn("newer canary release already exists", outdated.stderr)
+        self.assertEqual(self._state()["events"], events)
+        self.assertIsNone(self._release("v" + old))
 
     def test_first_stable_success_publishes_assets_and_pointers_once(self):
         self._build()

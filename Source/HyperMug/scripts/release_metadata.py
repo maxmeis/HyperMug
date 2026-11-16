@@ -8,19 +8,23 @@ from urllib.parse import quote
 from xml.sax.saxutils import escape
 
 SEMVER = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
+CANARY = re.compile(r"^0\.0\.0-canary\.([1-9][0-9]*)$")
 REPO = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 SHA = re.compile(r"^[0-9a-f]{40}$")
 
 
 def validate(channel, version, actor, triggering_actor, ref, sha, source_repo, releases_repo, tap_repo):
-    if channel != "stable" or not all(REPO.fullmatch(r) for r in (source_repo, releases_repo, tap_repo)):
-        raise ValueError("production channel and valid repositories required")
-    if ref != f"refs/tags/v{version}" or not SHA.fullmatch(sha):
-        raise ValueError("release requires a version tag and full commit SHA")
-    if actor != "maxmeis" or triggering_actor != "maxmeis":
-        raise ValueError("production requires both actor and triggering_actor maxmeis")
-    if not SEMVER.fullmatch(version):
-        raise ValueError("version must be X.Y.Z")
+    if channel not in ("stable", "canary") or not all(REPO.fullmatch(r) for r in (source_repo, releases_repo, tap_repo)):
+        raise ValueError("valid release channel and repositories required")
+    if not SHA.fullmatch(sha):
+        raise ValueError("release requires a full commit SHA")
+    if channel == "stable":
+        if ref != f"refs/tags/v{version}" or not SEMVER.fullmatch(version):
+            raise ValueError("stable release requires a version tag and X.Y.Z")
+        if actor != "maxmeis" or triggering_actor != "maxmeis":
+            raise ValueError("production requires both actor and triggering_actor maxmeis")
+    elif source_repo != "maxmeis/HyperMug" or ref != "refs/heads/main" or not CANARY.fullmatch(version):
+        raise ValueError("canary release requires this repository's main and 0.0.0-canary.N")
 
 
 def asset_url(repo, tag, name):
@@ -46,8 +50,11 @@ def appcast(channel, version, build_number, url, signature, size):
 def cask(channel, version, url, digest):
     if not re.fullmatch(r"[0-9a-f]{64}", digest):
         raise ValueError("invalid SHA256")
-    token = "hypermug"
+    token = "hypermug@canary" if channel == "canary" else "hypermug"
     cask_version = version
+    conflicts = ('  conflicts_with cask: "hypermug"\n  conflicts_with cask: "hypermug@nightly"\n'
+                 if channel == "canary" else
+                 '  conflicts_with cask: "hypermug@canary"\n  conflicts_with cask: "hypermug@nightly"\n')
     return f'''cask "{token}" do
   version "{cask_version}"
   sha256 "{digest}"
@@ -64,6 +71,7 @@ def cask(channel, version, url, digest):
   auto_updates true
   depends_on macos: ">= :sonoma"
   depends_on arch: :arm64
+{conflicts.rstrip()}
   app "HyperMug.app"
 end
 '''
@@ -84,9 +92,42 @@ def stable_order(candidate, existing, retry=False):
             raise ValueError(f"stable version {candidate} is not newer than {version}")
 
 
+def canary_superseded(candidate, existing):
+    match = CANARY.fullmatch(candidate)
+    if not match:
+        raise ValueError("invalid canary version")
+    serial = int(match.group(1))
+    return any(int(found.group(1)) > serial for tag in existing
+               if (found := CANARY.fullmatch(tag.removeprefix("v"))))
+
+
+def release_order(channel, candidate, existing, retry=False):
+    if channel == "stable":
+        stable_order(candidate, existing, retry)
+    elif channel == "canary":
+        if canary_superseded(candidate, existing):
+            raise ValueError("newer canary release already exists")
+        if not retry and "v" + candidate in existing:
+            raise ValueError("canary version already exists")
+    else:
+        raise ValueError("invalid release channel")
+
+
 def publication_decision(channel, version, build_number, current_version, current_build):
     """Return advance, resume, or archive for a published channel pointer."""
     if not current_version:
+        return "advance"
+    if channel == "canary":
+        new_match, old_match = CANARY.fullmatch(version), CANARY.fullmatch(current_version)
+        if not new_match or not old_match:
+            raise ValueError("invalid canary feed version")
+        new, old = int(new_match.group(1)), int(old_match.group(1))
+        if new < old or (new > old and int(build_number) <= int(current_build)):
+            return "archive"
+        if new == old:
+            if build_number != current_build:
+                raise ValueError("same canary version has different build number")
+            return "resume"
         return "advance"
     new = tuple(map(int, version.split(".")))
     old = tuple(map(int, current_version.split(".")))
@@ -117,7 +158,7 @@ def main():
     out = Path(a.output)
     out.mkdir(parents=True, exist_ok=True)
     (out / f"appcast-{a.channel}.xml").write_text(appcast(a.channel, a.version, a.build_number, url, a.signature, archive.stat().st_size))
-    token = "hypermug"
+    token = "hypermug@canary" if a.channel == "canary" else "hypermug"
     (out / f"{token}.rb").write_text(cask(a.channel, a.version, url, digest))
     (out / "sha256.txt").write_text(digest + "\n")
 

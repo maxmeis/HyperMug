@@ -4,25 +4,22 @@ The Swift app, tests, and build tooling are in `Source/HyperMug/`. Repository-wi
 
 ## Build and run
 
-On macOS with Xcode Command Line Tools installed:
+On macOS with Xcode Command Line Tools installed, from the repository root:
 
 ```sh
-cd Source/HyperMug
-./scripts/check-layers.sh
-./scripts/test.sh
-./scripts/compile-check.sh
-./build.sh
-open build/HyperMug.app
+make build  # ad-hoc signed; does not launch
+make test   # Core tests and coverage
+make run    # explicitly build and launch
 ```
 
-Build products go under `Source/HyperMug/build/`. The app uses Sparkle; local builds without the release update key have automatic updating disabled. To keep Accessibility and Input Monitoring grants across rebuilds, create the local signing identity once:
+`make check` runs tests and builds; `make clean` removes generated app/test output while keeping the dependency cache. For layer and compile checks, run `./Source/HyperMug/scripts/check-layers.sh` and `./Source/HyperMug/scripts/compile-check.sh`. Build products go under `Source/HyperMug/build/`. `make build` pins `SIGN_ID=-` and disables the updater, Developer ID signing, and notarization; it needs no Apple account. To keep Accessibility and Input Monitoring grants across rebuilds, create the optional local signing identity once:
 
 ```sh
 cd Source/HyperMug
 ./scripts/create-signing-cert.sh
 ```
 
-This creates `HyperMug Local Signing` in the login keychain and needs no administrator access. Without a persistent identity, an ad-hoc signature can cause macOS to request permissions again after each rebuild.
+This creates `HyperMug Local Signing` in the login keychain and needs no administrator access. To use it, run `SIGN_ID='HyperMug Local Signing' ./Source/HyperMug/build.sh` directly; `make build` intentionally remains ad-hoc. Without a persistent identity, macOS can request permissions again after each rebuild. Release CI uses the same builder with Developer ID signing, hardened runtime, and notarization.
 
 ## Architecture and checks
 
