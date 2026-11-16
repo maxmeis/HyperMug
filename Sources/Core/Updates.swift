@@ -1,7 +1,7 @@
 import Foundation
 
-/// The GitHub repository keeps its original name after the rename to HyperMug.
-public let githubRepo = "maxmeis/MyMug"
+/// The GitHub repository the update check reads releases from.
+public let githubRepo = "maxmeis/HyperMug"
 public let githubReleasesURL = URL(string: "https://github.com/\(githubRepo)/releases")!
 public let githubLatestAPI = URL(string: "https://api.github.com/repos/\(githubRepo)/releases/latest")!
 public let updateRequestTimeout: TimeInterval = 15

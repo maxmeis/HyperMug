@@ -34,11 +34,11 @@ private func versionLookup() {
 private func outcomes() {
     func json(_ object: Any) -> Data { try! JSONSerialization.data(withJSONObject: object) }
     let releases = githubReleasesURL
-    let goodBody = json(["tag_name": "v0.3", "html_url": "https://github.com/maxmeis/MyMug/releases/tag/v0.3"])
+    let goodBody = json(["tag_name": "v0.3", "html_url": "https://github.com/maxmeis/HyperMug/releases/tag/v0.3"])
 
-    // The repository keeps its pre-rename name (R9).
-    expectEqual(githubLatestAPI.absoluteString, "https://api.github.com/repos/maxmeis/MyMug/releases/latest")
-    expectEqual(releases.absoluteString, "https://github.com/maxmeis/MyMug/releases")
+    // The update check reads the renamed repository (R9).
+    expectEqual(githubLatestAPI.absoluteString, "https://api.github.com/repos/maxmeis/HyperMug/releases/latest")
+    expectEqual(releases.absoluteString, "https://github.com/maxmeis/HyperMug/releases")
 
     // Transport error beats everything.
     expectEqual(updateOutcome(errorDescription: "offline", status: 200, body: goodBody, local: "0.2"),
@@ -68,7 +68,7 @@ private func outcomes() {
     // Newer release: link to its page, or to the releases list when html_url is unusable.
     expectEqual(updateOutcome(errorDescription: nil, status: 200, body: goodBody, local: "0.2"),
                 UpdateAlert(title: "Update available", text: "HyperMug v0.3 is on GitHub (you have 0.2).",
-                            openURL: URL(string: "https://github.com/maxmeis/MyMug/releases/tag/v0.3")))
+                            openURL: URL(string: "https://github.com/maxmeis/HyperMug/releases/tag/v0.3")))
     for html in [nil, "", 7] as [Any?] {
         var object: [String: Any] = ["tag_name": "v0.3"]
         if let html { object["html_url"] = html }
