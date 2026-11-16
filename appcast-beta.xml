@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+<channel><title>HyperMug beta updates</title><item>
+<title>HyperMug 0.0.0-beta.1</title>
+<sparkle:version>43925036316</sparkle:version>
+<sparkle:shortVersionString>0.0.1</sparkle:shortVersionString>
+<enclosure url="https://github.com/maxmeis/HyperMug/releases/download/v0.0.0-beta.1/HyperMug-0.0.0-beta.1.zip" sparkle:edSignature="h+ZBBsMMRvrKwIiQQfGZGXw567S+c0nno3x0+uLjAnH5xgpZymzLaeV7bW/g3yFq/svmuOFDaVwkH7/dkqS1Cg==" length="1324464" type="application/zip" />
+</item></channel></rss>
