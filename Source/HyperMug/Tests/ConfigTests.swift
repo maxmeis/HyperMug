@@ -322,6 +322,19 @@ private func encodeTests() {
 
     """
     expectEqual(text(AppConfig()), expectedDefault, "default encoding")
+    let next = "/opt/homebrew/bin/aerospace workspace --no-stdin --wrap-around next"
+    let prev = "/opt/homebrew/bin/aerospace workspace --no-stdin --wrap-around prev"
+    let expectedNewFile: [String: Any] = [
+        "$schema": "./\(AppIdentity.schemaFileName)",
+        "autoUpdate": true, "caffeineOnLaunch": true, "capsLock": "meh", "launchAtLogin": true,
+        "mouse": ["invertScroll": ["horizontal": false, "vertical": false],
+                  "buttons": ["back": ["shell": next], "forward": ["shell": prev]]],
+        "trackpad": ["threeFingerSwipe": ["left": ["shell": next], "right": ["shell": prev]],
+                     "fourFingerSwipe": ["left": ["shell": next], "right": ["shell": prev]]]
+    ]
+    expectEqual(jsonObject(encodeConfig(.newFileDefaults)) as NSDictionary,
+                expectedNewFile as NSDictionary, "new-file JSON matches requested behavior")
+    expectConfig(text(.newFileDefaults), .newFileDefaults)
     expectConfig(text(AppConfig()), AppConfig())
     expectConfig(text(AppConfig(autoUpdate: false)), AppConfig(autoUpdate: false))
     expectEqual(jsonObject(encodeConfig(AppConfig(autoUpdate: false)))["autoUpdate"] as? Bool, false,

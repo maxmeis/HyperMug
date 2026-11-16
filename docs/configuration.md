@@ -10,22 +10,30 @@ HyperMug stores all persistent settings in `~/.config/hypermug.json`. It creates
   "capsLock": "meh",
   "caffeineOnLaunch": true,
   "autoUpdate": true,
-  "launchAtLogin": false,
-  "helpers": { "mission-control": "open -a 'Mission Control'" },
+  "launchAtLogin": true,
   "mouse": {
     "invertScroll": { "vertical": false, "horizontal": false },
     "buttons": {
-      "back": { "shortcut": ["cmd", "["] },
-      "forward": { "shortcut": ["cmd", "]"] },
-      "thumb": { "helper": "mission-control" }
+      "back": { "shell": "/opt/homebrew/bin/aerospace workspace --no-stdin --wrap-around next" },
+      "forward": { "shell": "/opt/homebrew/bin/aerospace workspace --no-stdin --wrap-around prev" }
+    }
+  },
+  "trackpad": {
+    "threeFingerSwipe": {
+      "left": { "shell": "/opt/homebrew/bin/aerospace workspace --no-stdin --wrap-around next" },
+      "right": { "shell": "/opt/homebrew/bin/aerospace workspace --no-stdin --wrap-around prev" }
+    },
+    "fourFingerSwipe": {
+      "left": { "shell": "/opt/homebrew/bin/aerospace workspace --no-stdin --wrap-around next" },
+      "right": { "shell": "/opt/homebrew/bin/aerospace workspace --no-stdin --wrap-around prev" }
     }
   }
 }
 ```
 
-Defaults are `capsLock: "meh"`, `caffeineOnLaunch: true`, `autoUpdate: true`, `launchAtLogin: false`, and both scroll inversions off. No button or trackpad mapping is enabled until configured. Missing top-level keys use their defaults. An empty file is initialized with defaults.
+On a new or empty file, HyperMug writes the example above: `capsLock: "meh"`, `caffeineOnLaunch: true`, `autoUpdate: true`, `launchAtLogin: true`, both scroll inversions off, and the six AeroSpace mappings shown. These shell actions require AeroSpace at the specified path to work. Existing non-empty files are never rewritten. Missing keys in an existing file retain their previous fallback values; in particular, omitted `launchAtLogin` remains `false` and omitted mappings remain unmapped.
 
-The `$schema` property is optional. Editors that support JSON Schema use it for validation and token autocomplete. The schema flags unknown keys, but the app ignores them for compatibility.
+The `$schema` property is optional. The generated file uses `./hypermug.schema.json`, which HyperMug installs beside it. The requested `./hypermug-dev.schema.json` would not resolve with the current schema installer, so the generated link retains the installed filename. Editors that support JSON Schema use it for validation and token autocomplete. The schema flags unknown keys, but the app ignores them for compatibility.
 
 ## Settings
 
@@ -70,7 +78,7 @@ For example, a trackpad configuration can be added alongside `mouse`:
 }
 ```
 
-This example uses the `mission-control` helper defined in the first example. Omitted directions run no action. Each configured swipe fires once; lift all fingers before the next swipe. Taps, pinches, rotation, and normal two-finger scrolling are not bindings. Configure the conflicting native macOS swipe assignments as described in [Installation](installation.md#trackpad-setup).
+This example requires a `mission-control` helper in top-level `helpers`. Omitted directions run no action. Each configured swipe fires once; lift all fingers before the next swipe. Taps, pinches, rotation, and normal two-finger scrolling are not bindings. Configure the conflicting native macOS swipe assignments as described in [Installation](installation.md#trackpad-setup).
 
 ## Validation and recovery
 
