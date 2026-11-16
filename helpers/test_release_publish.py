@@ -556,6 +556,16 @@ class PublishReleaseIntegrationTests(unittest.TestCase):
         self.assertIsNone(self._remote_file(self.releases_bare, "Casks/hypermug.rb", "main"))
         self.assertEqual(self._state().get("prs", {}), {})
         self.assertEqual(len([e for e in self._state()["events"] if e[0] == "ci-dispatch"]), 1)
+        identity = "maxmeis|41482988+maxmeis@users.noreply.github.com"
+        for bare, branch in ((self.releases_bare, "updates"),
+                             (self.releases_bare, "release-casks/stable"),
+                             (self.tap_bare, "main")):
+            with self.subTest(branch=branch, repository=bare.name):
+                actual = subprocess.check_output(
+                    [self.real_git, "--git-dir", str(bare), "log", "-1",
+                     "--format=%an|%ae%n%cn|%ce%n%s", branch], text=True).splitlines()
+                self.assertEqual(actual[:2], [identity, identity])
+                self.assertTrue(actual[2].startswith("chore: update "), actual[2])
 
     def test_first_release_creates_updates_branch(self):
         subprocess.run([self.real_git, "--git-dir", str(self.releases_bare),
