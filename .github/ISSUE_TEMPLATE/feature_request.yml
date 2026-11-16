@@ -1,0 +1,35 @@
+name: Feature request
+description: Suggest an improvement to HyperMug
+title: "[Feature] "
+labels: [feature]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: What are you trying to accomplish?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe how the feature should work.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: What observable result would make this complete?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: input
+    id: version
+    attributes:
+      label: HyperMug version, if relevant
+      description: Copy CFBundleShortVersionString from the installed app bundle if this depends on existing behavior.

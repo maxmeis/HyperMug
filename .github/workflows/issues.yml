@@ -1,0 +1,22 @@
+name: Triage owner bug reports
+on:
+  issues:
+    types: [opened, edited]
+permissions:
+  contents: read
+  issues: write
+jobs:
+  triage:
+    if: github.event.issue.user.login == 'maxmeis' && contains(github.event.issue.labels.*.name, 'bug')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Check reported app version
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_EVENT_PATH: ${{ github.event_path }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          RELEASES_REPOSITORY: ${{ vars.RELEASES_REPOSITORY || github.repository }}
+        run: node Source/Automation/triage-issues.mjs
