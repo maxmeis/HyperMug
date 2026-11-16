@@ -192,7 +192,7 @@ PY
   if [[ "$decision" == advance ]]; then
     cp "$work/$feed" "$feed"
     git add "$feed"
-    git -c user.name='HyperMug release bot' -c user.email='actions@users.noreply.github.com' commit -m "Update ${CHANNEL} appcast to ${VERSION}"
+    git -c user.name=maxmeis -c user.email=41482988+maxmeis@users.noreply.github.com commit -m "chore: update ${CHANNEL} appcast to ${VERSION}"
     git push origin HEAD:updates
   fi
 )
@@ -212,11 +212,11 @@ git clone "$tap_url" "$work/tap" >/dev/null 2>&1
   if [[ -f "Casks/${token}.rb" ]] && cmp -s "$work/${token}.rb" "Casks/${token}.rb"; then exit 0; fi
   cp "$work/${token}.rb" "Casks/${token}.rb"
   git add "Casks/${token}.rb"
-  git -c user.name='HyperMug release bot' -c user.email='actions@users.noreply.github.com' commit -m "Update ${token} to ${VERSION}"
+  git -c user.name=maxmeis -c user.email=41482988+maxmeis@users.noreply.github.com commit -m "chore: update ${token} to ${VERSION}"
   git push origin HEAD
 )
 fi
-# The source repository is a protected tap. Propose its cask from the immutable
-# published asset; a failed PR can be resumed without replaying earlier writes.
+# Prepare the protected source tap metadata from the immutable published asset.
+# Required CI and the trusted finalizer publish it without a release PR.
 python3 helpers/publish_source_cask.py --channel "$CHANNEL" --version "$VERSION" \
   --repository "$SOURCE_REPOSITORY" --asset "$work/${token}.rb" --work "$work/source"
