@@ -23,7 +23,7 @@ Thumb-button remapping supports the MX Master 3S over Bluetooth. Do not run Logi
 
 ### Configuration error
 
-HyperMug keeps the last valid configuration when a file contains invalid JSON, an unsupported value, or an invalid action. Check the alert and logs, fix the file, and save it again. HyperMug does not overwrite a non-empty invalid file. See [Configuration](configuration.md#validation-and-recovery).
+HyperMug keeps the last valid configuration when a file contains invalid JSON, an unsupported value, an invalid action, or a reference to a missing helper. Check the alert and logs, fix the file, and save it again. HyperMug does not overwrite a non-empty invalid file. See [Configuration](configuration.md#validation-and-recovery).
 
 ### View logs
 

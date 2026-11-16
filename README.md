@@ -17,10 +17,10 @@ Canary is an opt-in channel with its own feed and cask. See [Installation](docs/
 
 - **Caps Lock as Meh or Hyper:** hold for ⌃⌥⌘ or ⌃⌥⇧⌘; tap for Escape.
 - **Stay Awake:** open the mug menu with a left or right click and use its checked **Stay Awake** item for this session; the next launch uses your saved preference.
-- **Trackpad swipes:** bind three- and four-finger swipes to shortcuts or shell commands.
-- **Mouse remapping:** map back/forward buttons, MX Master 3S thumb button, and scroll direction.
+- **Trackpad swipes:** bind three- and four-finger swipes to shortcuts, shell commands, or shared named helpers.
+- **Mouse remapping:** map back/forward buttons and the MX Master 3S thumb button to the same actions, and invert wheel scrolling.
 - **Secure Input status:** see when macOS blocks keyboard monitoring and which app holds Secure Input.
-- **Native Settings:** use **Settings…** (⌘,) for General, Mouse, and Trackpad controls; advanced JSON edits in `~/.config/hypermug.json` reload while the app runs.
+- **Native Settings:** use **Settings…** (⌘,) for General, Mouse, Trackpad, and shared Helpers; advanced JSON edits in `~/.config/hypermug.json` reload while the app runs.
 
 HyperMug requires macOS Accessibility and Input Monitoring permissions for its input features. The app explains each permission in **Check Privileges…**. See [Permissions and troubleshooting](docs/troubleshooting.md).
 
