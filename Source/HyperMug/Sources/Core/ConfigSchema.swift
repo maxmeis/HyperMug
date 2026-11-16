@@ -61,7 +61,7 @@ public let configSchemaJSON: String = #"""
     },
     "caffeineOnLaunch": {
       "type": "boolean",
-      "description": "Whether Caffeine (keep the Mac awake) is on when \#(AppIdentity.appName) starts. Left-clicking the menu bar icon toggles Caffeine for the running session only and never changes this file; changing this value while \#(AppIdentity.appName) runs sets Caffeine to it."
+      "description": "Whether Caffeine (keep the Mac awake) is on when \#(AppIdentity.appName) starts. Selecting Stay Awake in the menu toggles Caffeine for the running session only and never changes this file; changing this value while \#(AppIdentity.appName) runs sets Caffeine to it."
     },
     "capsLock": {
       "type": "string",

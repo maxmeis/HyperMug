@@ -9,6 +9,7 @@ final class StatusItemController: NSObject {
     private let statusItem: NSStatusItem
     private let menu = NSMenu()
     private var stayAwakeItem: NSMenuItem!
+    private lazy var settingsWindow = SettingsWindowController(url: store.url)
     private var tracker = SecureInputTracker()
     private var secureItem: NSMenuItem?
     private var secureSeparator: NSMenuItem?
@@ -124,9 +125,8 @@ final class StatusItemController: NSObject {
     }
 
     @objc private func openSettings() {
-        // Absent file: recreated from the current config. An existing (even invalid) file is never written.
         store.createIfAbsent()
-        EditorLauncher.open(store.url)
+        settingsWindow.present()
     }
 
     @objc private func checkPrivileges() {
