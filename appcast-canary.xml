@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
 <channel><title>HyperMug canary updates</title><item>
-<title>HyperMug 0.0.0-canary.5</title>
-<sparkle:version>5</sparkle:version>
-<sparkle:shortVersionString>0.0.5</sparkle:shortVersionString>
-<enclosure url="https://github.com/maxmeis/hypermug/releases/download/v0.0.0-canary.5/HyperMug-0.0.0-canary.5.zip" sparkle:edSignature="2qPmORH5T2bcNC1qqMa6Z4Vcb8Yx40dnZ7Xrv9JXr63SSu3rUmG5poTCbDG7YtBYCw5rZvrmEF3OMqEZQ/VvAw==" length="2095945" type="application/zip" />
+<title>HyperMug 0.0.0-canary.6</title>
+<sparkle:version>6</sparkle:version>
+<sparkle:shortVersionString>0.0.6</sparkle:shortVersionString>
+<enclosure url="https://github.com/maxmeis/hypermug/releases/download/v0.0.0-canary.6/HyperMug-0.0.0-canary.6.zip" sparkle:edSignature="j56XYiOyooq0lvO8p+xCXemp9rBU7Yha66/zgh7Yp03EzRQ5a+mFmP73IMKfcZ7qOKyx03ZFPpTddBjZasMzDg==" length="2095987" type="application/zip" />
 </item></channel></rss>
