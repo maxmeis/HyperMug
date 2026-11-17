@@ -11,16 +11,16 @@ REPOSITORY = "maxmeis/hypermug"
 
 
 def next_version(tags, source_sha, run_number):
-    """Reserve v0.2.N for workflow run N, regardless of queue order.
+    """Reserve v0.3.N for workflow run N, regardless of queue order.
 
-    The migration starts after the already-published v0.2.0 release. GitHub
+    The migration starts after the already-published v0.3.0 release. GitHub
     keeps run_number stable across attempts, so retries retain one identity.
     """
     if not SHA.fullmatch(source_sha):
         raise ValueError("invalid source SHA")
     if not isinstance(run_number, int) or run_number < 1:
         raise ValueError("run number must be a positive integer")
-    version = f"0.2.{run_number}"
+    version = f"0.3.{run_number}"
     target = "v" + version
     for tag, sha in tags:
         if tag == target:

@@ -14,17 +14,17 @@ OTHER = 'b' * 40
 
 class ReleasePipelineTests(unittest.TestCase):
     def test_version_is_reserved_by_run_number_even_when_queue_order_reverses(self):
-        tags = [('v0.2.0', OTHER), ('v0.2.2', OTHER),
+        tags = [('v0.3.0', OTHER), ('v0.3.2', OTHER),
                 ('v0.0.0-canary.200', OTHER)]
-        self.assertEqual(next_version(tags, SHA, 1), ('0.2.1', False))
-        self.assertEqual(next_version(tags, SHA, 3), ('0.2.3', False))
-        self.assertEqual(next_version([], SHA, 1), ('0.2.1', False))
+        self.assertEqual(next_version(tags, SHA, 1), ('0.3.1', False))
+        self.assertEqual(next_version(tags, SHA, 3), ('0.3.3', False))
+        self.assertEqual(next_version([], SHA, 1), ('0.3.1', False))
 
     def test_rerun_uses_the_version_of_the_same_source_commit(self):
-        tags = [('v0.2.3', SHA), ('v0.2.4', OTHER)]
-        self.assertEqual(next_version(tags, SHA, 3), ('0.2.3', True))
+        tags = [('v0.3.3', SHA), ('v0.3.4', OTHER)]
+        self.assertEqual(next_version(tags, SHA, 3), ('0.3.3', True))
         with self.assertRaises(ValueError):
-            next_version([('v0.2.3', OTHER)], SHA, 3)
+            next_version([('v0.3.3', OTHER)], SHA, 3)
         with self.assertRaises(ValueError):
             next_version([], 'not a sha', 1)
         with self.assertRaises(ValueError):
