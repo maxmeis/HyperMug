@@ -14,7 +14,7 @@ class ScopeTests(unittest.TestCase):
         self.assertTrue(content_only([
             "README.md", "CONTRIBUTING.md", "Casks/README.md", "docs/configuration.md",
             "Source/Website/style.css", "Source/Skills/my-mac-wrench/SKILL.md",
-            "Casks/hypermug.rb", "Casks/hypermug@canary.rb",
+            "Casks/hypermug.rb",
         ]))
         for path in ["Makefile", "package-lock.json", ".github/workflows/ci.yml",
                      "helpers/ci_scope.py", "helpers/test_release_metadata.py",

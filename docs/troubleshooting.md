@@ -5,7 +5,7 @@
 - **Accessibility** supports the keyboard and mouse event tap used by Caps Lock Meh/Hyper, side-button and wheel mappings, and scroll inversion.
 - **Input Monitoring** supports raw Caps Lock detection and access to the MX Master 3S thumb button.
 
-Use **Doctor… → Permissions** in the menu to see or grant permissions. Relaunch HyperMug after granting Input Monitoring. Permission grants are tied to the app's code signature. Release builds use a stable Developer ID signature; a local build can use the persistent signing identity described in [Development](development.md).
+Use **Doctor… → Permissions** in the menu to see or grant permissions. Relaunch HyperMug after granting Input Monitoring. Permission grants are tied to the app's code signature. Release builds use a stable Developer ID signature; local builds use ad-hoc signing and may need permissions granted again after rebuilding. See [Development](development.md).
 
 ## Common issues
 

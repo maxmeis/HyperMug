@@ -7,4 +7,4 @@ OUT="$(mktemp -d "${TMPDIR:-/tmp}/hypermug-run-local.XXXXXX")"
 trap 'rm -rf "$OUT"' EXIT
 compile_core_module "$OUT/core"
 swiftc "${SWIFT_BASE_FLAGS[@]}" -I "$OUT/core" helpers/run-local.swift "$OUT/core/HyperMugCore.o" -o "$OUT/run-local"
-"$OUT/run-local" "$PWD/build/HyperMug Dev.app"
+"$OUT/run-local" "$PWD/${BUILD_ROOT:-build}/HyperMug Dev.app"

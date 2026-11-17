@@ -1,230 +1,94 @@
 #!/usr/bin/env bash
-# Publish immutable assets first; channel pointers move only after both release and metadata exist.
+# Publish one immutable archive, then commit its verified cask to the source tap.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-: "${CHANNEL:?}" "${VERSION:?}" "${BUILD_NUMBER:?}" "${BUILD_APP:?}" "${SOURCE_REPOSITORY:?}" "${RELEASES_REPOSITORY:?}" "${TAP_REPOSITORY:?}" "${PUBLISHER_TOKEN:?}" "${GITHUB_SHA:?}"
-python3 helpers/release_metadata.py validate --channel "$CHANNEL" --version "$VERSION" --actor "$GITHUB_ACTOR" --triggering-actor "$GITHUB_TRIGGERING_ACTOR" --ref "$GITHUB_REF" --sha "$GITHUB_SHA" --source-repo "$SOURCE_REPOSITORY" --releases-repo "$RELEASES_REPOSITORY" --tap-repo "$TAP_REPOSITORY"
-[[ "$BUILD_NUMBER" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]] || exit 1
-[[ "$BUILD_APP" == true || "$BUILD_APP" == false ]] || { echo 'BUILD_APP must be true or false' >&2; exit 1; }
-PUBLISH_EXTERNAL_TAP="${PUBLISH_EXTERNAL_TAP:-false}"
-[[ "$PUBLISH_EXTERNAL_TAP" == true || "$PUBLISH_EXTERNAL_TAP" == false ]] || { echo 'PUBLISH_EXTERNAL_TAP must be true or false' >&2; exit 1; }
-[[ "$CHANNEL" != canary || "$BUILD_APP" == true ]] || { echo 'Canary requires an app build' >&2; exit 1; }
-if [[ "$BUILD_APP" == true && "$PUBLISH_EXTERNAL_TAP" == true && -z "${TAP_SSH_PRIVATE_KEY:-}" ]]; then
-  echo 'TAP_SSH_PRIVATE_KEY is required for external tap publication' >&2
-  exit 1
-fi
-[[ "$RELEASES_REPOSITORY" == "$SOURCE_REPOSITORY" ]] || { echo 'App publisher token only permits the source repository' >&2; exit 1; }
-export GH_TOKEN="$PUBLISHER_TOKEN"
-# Git reads the App token from process-local configuration. Keep it out of
-# clone URLs, command arguments, remotes, and persistent credential stores.
-export GIT_CONFIG_COUNT="${GIT_CONFIG_COUNT:-0}"
-git_config_index="$GIT_CONFIG_COUNT"
-export GIT_CONFIG_COUNT="$((git_config_index + 1))"
-export "GIT_CONFIG_KEY_${git_config_index}=http.https://github.com/.extraheader"
-export "GIT_CONFIG_VALUE_${git_config_index}=AUTHORIZATION: basic $(printf 'x-access-token:%s' "$PUBLISHER_TOKEN" | base64 | tr -d '\n')"
-if [[ "$BUILD_APP" == true && "$PUBLISH_EXTERNAL_TAP" == true ]]; then
-  tap_archived="$(gh api "repos/${TAP_REPOSITORY}" --jq .archived)" || { echo 'External tap is unavailable; disable PUBLISH_EXTERNAL_TAP or repair its access' >&2; exit 1; }
-  [[ "$tap_archived" == false ]] || { echo 'External tap is archived; disable PUBLISH_EXTERNAL_TAP or choose a writable destination' >&2; exit 1; }
-fi
-export PYTHONPATH="$PWD/helpers"
-expected_build="$(python3 -c 'import sys; from release_metadata import bundle_identity; print(bundle_identity(sys.argv[1], sys.argv[2])[1])' "$CHANNEL" "$VERSION")"
-[[ "$BUILD_NUMBER" == "$expected_build" ]] || { echo 'Build number does not match release tag' >&2; exit 1; }
-tag="v${VERSION}"
+umask 077
+: "${VERSION:?}" "${GITHUB_SHA:?}" "${GITHUB_REPOSITORY:?}" "${GH_TOKEN:?}" "${APPLE_TEAM_ID:?}"
+[[ "$GITHUB_REPOSITORY" == maxmeis/hypermug && "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || { echo 'Invalid production release' >&2; exit 1; }
+tag="v$VERSION"
 asset="HyperMug-${VERSION}.zip"
-feed="appcast-${CHANNEL}.xml"
-token=hypermug
-if [[ "$CHANNEL" == canary ]]; then token='hypermug@canary'; fi
-
+[[ "$(git rev-parse "${tag}^{commit}")" == "$GITHUB_SHA" ]] || { echo 'Release tag points to a different commit' >&2; exit 1; }
+archive="build/release/$asset"
+test -s "$archive"
+local_digest="$(shasum -a 256 "$archive" | awk '{print $1}')"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
-
-# GitHub's commit endpoint peels an annotated tag. Existing tags are reusable only
-# when they resolve to this exact built source commit.
-source_tag_exists=0
-if gh api "repos/${SOURCE_REPOSITORY}/git/ref/tags/${tag}" >/dev/null 2>&1; then
-  source_tag_exists=1
-  peeled="$(gh api "repos/${SOURCE_REPOSITORY}/commits/${tag}" --jq .sha)"
-  [[ "$peeled" == "$GITHUB_SHA" ]] || { echo 'Existing source tag points elsewhere' >&2; exit 1; }
-fi
-release_exists=0
-release_draft=false
-release_body=''
-release_assets=''
-if gh release view "$tag" --repo "$RELEASES_REPOSITORY" >/dev/null 2>&1; then
-  release_exists=1
-  # The release body records the source SHA, particularly when assets live in
-  # another repository whose tag necessarily points to a different commit.
-  release_body="$(gh release view "$tag" --repo "$RELEASES_REPOSITORY" --json body --jq .body)"
-  [[ "$release_body" == *"source ${GITHUB_SHA}"* ]] || { echo 'Existing release belongs to another source commit' >&2; exit 1; }
-  release_draft="$(gh release view "$tag" --repo "$RELEASES_REPOSITORY" --json isDraft --jq .isDraft)"
-  release_assets="$(gh release view "$tag" --repo "$RELEASES_REPOSITORY" --json assets --jq '.assets[].name')"
-fi
-source_only_release=0
-if [[ "$release_body" == *"source-only"* ]]; then source_only_release=1; fi
-if [[ "$BUILD_APP" == false && "$release_exists" == 1 && "$source_only_release" == 1 && -z "$release_assets" && "$release_draft" == false ]]; then
-  # Repeating a completed source-only release is a read-only no-op, even after
-  # newer versions have been published.
-  [[ "$(gh api "repos/${SOURCE_REPOSITORY}/commits/${tag}" --jq .sha)" == "$GITHUB_SHA" ]] || exit 1
-  if [[ "$RELEASES_REPOSITORY" != "$SOURCE_REPOSITORY" ]]; then
-    tag_object="$(gh api "repos/${RELEASES_REPOSITORY}/git/ref/tags/${tag}" --jq .object.sha)"
-    [[ "$(gh api "repos/${RELEASES_REPOSITORY}/git/tags/${tag_object}" --jq .message)" == *"source ${GITHUB_SHA}"* ]] || exit 1
-  fi
-  # gh release view has no isLatest JSON field. The REST latest endpoint gives
-  # the actual latest tag, or 404 when this repository has no latest release.
-  latest_tag=''
-  if ! latest_tag="$(gh api "repos/${RELEASES_REPOSITORY}/releases/latest" --jq .tag_name 2>"$work/latest-error")"; then
-    if ! grep -q 'HTTP 404' "$work/latest-error"; then
-      cat "$work/latest-error" >&2
-      echo 'Could not verify the latest release' >&2
-      exit 1
-    fi
-  fi
-  # Published releases are immutable. A retry must never edit a source-only
-  # release or change the latest pointer; fail if it was published incorrectly.
-  [[ "$latest_tag" != "$tag" ]] || { echo 'Published source-only release is latest; cannot repair immutable release on retry' >&2; exit 1; }
-  exit 0
-fi
-gh api "repos/${RELEASES_REPOSITORY}/releases?per_page=100" --paginate --jq '.[].tag_name' > "$work/tags"
-python3 - "$CHANNEL" "$VERSION" "$release_exists" "$work/tags" <<'PY'
-import sys
-from pathlib import Path
-sys.path.insert(0, 'helpers')
-from release_metadata import release_order
-release_order(sys.argv[1], sys.argv[2], Path(sys.argv[4]).read_text().splitlines(), sys.argv[3] == '1')
-PY
-# The source tag must already exist and resolve to the checkout SHA.
-[[ "$source_tag_exists" == 1 ]] || { echo "Production source tag is missing" >&2; exit 1; }
-if [[ "$RELEASES_REPOSITORY" == "$SOURCE_REPOSITORY" ]]; then
-  release_sha="$GITHUB_SHA"
-  release_tag_exists="$source_tag_exists"
-else
-  release_sha="$(gh api "repos/${RELEASES_REPOSITORY}/commits/HEAD" --jq .sha)"
-  release_tag_exists=0
-  if gh api "repos/${RELEASES_REPOSITORY}/git/ref/tags/${tag}" >/dev/null 2>&1; then
-    release_tag_exists=1
-    tag_object="$(gh api "repos/${RELEASES_REPOSITORY}/git/ref/tags/${tag}" --jq .object.sha)"
-    message="$(gh api "repos/${RELEASES_REPOSITORY}/git/tags/${tag_object}" --jq .message)"
-    [[ "$message" == *"source ${GITHUB_SHA}"* ]] || { echo 'Release repository tag belongs to another source commit' >&2; exit 1; }
-    release_sha="$(gh api "repos/${RELEASES_REPOSITORY}/commits/${tag}" --jq .sha)"
-  fi
-fi
-if [[ "$release_tag_exists" == 1 && "$release_exists" == 0 ]]; then
-  peeled="$(gh api "repos/${RELEASES_REPOSITORY}/commits/${tag}" --jq .sha)"
-  [[ "$peeled" == "$release_sha" ]] || { echo 'Existing release tag points elsewhere' >&2; exit 1; }
-fi
-if [[ "$release_tag_exists" == 0 ]]; then
-  object="$(gh api -X POST "repos/${RELEASES_REPOSITORY}/git/tags" -f tag="$tag" -f message="HyperMug ${VERSION}; source ${GITHUB_SHA}" -f object="$release_sha" -f type=commit --jq .sha)"
-  gh api -X POST "repos/${RELEASES_REPOSITORY}/git/refs" -f ref="refs/tags/${tag}" -f sha="$object" >/dev/null
-fi
-if [[ "$BUILD_APP" == false ]]; then
-  [[ "$release_exists" == 0 || ( "$source_only_release" == 1 && -z "$release_assets" ) ]] || { echo 'Existing release contains app assets or has another mode' >&2; exit 1; }
-  if [[ "$release_exists" == 0 ]]; then
-    gh release create "$tag" --repo "$RELEASES_REPOSITORY" --draft --title "HyperMug ${VERSION} (source only)" --notes "HyperMug source-only ${VERSION}; source ${GITHUB_SHA}"
-  fi
-  if [[ "$release_exists" == 0 || "$release_draft" == true ]]; then
-    gh release edit "$tag" --repo "$RELEASES_REPOSITORY" --draft=false --latest=false
-  fi
-  exit 0
-fi
-[[ "$source_only_release" == 0 ]] || { echo 'Published source-only release cannot gain binary assets; use a new version' >&2; exit 1; }
-if [[ "$PUBLISH_EXTERNAL_TAP" == true && -n "${TAP_SSH_PRIVATE_KEY:-}" ]]; then
-  (umask 077; printf '%s\n' "$TAP_SSH_PRIVATE_KEY" > "$work/tap_key")
-  gh api meta --jq '.ssh_keys[]' | sed 's/^/github.com /' > "$work/known_hosts"
-  [[ -s "$work/known_hosts" ]] || { echo 'GitHub SSH host keys are unavailable' >&2; exit 1; }
-  shell_quote() { local value=${1//\'/\'"\'"\'}; printf "'%s'" "$value"; }
-  tap_ssh_command="ssh -F /dev/null -i $(shell_quote "$work/tap_key") -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$(shell_quote "$work/known_hosts")"
-fi
-cp "build/release/$asset" "build/release/$feed" "build/release/${token}.rb" build/release/sha256.txt "$work/"
-if [[ "$release_exists" == 0 ]]; then
-  release_args=(--repo "$RELEASES_REPOSITORY" --draft --title "HyperMug ${VERSION}" --notes "HyperMug ${CHANNEL} ${VERSION}; source ${GITHUB_SHA}")
-  if [[ "$CHANNEL" == canary ]]; then release_args+=(--prerelease); fi
-
-  gh release create "$tag" "$work/$asset" "$work/$feed" "$work/${token}.rb" "$work/sha256.txt" "${release_args[@]}"
-else
-  # Never regenerate a signed ZIP or its metadata on retry. Any missing asset
-  # fails closed; gh release upload --clobber is deliberately absent.
-  for name in "$asset" "$feed" "${token}.rb" sha256.txt; do
-    gh release download "$tag" --repo "$RELEASES_REPOSITORY" --pattern "$name" --dir "$work" >/dev/null
-    test -s "$work/$name" || { echo "Release asset missing: $name" >&2; exit 1; }
-  done
-fi
-actual="$(shasum -a 256 "$work/$asset" | awk '{print $1}')"
-expected="$(tr -d '\n' < "$work/sha256.txt")"
-[[ "$actual" == "$expected" ]] || { echo 'Published ZIP checksum mismatch' >&2; exit 1; }
-# A release with uploaded assets may still be a private draft after an API
-# failure. Publish it before either public channel pointer can reference it.
-if [[ "$release_exists" == 0 || "$release_draft" == true ]]; then
-  publish_args=(--repo "$RELEASES_REPOSITORY" --draft=false)
-  if [[ "$CHANNEL" == canary ]]; then
-    publish_args+=(--prerelease --latest=false)
+notes="HyperMug $VERSION; source $GITHUB_SHA"
+if gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json body >/dev/null 2>&1; then
+  body="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json body --jq .body)"
+  [[ "$body" == "$notes" ]] || { echo 'Existing release belongs to a different source' >&2; exit 1; }
+  is_draft="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)"
+  if gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | rg -qx "$asset"; then
+    local_digest=''
+  elif [[ "$is_draft" == true ]]; then
+    gh release upload "$tag" "$archive" --repo "$GITHUB_REPOSITORY"
   else
-    publish_args+=(--latest)
+    echo 'Published release is missing its immutable app archive' >&2; exit 1
   fi
-  publish_args+=(--notes "HyperMug ${CHANNEL} ${VERSION}; source ${GITHUB_SHA}")
-  gh release edit "$tag" "${publish_args[@]}"
+else
+  gh release create "$tag" "$archive" --repo "$GITHUB_REPOSITORY" --draft --title "HyperMug $VERSION" --notes "$notes"
+  is_draft=true
 fi
-
-# Feed version determines whether this run advances a channel. A retry of the
-# current version resumes the cask step; an older version fails closed.
-git clone "https://github.com/${RELEASES_REPOSITORY}.git" "$work/releases" >/dev/null 2>&1
-(
-  cd "$work/releases"
-  if git ls-remote --exit-code origin refs/heads/updates >/dev/null; then
-    git fetch origin updates; git checkout -b updates origin/updates
-  else
-    git checkout --orphan updates
-    git rm -rf . >/dev/null
-  fi
-  old_version=''; old_build=''
-  if [[ -f "$feed" ]]; then
-    state="$(python3 - "$feed" <<'PYXML'
-import sys, xml.etree.ElementTree as ET
-item = ET.parse(sys.argv[1]).getroot().find('./channel/item')
-if item is None:
-    raise SystemExit('appcast item missing')
-print(item.findtext('title').removeprefix('HyperMug '))
-print(item.findtext('{http://www.andymatuschak.org/xml-namespaces/sparkle}version'))
-PYXML
-)"
-    old_version="$(printf '%s\n' "$state" | sed -n '1p')"
-    old_build="$(printf '%s\n' "$state" | sed -n '2p')"
-    [[ -n "$old_version" && -n "$old_build" ]] || { echo 'Existing appcast cannot be ordered' >&2; exit 1; }
-  fi
-  decision="$(python3 - "$CHANNEL" "$VERSION" "$BUILD_NUMBER" "$old_version" "$old_build" <<'PY'
-import sys
-from release_metadata import publication_decision
-print(publication_decision(*sys.argv[1:]))
+# The cask is always derived from the published archive bytes, including retries.
+gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern "$asset" --dir "$work"
+archive="$work/$asset"
+test -s "$archive"
+actual="$(shasum -a 256 "$archive" | awk '{print $1}')"
+[[ -z "$local_digest" || "$actual" == "$local_digest" ]] || { echo 'Uploaded archive digest differs from final local archive' >&2; exit 1; }
+./helpers/verify_release_archive.sh "$archive" "$VERSION" "$APPLE_TEAM_ID"
+python3 helpers/release_metadata.py cask --version "$VERSION" --zip "$archive" --output "$work/hypermug.rb"
+[[ "$actual" == "$(sed -n 's/^  sha256 "\([0-9a-f]*\)"$/\1/p' "$work/hypermug.rb")" ]] || exit 1
+if [[ "$is_draft" == true ]]; then
+  latest_tag="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name 2> "$work/latest-error")" || {
+    if grep -q 'HTTP 404' "$work/latest-error"; then latest_tag=''; else cat "$work/latest-error" >&2; exit 1; fi
+  }
+  latest_flag="$(python3 - "$latest_tag" "$VERSION" <<'PY'
+import re, sys
+latest, candidate = sys.argv[1:]
+match = re.fullmatch(r'v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', latest)
+print('--latest=false' if match and tuple(map(int, match.groups())) > tuple(map(int, candidate.split('.'))) else '--latest')
 PY
 )"
-  printf '%s\n' "$decision" > "$work/decision"
-  if [[ "$decision" == advance ]]; then
-    cp "$work/$feed" "$feed"
-    git add "$feed"
-    git -c user.name=maxmeisreleasebot[bot] -c user.email=357859028+maxmeisreleasebot[bot]@users.noreply.github.com commit -m "chore: update ${CHANNEL} appcast to ${VERSION}"
-    git push origin HEAD:updates
-  fi
-)
-[[ "$(cat "$work/decision")" != archive ]] || { echo "Older production version cannot publish" >&2; exit 1; }
-# The optional external tap pointer is updated only after the release asset and feed exist.
-if [[ "$PUBLISH_EXTERNAL_TAP" == true ]]; then
-if [[ -n "${TAP_SSH_PRIVATE_KEY:-}" ]]; then
-  export GIT_SSH_COMMAND="$tap_ssh_command"
-  tap_url="git@github.com:${TAP_REPOSITORY}.git"
+  gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false "$latest_flag"
+fi
+# Use a narrow, repository-scoped deploy key when protected main requires its
+# configured deploy-key bypass. Otherwise the built-in token can write directly.
+if [[ -n "${HOMEBREW_SSH_PRIVATE_KEY:-}" ]]; then
+  printf '%s\n' "$HOMEBREW_SSH_PRIVATE_KEY" > "$work/homebrew-key"
+  gh api meta --jq '.ssh_keys[]' | sed 's/^/github.com /' > "$work/known-hosts"
+  test -s "$work/known-hosts"
+  export GIT_SSH_COMMAND="ssh -F /dev/null -i $work/homebrew-key -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$work/known-hosts"
+  git remote set-url origin "git@github.com:${GITHUB_REPOSITORY}.git"
 else
-  echo "External tap requires SSH authentication" >&2; exit 1
+  # GITHUB_TOKEN pushes do not trigger another workflow. Keep its credential
+  # process-local, never in Git remotes or on disk.
+  export GIT_CONFIG_COUNT="${GIT_CONFIG_COUNT:-0}"
+  slot="$GIT_CONFIG_COUNT"
+  export GIT_CONFIG_COUNT="$((slot + 1))"
+  export "GIT_CONFIG_KEY_${slot}=http.https://github.com/.extraheader"
+  export "GIT_CONFIG_VALUE_${slot}=AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
 fi
-git clone "$tap_url" "$work/tap" >/dev/null 2>&1
-(
-  cd "$work/tap"
-  mkdir -p Casks
-  if [[ -f "Casks/${token}.rb" ]] && cmp -s "$work/${token}.rb" "Casks/${token}.rb"; then exit 0; fi
-  cp "$work/${token}.rb" "Casks/${token}.rb"
-  git add "Casks/${token}.rb"
-  git -c user.name=maxmeisreleasebot[bot] -c user.email=357859028+maxmeisreleasebot[bot]@users.noreply.github.com commit -m "chore: update ${token} to ${VERSION}"
-  git push origin HEAD
-)
-fi
-# Prepare the protected source tap metadata from the immutable published asset.
-# Required CI and the trusted finalizer publish it without a release PR.
-python3 helpers/publish_source_cask.py --channel "$CHANNEL" --version "$VERSION" \
-  --repository "$SOURCE_REPOSITORY" --asset "$work/${token}.rb" --work "$work/source"
+for attempt in 1 2 3; do
+  git fetch origin main
+  git checkout --detach origin/main
+  old=''
+  if [[ -f Casks/hypermug.rb ]]; then old="$(sed -n 's/^  version "\([0-9.]*\)"$/\1/p' Casks/hypermug.rb)"; fi
+  decision="$(python3 - "$old" "$VERSION" <<'PY'
+import sys
+import re
+old, new = sys.argv[1:]
+if old and not re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', old):
+    raise SystemExit('invalid current cask version')
+if old and tuple(map(int, old.split('.'))) > tuple(map(int, new.split('.'))): print('newer')
+else: print('proceed')
+PY
+)"
+  if [[ "$decision" == newer ]]; then echo 'A newer production cask is already published'; exit 0; fi
+  if cmp -s "$work/hypermug.rb" Casks/hypermug.rb; then exit 0; fi
+  if [[ "$old" == "$VERSION" ]]; then echo 'Current cask version has different immutable asset bytes' >&2; exit 1; fi
+  cp "$work/hypermug.rb" Casks/hypermug.rb
+  git add Casks/hypermug.rb
+  git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m "chore: update Homebrew cask to $VERSION"
+  if git push origin HEAD:main; then exit 0; fi
+  if [[ "$attempt" == 3 ]]; then echo 'Cannot commit cask to protected main; check the configured publishing credential and branch rules' >&2; exit 1; fi
+done

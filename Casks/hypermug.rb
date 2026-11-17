@@ -11,7 +11,6 @@ cask "hypermug" do
     skip "GitHub release assets are published by production automation"
   end
 
-  auto_updates true
   depends_on macos: ">= :sonoma"
   depends_on arch: :arm64
   conflicts_with cask: "hypermug@canary"

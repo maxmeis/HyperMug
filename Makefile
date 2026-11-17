@@ -1,28 +1,27 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
-.PHONY: help dev check-content check-automation check-website triage setup install-tools ci-tools hooks signing build build-production run restart test test-ci test-release test-runtime test-window check-shell check-layers compile-check check release publish validate-release sparkle-keys lint-commit lint-commits clean
+.PHONY: help dev check-content check-automation check-website triage setup install-tools ci-tools hooks build build-production run restart test test-ci test-release test-runtime test-window check-shell check-layers compile-check check release publish lint-commit lint-commits clean
 
 help:
 	@printf '%s\n' \
-	  'make setup             Install development tools and the local signing identity' \
-	  'make run               Build Dev, stop other instances, and open Doctor' \
+	  'make setup             Install development tools' \
+	  'make dev               Build an ad-hoc signed HyperMug Dev app' \
+	  'make run               Build Dev, restart Dev, and open Doctor' \
 	  'make restart           Restart the existing Dev build and open Doctor' \
 	  'make build             Build HyperMug Dev without launching it' \
-	  'make build-production  Build with the production identity locally' \
+	  'make build-production  Build a local production-variant app' \
 	  'make check             Run all checks' \
 	  'make test              Run Core tests with the coverage gate' \
 	  'make test-release      Run release integration tests' \
 	  'make test-runtime      Check shell supervision, notifications and config editing' \
 	  'make test-window       Open an isolated native UI test window (no input capture)' \
 	  'make compile-check     Type-check the app' \
-	  'make signing           Create the persistent local signing identity' \
-	  'make sparkle-keys      Open the Sparkle signing key tool' \
 	  'make release           Build and notarize with release environment variables' \
 	  'make publish           Publish with release environment variables' \
 	  'make clean             Remove generated build files'
 
-setup: install-tools signing
+setup: install-tools
 
 install-tools:
 	npm install
@@ -33,14 +32,11 @@ ci-tools:
 hooks:
 	npm run prepare
 
-signing:
-	./helpers/create-signing-cert.sh
-
 build:
 	./helpers/build.sh
 
 build-production:
-	$(MAKE) build APP_VARIANT=production REQUIRE_SIGNING=0
+	$(MAKE) build APP_VARIANT=production RELEASE_CHANNEL=production REQUIRE_SIGNING=0
 
 run:
 	$(MAKE) build APP_VARIANT=dev REQUIRE_SIGNING=0
@@ -82,15 +78,6 @@ release:
 publish:
 	./helpers/publish_release.sh
 
-validate-release:
-	python3 helpers/release_metadata.py validate --channel "$${CHANNEL:?}" --version "$${VERSION:?}" \
-	  --actor "$${GITHUB_ACTOR:?}" --triggering-actor "$${GITHUB_TRIGGERING_ACTOR:?}" \
-	  --ref "$${GITHUB_REF:?}" --sha "$${GITHUB_SHA:?}" --source-repo "$${SOURCE_REPOSITORY:?}" \
-	  --releases-repo "$${RELEASES_REPOSITORY:?}" --tap-repo "$${TAP_REPOSITORY:?}"
-
-sparkle-keys:
-	. helpers/sparkle.sh; sparkle_prepare; "$$SPARKLE_ROOT/bin/generate_keys"
-
 lint-commit:
 	npx --no-install commitlint --edit "$${COMMIT_MSG_FILE:?}"
 
@@ -101,7 +88,8 @@ clean:
 	rm -rf build
 
 # Repository automation uses the same command entry point as the app.
-dev: build
+dev:
+	$(MAKE) build APP_VARIANT=dev REQUIRE_SIGNING=0 SIGN_ID=-
 
 check-content:
 	python3 helpers/automation/check-content.py

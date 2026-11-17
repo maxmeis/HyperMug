@@ -1,49 +1,60 @@
 #!/usr/bin/env bash
+# Build the exact production source, sign with an ephemeral CI keychain, and notarize.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-source_root="${RELEASE_SOURCE_DIR:-$PWD}"
-[[ -d "$source_root" ]] || { echo "Release source checkout missing" >&2; exit 1; }
-source_root="$(cd "$source_root" && pwd)"
-app="$source_root/build/HyperMug.app"
-: "${CHANNEL:?}" "${VERSION:?}" "${BUILD_NUMBER:?}" "${SOURCE_REPOSITORY:?}" "${RELEASES_REPOSITORY:?}" "${TAP_REPOSITORY:?}" "${GITHUB_ACTOR:?}" "${GITHUB_TRIGGERING_ACTOR:?}" "${GITHUB_REF:?}" "${GITHUB_SHA:?}"
-args=(--channel "$CHANNEL" --version "$VERSION" --actor "$GITHUB_ACTOR" --triggering-actor "$GITHUB_TRIGGERING_ACTOR" --ref "$GITHUB_REF" --sha "$GITHUB_SHA" --source-repo "$SOURCE_REPOSITORY" --releases-repo "$RELEASES_REPOSITORY" --tap-repo "$TAP_REPOSITORY")
-python3 helpers/release_metadata.py validate "${args[@]}"
-[[ "$BUILD_NUMBER" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]] || { echo 'Invalid build number' >&2; exit 1; }
-: "${SIGN_KEYCHAIN:?}" "${RELEASE_BOT_SIGNING_SCRIPT:?}" "${RELEASE_BOT_SIGN_ID:?}" "${RELEASE_BOT_NOTARY_PROFILE:?}" "${SPARKLE_EDDSA_PRIVATE_KEY:?}"
-[[ -f "$RELEASE_BOT_SIGNING_SCRIPT" ]] || { echo 'Shared signing script missing' >&2; exit 1; }
+: "${VERSION:?}" "${GITHUB_SHA:?}" "${GITHUB_REPOSITORY:?}" "${SIGN_ID:?}" "${DEVELOPER_ID_P12_BASE64:?}" "${DEVELOPER_ID_P12_PASSWORD:?}" "${APPLE_TEAM_ID:?}"
+[[ "$GITHUB_REPOSITORY" == maxmeis/hypermug && "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || { echo 'Invalid release repository or version' >&2; exit 1; }
+[[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]] || { echo 'Release checkout differs from the push commit' >&2; exit 1; }
+[[ "$SIGN_ID" == 'Developer ID Application: '* ]] || { echo 'Production requires a Developer ID Application identity' >&2; exit 1; }
+. helpers/notary_auth.sh
 umask 077
 work="$(mktemp -d)"
-trap 'rm -rf "$work"' EXIT
-identity="$(python3 - "$CHANNEL" "$VERSION" <<'PY'
-import sys
-from helpers.release_metadata import bundle_identity
-print(*bundle_identity(sys.argv[1], sys.argv[2]))
-PY
-)"
-read -r app_version expected_build <<< "$identity"
-[[ "$BUILD_NUMBER" == "$expected_build" ]] || { echo 'Build number does not match release tag' >&2; exit 1; }
-
-export REQUIRE_SIGNING=1 APP_VERSION="$app_version" RELEASE_CHANNEL="$CHANNEL"
-export APPCAST_URL="https://raw.githubusercontent.com/${RELEASES_REPOSITORY}/updates/appcast-${CHANNEL}.xml"
-export SPARKLE_PUBLIC_ED_KEY="${SPARKLE_PUBLIC_ED_KEY:?}"
-make -C "$source_root" build
+keychain="$work/release.keychain-db"
+original_keychains=()
+while IFS= read -r line; do original_keychains+=("$line"); done < <(security list-keychains -d user | sed -E 's/^[[:space:]]*"//; s/"[[:space:]]*$//')
+cleanup() {
+  security list-keychains -d user -s "${original_keychains[@]}" >/dev/null 2>&1 || true
+  security delete-keychain "$keychain" >/dev/null 2>&1 || true
+  rm -rf "$work"
+}
+trap cleanup EXIT
+password="$(openssl rand -hex 32)"
+security create-keychain -p "$password" "$keychain"
+security unlock-keychain -p "$password" "$keychain"
+security set-keychain-settings -lut 21600 "$keychain"
+security list-keychains -d user -s "$keychain" "${original_keychains[@]}"
+printf '%s' "$DEVELOPER_ID_P12_BASE64" | base64 -D > "$work/certificate.p12"
+security import "$work/certificate.p12" -k "$keychain" -P "$DEVELOPER_ID_P12_PASSWORD" -T /usr/bin/codesign
+security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$keychain"
+security find-identity -v -p codesigning "$keychain" | grep -Fq "\"$SIGN_ID\"" || { echo 'Developer ID signing identity missing from imported certificate' >&2; exit 1; }
+configure_notary_auth "$work"
+REQUIRE_SIGNING=1 APP_VARIANT=production APP_VERSION="$VERSION" BUILD_NUMBER="$VERSION" RELEASE_CHANNEL=production SIGN_KEYCHAIN="$keychain" make build
+app=build/HyperMug.app
+plist="$app/Contents/Info.plist"
 python3 helpers/check-bundle-schema.py "$app"
-bundle_plist="$app"/Contents/Info.plist
-[[ "$(plutil -extract CFBundleShortVersionString raw -o - "$bundle_plist")" == "$app_version" ]] || { echo 'Built marketing version mismatch' >&2; exit 1; }
-[[ "$(plutil -extract CFBundleVersion raw -o - "$bundle_plist")" == "$BUILD_NUMBER" ]] || { echo 'Built build version mismatch' >&2; exit 1; }
-[[ "$(plutil -extract HyperMugReleaseChannel raw -o - "$bundle_plist")" == "$CHANNEL" ]] || { echo 'Built channel mismatch' >&2; exit 1; }
-embedded_sparkle_key="$(plutil -extract SUPublicEDKey raw -o - "$bundle_plist")"
-[[ "$embedded_sparkle_key" == "$SPARKLE_PUBLIC_ED_KEY" ]] || { echo 'Built Sparkle public key mismatch' >&2; exit 1; }
-bash "$RELEASE_BOT_SIGNING_SCRIPT" sign-app "$app"
-bash "$RELEASE_BOT_SIGNING_SCRIPT" notarize-app "$app"
+[[ "$(plutil -extract CFBundleShortVersionString raw -o - "$plist")" == "$VERSION" ]]
+[[ "$(plutil -extract CFBundleVersion raw -o - "$plist")" == "$VERSION" ]]
+[[ "$(plutil -extract CFBundleIdentifier raw -o - "$plist")" == com.maxmeis.hypermug ]]
+codesign --verify --deep --strict --verbose=2 "$app"
+codesign -dv --verbose=4 "$app" 2> "$work/signature.txt"
+grep -Fqx "TeamIdentifier=$APPLE_TEAM_ID" "$work/signature.txt" || { echo 'Signed app has unexpected Apple Team ID' >&2; exit 1; }
+grep -Eq 'flags=.*\(runtime\)' "$work/signature.txt" || { echo 'Signed app lacks hardened runtime' >&2; exit 1; }
+grep -Eq '^Timestamp=' "$work/signature.txt" || { echo 'Signed app lacks secure timestamp' >&2; exit 1; }
 mkdir -p build/release
-release_archive="build/release/HyperMug-${VERSION}.zip"
-ditto -c -k --keepParent "$app" "$release_archive"
-# Sparkle's sign_update accepts a private EdDSA key file via --ed-key-file.
-printf '%s' "$SPARKLE_EDDSA_PRIVATE_KEY" > "$work/eddsa.key"
-SPARKLE_ROOT="$(cd "$source_root" && source helpers/sparkle.sh && printf '%s' "$SPARKLE_ROOT")"
-signature="$("${SPARKLE_ROOT:?}/bin/sign_update" "$release_archive" --ed-key-file "$work/eddsa.key")"
-signature="$(printf '%s' "$signature" | sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p')"
-[[ -n "$signature" ]] || { echo 'Sparkle signature missing' >&2; exit 1; }
-SPARKLE_PUBLIC_ED_KEY="$embedded_sparkle_key" swift helpers/verify-update.swift "$release_archive" "$signature"
-python3 helpers/release_metadata.py render "${args[@]}" --build-number "$BUILD_NUMBER" --zip "$release_archive" --signature "$signature" --output build/release
+submission="$work/for-notary.zip"
+ditto -c -k --sequesterRsrc --keepParent "$app" "$submission"
+submit_for_notarization "$submission" > "$work/notary-result.json"
+python3 - "$work/notary-result.json" <<'PY'
+import json, sys
+result = json.load(open(sys.argv[1], encoding='utf-8'))
+if result.get('status') != 'Accepted':
+    raise SystemExit(f"Notarization was not accepted: {result.get('status')}")
+PY
+xcrun stapler staple "$app"
+xcrun stapler validate "$app"
+codesign --verify --deep --strict --verbose=2 "$app"
+spctl --assess --type execute --verbose=4 "$app"
+archive="build/release/HyperMug-${VERSION}.zip"
+ditto -c -k --sequesterRsrc --keepParent "$app" "$archive"
+shasum -a 256 "$archive" | awk '{print $1}' > build/release/sha256.txt
+python3 helpers/release_metadata.py cask --version "$VERSION" --zip "$archive" --output build/release/hypermug.rb

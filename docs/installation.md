@@ -2,24 +2,22 @@
 
 ## Homebrew
 
-Requires macOS 14 Sonoma or later on Apple Silicon. Stable is the normal signed, notarized app. Install it with:
+Requires macOS 14 Sonoma or later on Apple Silicon. Install the signed, notarized Production app with:
 
 ```sh
 brew tap maxmeis/hypermug https://github.com/maxmeis/hypermug
-brew install maxmeis/hypermug/hypermug
+brew install --cask maxmeis/hypermug/hypermug
 ```
 
-For early builds, use `brew install maxmeis/hypermug/hypermug@canary` instead. Both channels provide signed, notarized apps.
+The tap is this repository. HyperMug is a macOS `.app`, so its package lives in `Casks/`, not `Formula/`. The fully qualified install command selects this cask. For pre-install inspection on Homebrew versions with [tap trust](https://docs.brew.sh/Tap-Trust), use `brew trust --cask maxmeis/hypermug/hypermug` before `brew info` or `brew fetch`.
 
-The fully qualified `brew install maxmeis/hypermug/hypermug` command detects and trusts only this cask. The optional `--cask` flag gives the same app installation; this app belongs in the root `Casks/` directory, not `Formula/`. To inspect or fetch it before installing on Homebrew versions with [tap trust](https://docs.brew.sh/Tap-Trust), first run `brew trust --cask maxmeis/hypermug/hypermug` (or use the Canary token for that channel); `brew info` and `brew fetch` do not grant that trust automatically. Trusting the whole tap is unnecessary.
-
-The channels use separate signed Sparkle feeds and keys. Stable installations follow Stable; Canary installations follow Canary. They share the same bundle identity and config file, so uninstall the current channel before installing the other. Only Stable and Canary are offered. Users of the retired Nightly/beta packages can uninstall their old cask, then install Canary; historical releases are preserved.
-
-Homebrew installs the signed application. Set `autoUpdate = false` in `~/.config/hypermug.toml` to disable scheduled checks; **Check for Updates…** remains available in the menu. Homebrew casks declare `auto_updates true`, so ordinary upgrades leave updates to Sparkle. Explicitly upgrade Stable with Homebrew using:
+Update with Homebrew, then quit and reopen HyperMug:
 
 ```sh
-brew upgrade --cask --greedy maxmeis/hypermug/hypermug
+brew upgrade --cask maxmeis/hypermug/hypermug
 ```
+
+The app has no built-in updater. Existing Canary users should uninstall `maxmeis/hypermug/hypermug@canary` before installing Production; historical release assets remain available. Local **HyperMug Dev** is a separate app with its own settings and permissions and can be installed beside Production. Build it with `make dev`; see [Development](development.md).
 
 ## First run and permissions
 
@@ -28,7 +26,7 @@ HyperMug creates `~/.config/hypermug.toml` with defaults at first launch; an exi
 - **Accessibility** enables the keyboard and mouse event tap used by Caps Lock Meh/Hyper, side-button and wheel mappings, and scroll inversion.
 - **Input Monitoring** enables raw Caps Lock detection and access to the MX Master 3S thumb button.
 
-Permission grants are tied to the app's code signature. Release builds use Developer ID signing. Local `make build` uses the persistent local signing identity; see [Development](development.md) for a persistent local signing identity when permission continuity matters.
+Permission grants are tied to the app's code signature. Production uses Developer ID signing. Local builds are ad-hoc signed and can need permission grants again after a rebuild; see [Development](development.md).
 
 ## Trackpad setup
 
