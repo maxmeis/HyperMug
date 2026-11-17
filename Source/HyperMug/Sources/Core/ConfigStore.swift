@@ -1,10 +1,64 @@
 import Foundation
 
+/// Configuration document formats. TOML is canonical; JSON is the legacy format, migrated once.
+public enum ConfigDocumentFormat: String, Equatable {
+    case toml = "TOML"
+    case json = "JSON"
+
+    /// Schema and model validation; both formats share the value tree, so the messages are identical.
+    public func validate(_ data: Data) -> Result<DecodedConfig, ConfigError> {
+        self == .toml ? validateConfigTOML(data) : validateConfigDocument(data)
+    }
+
+    /// A new file shows every slot.
+    func encode(_ config: AppConfig, schemaURL: URL?) -> Data {
+        self == .toml ? encodeConfigTOML(config, schemaURL: schemaURL, includeEmptyKeys: true)
+            : encodeConfig(config, schemaURL: schemaURL, includeEmptyKeys: true)
+    }
+
+    func linkingSchema(_ data: Data, schemaURL: URL) throws -> Data {
+        self == .toml ? try tomlConfigDataLinkingSchema(data, schemaURL: schemaURL)
+            : try configDataLinkingSchema(data, schemaURL: schemaURL)
+    }
+
+    var emptyDocumentReason: String {
+        self == .toml ? "Configuration cannot be empty. Use a comment such as # defaults for default settings."
+            : "Configuration cannot be empty. Use {} for default settings."
+    }
+}
+
+/// Where the configuration came from, for the log and Doctor. File names only.
+public enum ConfigNotice: Equatable {
+    /// The legacy JSON file was converted; the original was renamed to `backup`.
+    case migrated(from: String, to: String, backup: String)
+    /// The legacy JSON file is invalid, so it was not converted and is still the active document.
+    case migrationBlocked(from: String, to: String)
+    /// The legacy JSON file is valid but has a value TOML cannot hold; it is still the active document.
+    case migrationFailed(from: String, to: String, reason: String)
+    /// Both files exist: the TOML file is used and the JSON file has no effect.
+    case legacyIgnored(legacy: String, active: String)
+
+    public var message: String {
+        switch self {
+        case .migrated(let from, let to, let backup):
+            return "Migrated \(from) to \(to). The original is kept as \(backup)."
+        case .migrationBlocked(let from, let to):
+            return "\(from) was not migrated to \(to) because it is invalid. Fix it and \(AppIdentity.appName) migrates it automatically."
+        case .migrationFailed(let from, let to, let reason):
+            return "\(from) is valid but was not migrated to \(to) (\(reason)). Change that value and \(AppIdentity.appName) migrates it automatically; \(from) stays active until then."
+        case .legacyIgnored(let legacy, let active):
+            return "\(legacy) is ignored because \(active) exists. Move or delete \(legacy)."
+        }
+    }
+}
+
 /// Everything the store needs from the OS, injected so the state machine stays deterministic and testable.
 public struct ConfigStoreEnvironment {
     public var schemaURL: URL?
     public var readData: (URL) throws -> Data
     public var writeData: (Data, URL) throws -> Void
+    /// Renames a migrated legacy file to its backup name.
+    public var moveItem: (URL, URL) throws -> Void
     public var log: LogSink
     /// Runs `work` once on the main thread after `delay` seconds, unless cancelled first.
     public var schedule: (_ delay: TimeInterval, _ work: @escaping () -> Void) -> Cancellable
@@ -17,6 +71,7 @@ public struct ConfigStoreEnvironment {
         schemaURL: URL? = nil,
         readData: @escaping (URL) throws -> Data = { try Data(contentsOf: $0) },
         writeData: @escaping (Data, URL) throws -> Void = { try $0.write(to: $1, options: .atomic) },
+        moveItem: @escaping (URL, URL) throws -> Void = { try FileManager.default.moveItem(at: $0, to: $1) },
         log: @escaping LogSink,
         schedule: @escaping (_ delay: TimeInterval, _ work: @escaping () -> Void) -> Cancellable,
         watch: @escaping (_ path: String, _ onEvent: @escaping (_ gone: Bool) -> Void) -> Cancellable?
@@ -24,17 +79,29 @@ public struct ConfigStoreEnvironment {
         self.schemaURL = schemaURL
         self.readData = readData
         self.writeData = writeData
+        self.moveItem = moveItem
         self.log = log
         self.schedule = schedule
         self.watch = watch
     }
 }
 
-/// Owns the config: first-run creation, schema-reference migration and live reload.
-/// Automatic migration changes only `$schema`; explicit editor saves compare the original bytes.
+/// Owns the config: first-run creation, legacy JSON migration, schema-reference updates and live reload.
+/// Automatic updates change only schema metadata; explicit editor saves compare the original bytes.
 /// Main thread only.
 public final class ConfigStore {
+    /// The canonical document.
     public let url: URL
+    public let format: ConfigDocumentFormat
+    /// A legacy JSON document in the same directory, converted into `url` once while `url` does not exist.
+    public let legacyURL: URL?
+    /// The document that is read, watched and saved: the legacy JSON while it is invalid and not migrated.
+    public var documentURL: URL { migrationPending ? legacyURL! : url }
+    public var documentFormat: ConfigDocumentFormat { migrationPending ? .json : format }
+    /// Latest migration or legacy-file notice.
+    public private(set) var notice: ConfigNotice?
+    /// Main thread; once per distinct notice.
+    public var onNotice: ((ConfigNotice) -> Void)?
     /// Last good config.
     public private(set) var config = AppConfig()
     /// Non-nil while the file on disk is invalid.
@@ -62,6 +129,9 @@ public final class ConfigStore {
 
     private let env: ConfigStoreEnvironment
     private var started = false
+    private var migrationPending = false
+    /// Legacy JSON to canonical TOML; replaceable in tests to reach the conversion-failure path.
+    var convertLegacyJSON: (Data, URL?) -> Result<Data, ConfigError> = migratedConfigTOML
     /// Bytes of the file at the last load or write; identical bytes never reload.
     private var lastBytes: Data?
     private var lastStamp: FileStamp?
@@ -75,16 +145,18 @@ public final class ConfigStore {
 
     private var directoryURL: URL { url.deletingLastPathComponent() }
     /// Attribute lookups do not follow symlinks themselves, and a dotfiles setup symlinks the config.
-    private var resolvedPath: String { url.resolvingSymlinksInPath().path }
+    private var resolvedPath: String { documentURL.resolvingSymlinksInPath().path }
 
-    public init(url: URL, environment: ConfigStoreEnvironment) {
+    public init(url: URL, format: ConfigDocumentFormat, legacyURL: URL? = nil, environment: ConfigStoreEnvironment) {
         self.url = url
+        self.format = format
+        self.legacyURL = legacyURL
         self.env = environment
     }
 
     // MARK: Public
 
-    /// mkdir, write defaults if absent, link the bundled schema, arm watchers, load,
+    /// mkdir, migrate a legacy file, write defaults if absent, link the bundled schema, arm watchers, load,
     /// emit `onChange` once.
     public func start() {
         guard !started else { return }
@@ -94,6 +166,7 @@ public final class ConfigStore {
         } catch {
             env.log(.error, "cannot create \(directoryURL.path): \(error.localizedDescription)")
         }
+        migrateLegacyFile()
         if case .absent = readDisk() {
             if write(AppConfig.newFileDefaults) { config = .newFileDefaults }
         }
@@ -105,12 +178,13 @@ public final class ConfigStore {
     /// Settings…: recreates the file from the in-memory config if it is missing (deleted while running).
     /// Never touches an existing file, valid or not. Call after `start()`.
     public func createIfAbsent() {
+        migrateLegacyFile()
         guard case .absent = readDisk() else { return }
         write(config)
         ensureFileWatcher()
     }
 
-    /// Read the actual document, including invalid JSON so it can be repaired in the app.
+    /// Read the actual document, including an invalid one so it can be repaired in the app.
     public func readDocument() throws -> Data? {
         switch readDisk() {
         case .data(let data): return data
@@ -119,20 +193,28 @@ public final class ConfigStore {
         }
     }
 
-    /// Save raw JSON after validation and a byte comparison against the editor's baseline.
+    /// Editor validation of a whole document in the active document's format. A save rejects empty text.
+    public func validateDocument(_ data: Data) -> Result<DecodedConfig, ConfigError> {
+        guard !isBlankConfigData(data) else { return .failure(ConfigError(reason: documentFormat.emptyDocumentReason)) }
+        return documentFormat.validate(data)
+    }
+
+    /// Save the raw document after validation and a byte comparison against the editor's baseline.
     /// The same store applies the result; the UI has no separate preferences representation.
+    /// Fixing a legacy JSON document migrates it right away.
     public func saveDocument(_ data: Data, replacing expected: Data?) throws {
-        guard !isBlankConfigData(data) else { throw ConfigError(reason: "Configuration cannot be empty. Use {} for default settings.") }
-        let decoded = try validateConfigDocument(data).get()
-        let linked = try env.schemaURL.map { try configDataLinkingSchema(data, schemaURL: $0) } ?? data
+        let decoded = try validateDocument(data).get()
+        let format = documentFormat
+        let linked = try env.schemaURL.map { try format.linkingSchema(data, schemaURL: $0) } ?? data
         guard try readDocument() == expected else {
             throw ConfigError(reason: "The file changed on disk. Copy your draft if needed, then reload before saving.")
         }
-        try env.writeData(linked, url.resolvingSymlinksInPath())
+        try env.writeData(linked, documentURL.resolvingSymlinksInPath())
         noteValid(linked)
         lastStamp = stamp()
         ensureFileWatcher()
         adopt(decoded.config, emitChange: true)
+        if migrationPending { reload() }
     }
 
     /// Called by the 2 s timer: catches watcher misses and re-arms lost watchers.
@@ -145,13 +227,14 @@ public final class ConfigStore {
 
     // MARK: Disk
 
-    private func readDisk() -> DiskState {
+    private func readDisk(_ file: URL? = nil) -> DiskState {
+        let file = file ?? documentURL
         do {
-            return .data(try env.readData(url))
+            return .data(try env.readData(file))
         } catch let e as CocoaError where e.code == .fileReadNoSuchFile || e.code == .fileNoSuchFile {
             return .absent
         } catch {
-            return .unreadable("cannot read \(url.path): \(error.localizedDescription)")
+            return .unreadable("cannot read \(file.path): \(error.localizedDescription)")
         }
     }
 
@@ -166,8 +249,8 @@ public final class ConfigStore {
     /// Atomic replace of the symlink target, so a dotfiles symlink stays a symlink.
     @discardableResult
     private func write(_ newConfig: AppConfig) -> Bool {
-        let data = encodeConfig(newConfig, schemaURL: env.schemaURL, includeEmptyKeys: true)
-        let target = url.resolvingSymlinksInPath()
+        let data = documentFormat.encode(newConfig, schemaURL: env.schemaURL)
+        let target = documentURL.resolvingSymlinksInPath()
         do {
             try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
             try env.writeData(data, target)
@@ -180,6 +263,84 @@ public final class ConfigStore {
         noteValid(data)
         lastStamp = stamp()
         return true
+    }
+
+    // MARK: Migration
+
+    /// Moves a legacy JSON document into the canonical file once: validate it, write the TOML atomically,
+    /// then rename the JSON to a backup (never deleted). Invalid JSON is not migrated: it stays the active
+    /// document, so it is reported and recovers exactly as before. With both files present, TOML wins.
+    private func migrateLegacyFile() {
+        guard let legacyURL else { return }
+        let legacyName = legacyURL.lastPathComponent
+        let name = url.lastPathComponent
+        guard case .absent = readDisk(url) else {
+            migrationPending = false
+            if attributes(ofPath: legacyURL.path) != nil {
+                announce(.legacyIgnored(legacy: legacyName, active: name))
+            } else if case .legacyIgnored? = notice {
+                notice = nil
+            }
+            return
+        }
+        let legacy = readDisk(legacyURL)
+        if case .absent = legacy {
+            migrationPending = false
+            return
+        }
+        migrationPending = true
+        guard case .data(let json) = legacy else { return }
+        let converted: Data
+        if isBlankConfigData(json) {
+            converted = encodeConfigTOML(.newFileDefaults, schemaURL: env.schemaURL, includeEmptyKeys: true)
+        } else {
+            switch convertLegacyJSON(json, env.schemaURL) {
+            case .success(let toml):
+                converted = toml
+            case .failure(let error):
+                // Nothing is written: the JSON stays active and reports or recovers as before.
+                if case .success = validateConfigDocument(json) {
+                    env.log(.error, "cannot migrate \(legacyName): \(error.reason)")
+                    announce(.migrationFailed(from: legacyName, to: name, reason: error.reason))
+                } else {
+                    announce(.migrationBlocked(from: legacyName, to: name))
+                }
+                return
+            }
+        }
+        do {
+            try env.writeData(converted, url.resolvingSymlinksInPath())
+        } catch {
+            env.log(.error, "cannot write \(url.path): \(error.localizedDescription); \(legacyName) stays active")
+            return
+        }
+        migrationPending = false
+        let backup = backupURL(for: legacyURL)
+        do {
+            try env.moveItem(legacyURL, backup)
+            announce(.migrated(from: legacyName, to: name, backup: backup.lastPathComponent))
+        } catch {
+            env.log(.error, "cannot rename \(legacyName) to \(backup.lastPathComponent): \(error.localizedDescription)")
+            announce(.legacyIgnored(legacy: legacyName, active: name))
+        }
+    }
+
+    /// `hypermug.json.migrated-backup`, numbered when an earlier backup exists.
+    private func backupURL(for legacy: URL) -> URL {
+        func candidate(_ number: Int) -> URL {
+            legacy.deletingLastPathComponent()
+                .appendingPathComponent(legacy.lastPathComponent + ".migrated-backup" + (number > 1 ? "-\(number)" : ""))
+        }
+        var number = 1
+        while attributes(ofPath: candidate(number).path) != nil { number += 1 }
+        return candidate(number)
+    }
+
+    private func announce(_ newNotice: ConfigNotice) {
+        guard newNotice != notice else { return }
+        notice = newNotice
+        env.log(.info, newNotice.message)
+        onNotice?(newNotice)
     }
 
     // MARK: Load
@@ -205,6 +366,7 @@ public final class ConfigStore {
     private func reload(emitChange: Bool = true) {
         debounce?.cancel()
         debounce = nil
+        migrateLegacyFile()
         lastStamp = stamp()   // taken before reading: a change during the read shows up on the next poll
         switch readDisk() {
         case .absent:
@@ -220,7 +382,7 @@ public final class ConfigStore {
                 if isBlankConfigData(data) {
                     initializeEmptyFile(data, emitChange: emitChange)
                 } else {
-                    switch validateConfigDocument(data) {
+                    switch documentFormat.validate(data) {
                     case .success(let decoded):
                         guard let linked = linkSchema(data) else { break }
                         noteValid(linked)
@@ -236,16 +398,16 @@ public final class ConfigStore {
     }
 
     /// Metadata migration is the sole update to an existing nonempty file.
-    /// Invalid JSON is left untouched so the normal decoder can report it.
+    /// The document is validated first; only its schema metadata changes.
     private func linkSchema(_ data: Data) -> Data? {
         guard let schemaURL = env.schemaURL,
-              let linked = try? configDataLinkingSchema(data, schemaURL: schemaURL), linked != data else { return data }
+              let linked = try? documentFormat.linkingSchema(data, schemaURL: schemaURL), linked != data else { return data }
         guard case .data(let current) = readDisk(), current == data else {
             scheduleReload()
             return nil
         }
         do {
-            try env.writeData(linked, url.resolvingSymlinksInPath())
+            try env.writeData(linked, documentURL.resolvingSymlinksInPath())
             lastStamp = stamp()
             return linked
         } catch {
@@ -321,7 +483,7 @@ public final class ConfigStore {
         fileWatch = nil
         fileInode = nil
         guard current != nil else { return }
-        fileWatch = env.watch(url.path) { [weak self] gone in self?.fileChanged(gone: gone) }
+        fileWatch = env.watch(documentURL.path) { [weak self] gone in self?.fileChanged(gone: gone) }
         fileInode = current
     }
 

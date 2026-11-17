@@ -13,7 +13,7 @@ help:
 	  'make check             Run all checks' \
 	  'make test              Run Core tests with the coverage gate' \
 	  'make test-release      Run release integration tests' \
-	  'make test-runtime      Check shell supervision, notifications and JSON editing' \
+	  'make test-runtime      Check shell supervision, notifications and config editing' \
 	  'make test-window       Open an isolated native UI test window (no input capture)' \
 	  'make compile-check     Type-check the app' \
 	  'make signing           Create the persistent local signing identity' \

@@ -1,4 +1,5 @@
 import AppKit
+import HyperMugCore
 
 let appURL = URL(fileURLWithPath: CommandLine.arguments[1])
 let manager = FileManager.default
@@ -21,18 +22,27 @@ func aerospace(_ arguments: [String]) -> String? {
 }
 let currentWorkspace = aerospace(["list-workspaces", "--focused"])
 let directory = manager.homeDirectoryForCurrentUser.appendingPathComponent(".config", isDirectory: true)
-let devConfig = directory.appendingPathComponent("hypermug-dev.json")
-let productionConfig = directory.appendingPathComponent("hypermug.json")
+let devConfig = directory.appendingPathComponent("hypermug-dev.toml")
+let devLegacyConfig = directory.appendingPathComponent("hypermug-dev.json")
+let productionConfig = directory.appendingPathComponent("hypermug.toml")
+let productionLegacyConfig = directory.appendingPathComponent("hypermug.json")
 
-// Copy settings once. Later Dev edits never change the production file.
-if !manager.fileExists(atPath: devConfig.path), manager.fileExists(atPath: productionConfig.path) {
-    var config = try JSONSerialization.jsonObject(with: Data(contentsOf: productionConfig)) as! [String: Any]
-    config["$schema"] = appURL.appendingPathComponent("Contents/Resources/hypermug-dev.schema.json").absoluteString
-    config["launchAtLogin"] = false
-    config["autoUpdate"] = false
-    try JSONSerialization.data(withJSONObject: config, options: [.prettyPrinted, .sortedKeys])
-        .write(to: devConfig, options: .atomic)
-    print("Created separate Dev settings: \(devConfig.path)")
+// Copy settings once. Later Dev edits never change the production file, which is only read here (Dev
+// migrates its own legacy hypermug-dev.json itself).
+if !manager.fileExists(atPath: devConfig.path), !manager.fileExists(atPath: devLegacyConfig.path) {
+    var source: [String: ConfigValue]?
+    if manager.fileExists(atPath: productionConfig.path) {
+        source = try parseConfigTOML(Data(contentsOf: productionConfig)).get()
+    } else if manager.fileExists(atPath: productionLegacyConfig.path) {
+        source = try parseConfigTOML(tomlConfigData(fromJSON: Data(contentsOf: productionLegacyConfig))).get()
+    }
+    if var config = source {
+        config["$schema"] = .string(appURL.appendingPathComponent("Contents/Resources/hypermug-dev.schema.json").absoluteString)
+        config["launchAtLogin"] = .boolean(false)
+        config["autoUpdate"] = .boolean(false)
+        try renderConfigTOML(config).write(to: devConfig, options: .atomic)
+        print("Created separate Dev settings: \(devConfig.path)")
+    }
 }
 
 // Graceful termination releases event taps and device capture before Dev starts.

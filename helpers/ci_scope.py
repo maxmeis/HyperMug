@@ -11,6 +11,8 @@ SHA = re.compile(r"[0-9a-f]{40}")
 CONTENT_FILES = {"README.md", "CONTRIBUTING.md", "Casks/README.md"}
 CONTENT_TREES = ("docs/", "Source/Website/", "Source/Skills/")
 CASK_FILES = {"Casks/hypermug.rb", "Casks/hypermug@canary.rb"}
+# Example configurations are validated by the Core tests, so they need native checks.
+TESTED_CONTENT = ("docs/examples/",)
 
 
 def content_only(paths):
@@ -21,6 +23,8 @@ def content_only(paths):
         if str(PurePosixPath(path)) != path or ".." in PurePosixPath(path).parts:
             return False
         if path not in CONTENT_FILES | CASK_FILES and not path.startswith(CONTENT_TREES):
+            return False
+        if path.startswith(TESTED_CONTENT):
             return False
     return True
 
