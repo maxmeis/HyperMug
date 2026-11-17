@@ -20,8 +20,8 @@ jobs:
       github.event.workflow_run.head_repository.full_name == github.repository &&
       (github.event.workflow_run.head_branch == 'release-casks/stable' ||
        github.event.workflow_run.head_branch == 'release-casks/canary')
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+    runs-on: macos-26
+    timeout-minutes: 20
     steps:
       # workflow_run is privileged. Execute trusted main code, never the
       # triggering branch's scripts, workflow, artifacts, or shell input.

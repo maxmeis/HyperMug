@@ -19,6 +19,9 @@ concurrency:
   queue: max
 jobs:
   authorize:
+    permissions:
+      contents: read
+      actions: read
     if: vars.RELEASE_BOT_ENABLED == 'true' && github.actor == 'maxmeis' && github.triggering_actor == 'maxmeis' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -30,6 +33,38 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
           ref: ${{ github.sha }}
+      # No production/App secrets in this job. GitHub run metadata identifies
+      # the human who started this attempt, including a rerun by another user.
+      - name: Authorize owner dispatch and rerun identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = maxmeis/hypermug
+          test "$GITHUB_REPOSITORY_ID" = 1455862604
+          test "$GITHUB_ACTOR_ID" = 41482988
+          test "$GITHUB_REF" = refs/heads/main
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" > "$RUNNER_TEMP/stable-run.json"
+          python3 - "$RUNNER_TEMP/stable-run.json" <<'PYRUN'
+          import json, os, sys
+          with open(sys.argv[1], encoding='utf-8') as source:
+              run = json.load(source)
+          repo = run.get('repository') or {}
+          owner = repo.get('owner') or {}
+          head = run.get('head_repository') or {}
+          expected_sha = os.environ['GITHUB_SHA']
+          if (run.get('id') != int(os.environ['GITHUB_RUN_ID'])
+                  or repo.get('id') != 1455862604 or repo.get('full_name') != 'maxmeis/hypermug'
+                  or owner.get('id') != 41482988 or head.get('id') != 1455862604
+                  or (run.get('actor') or {}).get('id') != 41482988
+                  or (run.get('triggering_actor') or {}).get('id') != 41482988
+                  or run.get('event') != 'workflow_dispatch'
+                  or run.get('path') != '.github/workflows/release-stable.yml'
+                  or run.get('head_branch') != 'main'
+                  or run.get('head_sha') != expected_sha
+                  or run.get('run_attempt') != int(os.environ['GITHUB_RUN_ATTEMPT'])):
+              raise SystemExit('Stable requires this repository and the numeric owner identity for this exact attempt')
+          PYRUN
       - name: Validate tag and source
         id: source
         env:

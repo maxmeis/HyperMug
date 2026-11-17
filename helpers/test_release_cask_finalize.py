@@ -57,12 +57,15 @@ class CaskFinalizerTests(unittest.TestCase):
         self.release = dict(tag_name="v" + self.version, draft=False, immutable=True,
                             prerelease=True, body="HyperMug canary; source " + self.source,
                             assets=[dict(name="hypermug@canary.rb", digest="sha256:" + hashlib.sha256(self.content.encode()).hexdigest()),
-                                    dict(name="HyperMug-" + self.version + ".zip", digest="sha256:" + "a" * 64)])
+                                    dict(name="HyperMug-" + self.version + ".zip", id=22, size=3, digest="sha256:" + "a" * 64),
+                                    dict(name="appcast-canary.xml", id=23, size=3, digest="sha256:" + "b" * 64)])
         self.asset_data = self.content.encode()
         self.publisher = {"total_count": 1, "repositories": [{"full_name": REPOSITORY}]}
         self.immutable = {"enabled": True}
         self.actions = {"total_count": 1, "workflow_runs": [{}]}
         self.api_calls = []
+        self.archive_verified = False
+        self.reject_archive = False
 
     def tearDown(self):
         self.temp.cleanup()
@@ -97,7 +100,17 @@ class CaskFinalizerTests(unittest.TestCase):
             return {"sha": self.source}
         raise AssertionError("unexpected API request " + endpoint)
 
+    def fake_download_asset(self, repository, asset, target):
+        target.write_bytes(b"zip" if target.suffix == ".zip" else b"feed")
+
+    def fake_verify(self, *args):
+        if self.reject_archive:
+            raise ValueError("forged app archive")
+        self.archive_verified = True
+
     def fake_run(self, *args, cwd=None, capture=False):
+        if args[:2] == ("git", "push") and "refs/heads/main" in args[-1]:
+            self.assertTrue(self.archive_verified, "archive must be verified before main push")
         if args[:2] == ("git", "clone"):
             args = ("git", "clone", str(self.bare), args[-1])
         if args[:3] == ("gh", "release", "download"):
@@ -117,7 +130,9 @@ class CaskFinalizerTests(unittest.TestCase):
                         PUBLISHER_APP_ID="5801152", PUBLISHER_APP_SLUG="maxmeisreleasebot", PUBLISHER_BOT_USER_ID="357859028",
                         PUBLISHER_INSTALLATION_ID="182962225"), \
              patch.object(subject, "api", side_effect=self.fake_api), \
-             patch.object(subject, "run", side_effect=self.fake_run):
+             patch.object(subject, "run", side_effect=self.fake_run), \
+             patch.object(subject, "download_asset", side_effect=self.fake_download_asset), \
+             patch.object(subject, "verify", side_effect=self.fake_verify):
             return subject.finalize(REPOSITORY, REPOSITORY, 42, work)
 
     def assert_rejected(self):
@@ -125,6 +140,11 @@ class CaskFinalizerTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.invoke()
         self.assertEqual(self.main_head(), before)
+
+    def test_forged_archive_blocks_main_publication(self):
+        self.reject_archive = True
+        self.assert_rejected()
+        self.assertFalse(self.archive_verified)
 
     def test_passing_metadata_fast_forwards_main_without_a_pull_request(self):
         self.assertEqual(self.invoke(), "published")
@@ -157,7 +177,8 @@ class CaskFinalizerTests(unittest.TestCase):
         self.asset_data = self.content.encode()
         self.release.update(tag_name="v1.2.3", prerelease=False, assets=[
             dict(name="hypermug.rb", digest="sha256:" + hashlib.sha256(self.asset_data).hexdigest()),
-            dict(name="HyperMug-1.2.3.zip", digest="sha256:" + "a" * 64)])
+            dict(name="HyperMug-1.2.3.zip", id=22, size=3, digest="sha256:" + "a" * 64),
+            dict(name="appcast-stable.xml", id=23, size=3, digest="sha256:" + "b" * 64)])
         self.assertEqual(self.invoke(), "published")
         self.assertEqual(self.main_head(), self.head)
         self.assertNotIn("hypermug@canary.rb", self.git("--git-dir", str(self.bare), "ls-tree", "-r", "main"))
@@ -325,6 +346,8 @@ class CaskFinalizerTests(unittest.TestCase):
                         PUBLISHER_INSTALLATION_ID="182962225"), \
              patch.object(subject, "api", side_effect=self.fake_api), \
              patch.object(subject, "run", side_effect=reject_push), \
+             patch.object(subject, "download_asset", side_effect=self.fake_download_asset), \
+             patch.object(subject, "verify", side_effect=self.fake_verify), \
              patch.object(subject, "publish") as prepare:
             with self.assertRaises(subprocess.CalledProcessError):
                 subject.finalize(REPOSITORY, REPOSITORY, 42, self.root / "reject-push")
@@ -345,11 +368,35 @@ class CaskFinalizerTests(unittest.TestCase):
                         PUBLISHER_INSTALLATION_ID="182962225"), \
              patch.object(subject, "api", side_effect=self.fake_api), \
              patch.object(subject, "run", side_effect=racing_push), \
+             patch.object(subject, "download_asset", side_effect=self.fake_download_asset), \
+             patch.object(subject, "verify", side_effect=self.fake_verify), \
              patch.object(subject, "publish") as prepare:
             self.assertEqual(subject.finalize(REPOSITORY, REPOSITORY, 42, self.root / "race"),
                              "rebased; awaiting fresh CI")
             prepare.assert_called_once()
         self.assertNotEqual(self.main_head(), self.head)
+
+
+class ReleaseAssetDownloadTests(unittest.TestCase):
+    def test_exact_asset_id_and_digest_are_required(self):
+        with tempfile.TemporaryDirectory() as temp:
+            target = Path(temp) / "app.zip"
+            data = b"final archive"
+            asset = dict(id=12345, size=len(data), digest="sha256:" + hashlib.sha256(data).hexdigest())
+            def download(command, **kwargs):
+                self.assertEqual(command[:3], ["gh", "api", "repos/maxmeis/hypermug/releases/assets/12345"])
+                self.assertEqual(command[-2:], ["-H", "Accept: application/octet-stream"])
+                kwargs["stdout"].write(data)
+                return subprocess.CompletedProcess(command, 0)
+            with patch.object(subject.subprocess, "run", side_effect=download):
+                subject.download_asset(REPOSITORY, asset, target)
+            self.assertEqual(target.read_bytes(), data)
+            target.unlink()
+            with patch.object(subject.subprocess, "run", side_effect=download):
+                with self.assertRaisesRegex(ValueError, "identity mismatch"):
+                    subject.download_asset(REPOSITORY, dict(asset, digest="sha256:" + "0" * 64), target)
+            with self.assertRaisesRegex(ValueError, "identity is incomplete"):
+                subject.download_asset(REPOSITORY, dict(asset, id=0), target)
 
 
 class GitCredentialTests(unittest.TestCase):
