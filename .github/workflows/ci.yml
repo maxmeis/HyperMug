@@ -4,6 +4,7 @@ name: CI
 # checks plus the commit message lint.
 on:
   push:
+    branches: [main, release-casks/stable, release-casks/canary]
   pull_request:
   workflow_dispatch:
 
@@ -15,14 +16,41 @@ permissions:
   contents: read
 
 jobs:
-  ci:
-    runs-on: macos-latest
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      native: ${{ steps.scope.outputs.native }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Select checks from the complete change range
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: python3 helpers/ci_scope.py --event "$EVENT" --base "$BASE" --head "$HEAD"
+  ci:
+    needs: changes
+    # Run even if selection fails: required ci must fail, not silently skip.
+    if: ${{ !cancelled() }}
+    runs-on: ${{ needs.changes.outputs.native == 'false' && 'ubuntu-latest' || 'macos-latest' }}
+    timeout-minutes: 20
+    steps:
+      - name: Require successful check selection
+        env:
+          RESULT: ${{ needs.changes.result }}
+          NATIVE: ${{ needs.changes.outputs.native }}
+        run: test "$RESULT" = success && { test "$NATIVE" = true || test "$NATIVE" = false; }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0 # commitlint needs the full range, not just the tip
+          persist-credentials: false
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version-file: package.json # reads the `volta.node` pin
           cache: npm
@@ -34,6 +62,7 @@ jobs:
 
       - name: Release metadata and workflow checks
         run: |
+          make test-ci
           make test-release
           make check-shell
 
@@ -43,15 +72,19 @@ jobs:
           make check-website
 
       - name: Core tests and 100% coverage gate
+        if: needs.changes.outputs.native == 'true'
         run: make test
 
       - name: Native subprocess supervision checks
+        if: needs.changes.outputs.native == 'true'
         run: make test-runtime
 
       - name: Compile check (Core module, Platform + App type-check)
+        if: needs.changes.outputs.native == 'true'
         run: make compile-check
 
       - name: Build bundle and verify app icon
+        if: needs.changes.outputs.native == 'true'
         run: |
           make build SIGN_ID=- ALLOW_ADHOC_SIGNING=1
           app="build/HyperMug Dev.app"

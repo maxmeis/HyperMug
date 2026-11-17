@@ -39,6 +39,16 @@ The layer rules use `make check-layers`:
 
 Run `make ci-tools` to install the locked Node tooling. Run `make hooks` to install Git hooks again if npm scripts were disabled. Commits follow [Conventional Commits](../CONTRIBUTING.md#commit-messages).
 
+## CI scope and workflow dependencies
+
+The required GitHub Actions check remains `ci`. Pull requests run CI; pushes run CI on `main` and the two managed `release-casks/stable` and `release-casks/canary` branches. This avoids running the same feature change twice on push and pull request. A branch without a pull request can be checked through manual CI dispatch.
+
+An Ubuntu job examines the complete change range. Only README/CONTRIBUTING, `docs/`, website, skills, and the two existing channel casks qualify for Linux CI. Linux still runs layer rules, release/publication tests, shell syntax, CI-selection tests, automation tests, content checks and commit lint. App, branding, build, workflow, dependency and unknown changes run all checks on macOS, including Core coverage, native adapters, compilation and the ad-hoc bundle build. Manual runs and missing/invalid/empty change ranges also use full macOS checks. Failed selection fails the required check. Renames inspect both paths. Run `make test-ci` for the Git-history regression tests.
+
+All workflow Actions are pinned to upstream commit SHAs. Dependabot proposes weekly Actions updates for review; it does not merge them automatically. Checkout credentials are not persisted. Job timeouts bound CI and release execution. Stable stays manually versioned with production approval, Canary stays automatic, and verified cask metadata continues publishing without a release PR. These changes do not grant tokens or change repository/environment protection.
+
+The measured pre-change docs PR #27 used 212 seconds for PR CI and 267 seconds for duplicate push CI (479 macOS runner-seconds total). A pure cask update used 224 seconds. Removing the duplicate eliminates one macOS run per ordinary feature PR update; moving known content-only runs to Linux removes their native build work. Actual new runtimes must be measured from live workflows; these baseline numbers are not claimed savings or a latency guarantee.
+
 ## Issue-first planning
 
 Plan work through GitHub issues with one of three types: **Feature**, **Bug**, or **Misc**. Use the matching `feature`, `bug`, or `misc` label and the corresponding issue form when available. Only issues authored by the verified repository owner, `maxmeis`, enter the actionable backlog and can authorize automated work. Outside issues and comments are welcome as public discussion and reports, but they do not automatically authorize triage work or implementation. No automatic triage or implementation is promised for external reports.
