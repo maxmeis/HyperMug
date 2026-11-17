@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
-.PHONY: help dev check-content check-automation check-website triage setup install-tools ci-tools hooks signing build build-production run restart test test-release test-runtime test-window check-shell check-layers compile-check check release publish validate-release sparkle-keys lint-commit lint-commits clean
+.PHONY: help dev check-content check-automation check-website triage setup install-tools ci-tools hooks signing build build-production run restart test test-ci test-release test-runtime test-window check-shell check-layers compile-check check release publish validate-release sparkle-keys lint-commit lint-commits clean
 
 help:
 	@printf '%s\n' \
@@ -61,6 +61,9 @@ test-window:
 test-release:
 	GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s helpers -p 'test_release*.py'
 
+test-ci:
+	GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s helpers -p 'test_ci*.py'
+
 check-shell:
 	@for helper in helpers/*.sh; do bash -n "$$helper" || exit $$?; done
 	@for hook in .husky/commit-msg .husky/pre-commit .husky/pre-push helpers/hook-lib.sh; do sh -n "$$hook" || exit $$?; done
@@ -71,7 +74,7 @@ check-layers:
 compile-check:
 	./helpers/compile-check.sh
 
-check: check-layers check-shell test-release test compile-check check-automation check-website test-runtime
+check: check-layers check-shell test-ci test-release test compile-check check-automation check-website test-runtime
 
 release:
 	+./helpers/release.sh
