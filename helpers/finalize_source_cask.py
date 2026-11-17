@@ -11,6 +11,7 @@ from pathlib import Path
 
 from publish_source_cask import publish, run, version_of
 from release_metadata import REPO, SHA, asset_url, cask
+from verify_published_app import verify
 
 
 def api(endpoint):
@@ -21,6 +22,25 @@ def is_ancestor(older, newer, work):
     return subprocess.run(("git", "merge-base", "--is-ancestor", older, newer),
                           cwd=work, stdout=subprocess.DEVNULL,
                           stderr=subprocess.DEVNULL).returncode == 0
+
+
+def download_asset(repository, asset, target):
+    asset_id = asset.get("id")
+    size = asset.get("size")
+    digest = asset.get("digest", "")
+    if (not isinstance(asset_id, int) or asset_id < 1
+            or not isinstance(size, int) or size <= 0 or size > (256 * 1024 * 1024 if target.suffix == ".zip" else 2 * 1024 * 1024)
+            or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest)):
+        raise ValueError("immutable release asset identity is incomplete")
+    with target.open("xb") as output:
+        subprocess.run(["gh", "api", f"repos/{repository}/releases/assets/{asset_id}",
+                        "-H", "Accept: application/octet-stream"], stdout=output, check=True)
+    hasher = hashlib.sha256()
+    with target.open("rb") as source:
+        while chunk := source.read(1024 * 1024):
+            hasher.update(chunk)
+    if target.stat().st_size != size or hasher.hexdigest() != digest[7:]:
+        raise ValueError("downloaded immutable asset identity mismatch")
 
 
 def verified_asset(repository, releases_repository, channel, content, directory):
@@ -38,11 +58,17 @@ def verified_asset(repository, releases_repository, channel, content, directory)
             rf"\bsource {re.escape(source)}(?![0-9a-f])", release.get("body", "")):
         raise ValueError("release source does not match the source tag")
     token = "hypermug@canary" if channel == "canary" else "hypermug"
-    assets = {asset["name"]: asset for asset in release.get("assets", [])}
+    listed = release.get("assets", [])
+    if not isinstance(listed, list) or any(not isinstance(item, dict) or not isinstance(item.get("name"), str) for item in listed):
+        raise ValueError("invalid release asset listing")
+    assets = {asset["name"]: asset for asset in listed}
+    if len(assets) != len(listed):
+        raise ValueError("duplicate release asset names")
     name = token + ".rb"
     archive = f"HyperMug-{version}.zip"
-    if name not in assets or archive not in assets:
-        raise ValueError("binary and cask release assets are required")
+    feed_name = f"appcast-{channel}.xml"
+    if name not in assets or archive not in assets or feed_name not in assets:
+        raise ValueError("binary, appcast and cask release assets are required")
     digest = assets[archive].get("digest", "")
     if not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
         raise ValueError("published binary requires a GitHub SHA256 digest")
@@ -56,6 +82,11 @@ def verified_asset(repository, releases_repository, channel, content, directory)
     expected = cask(channel, version, asset_url(releases_repository, tag, archive), digest[7:])
     if data != expected.encode() or content != expected:
         raise ValueError("only the exact rendered immutable release cask may be published")
+    zip_path = directory / archive
+    feed_path = directory / feed_name
+    download_asset(releases_repository, assets[archive], zip_path)
+    download_asset(releases_repository, assets[feed_name], feed_path)
+    verify(zip_path, feed_path, releases_repository, channel, version, digest[7:], directory)
     return version, source, asset
 
 
