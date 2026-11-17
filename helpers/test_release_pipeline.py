@@ -91,6 +91,8 @@ class SignedReleaseIntegrationTests(unittest.TestCase):
 if [[ "$1" == list-keychains && "${4:-}" != -s ]]; then echo '"/tmp/login.keychain-db"'; fi
 if [[ "$1" == find-identity ]]; then echo '  1) FAKE "Developer ID Application: Example"'; fi
 ''',
+            # The production wrapper uses macOS base64 -D; emulate decoding on Linux CI too.
+            'base64': "python3 -c 'import base64, sys; sys.stdout.buffer.write(base64.b64decode(sys.stdin.buffer.read()))'",
             'openssl': 'echo fakepassword',
             'make': '''
 mkdir -p build/HyperMug.app/Contents
