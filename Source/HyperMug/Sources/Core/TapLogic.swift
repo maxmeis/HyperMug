@@ -19,6 +19,7 @@ public struct TapSettings: Equatable {
     public var forward: ButtonAction? = nil
     public var invertVertical = false
     public var invertHorizontal = false
+    public var wheel = WheelMap()
 
     public init() {}
 
@@ -28,6 +29,7 @@ public struct TapSettings: Equatable {
         forward = config.mouse.buttons.forward
         invertVertical = config.mouse.invertScroll.vertical
         invertHorizontal = config.mouse.invertScroll.horizontal
+        wheel = config.mouse.verticalWheel
     }
 
     /// Only the event types that are needed.
@@ -41,7 +43,7 @@ public struct TapSettings: Equatable {
         if back != nil || forward != nil {
             mask |= otherMouseEventMask
         }
-        if invertVertical || invertHorizontal {
+        if invertVertical || invertHorizontal || !wheel.isEmpty {
             mask |= 1 << CGEventType.scrollWheel.rawValue
         }
         return mask
@@ -105,9 +107,16 @@ public struct TapEvent: Equatable {
     public var momentumPhase: Int64
     public var vertical: ScrollAxis
     public var horizontal: ScrollAxis
+    /// Scroll events: high-resolution (pixel) deltas rather than line steps.
+    public var continuous: Bool
+    /// Scroll events: macOS reversed the deltas relative to the physical wheel (Natural Scrolling).
+    public var invertedFromDevice: Bool
+    /// Monotonic arrival time.
+    public var nowNanos: UInt64
 
     public init(type: CGEventType, userData: Int64 = 0, keyCode: Int64 = 0, flags: CGEventFlags = [], button: Int64 = 0,
-                scrollPhase: Int64 = 0, momentumPhase: Int64 = 0, vertical: ScrollAxis = .zero, horizontal: ScrollAxis = .zero) {
+                scrollPhase: Int64 = 0, momentumPhase: Int64 = 0, vertical: ScrollAxis = .zero, horizontal: ScrollAxis = .zero,
+                continuous: Bool = false, invertedFromDevice: Bool = false, nowNanos: UInt64 = 0) {
         self.type = type
         self.userData = userData
         self.keyCode = keyCode
@@ -117,6 +126,9 @@ public struct TapEvent: Equatable {
         self.momentumPhase = momentumPhase
         self.vertical = vertical
         self.horizontal = horizontal
+        self.continuous = continuous
+        self.invertedFromDevice = invertedFromDevice
+        self.nowNanos = nowNanos
     }
 }
 
@@ -159,6 +171,7 @@ public struct TapState: Equatable {
     private var downTime: UInt64 = 0
     /// Mouse buttons whose down event was swallowed; their up event is swallowed too.
     private var swallowed = Set<Int64>()
+    private var wheelSteps = WheelSteps()
 
     public init() {}
 
@@ -190,6 +203,7 @@ public struct TapState: Equatable {
             return (TapDecision(pass: false), [.run(action)])
 
         case .scrollWheel:
+            if let consumed = wheelBinding(e, settings: settings) { return consumed }
             guard settings.invertVertical || settings.invertHorizontal,
                   shouldInvertScroll(scrollPhase: e.scrollPhase, momentumPhase: e.momentumPhase)
             else { return (TapDecision(), []) }
@@ -259,6 +273,23 @@ public struct TapState: Equatable {
         case forwardButtonNumber: return settings.forward
         default: return nil
         }
+    }
+
+    /// Consumes a mouse-wheel event whose physical vertical direction is mapped; nil = normal scroll handling.
+    /// Bindings see the device direction: Natural Scrolling is undone here, and inversion only applies to passed events.
+    private mutating func wheelBinding(_ e: TapEvent, settings: TapSettings) -> (TapDecision, [TapEffect])? {
+        guard !settings.wheel.isEmpty, shouldInvertScroll(scrollPhase: e.scrollPhase, momentumPhase: e.momentumPhase)
+        else { return nil }
+        let primary = e.continuous ? Double(e.vertical.point) : Double(e.vertical.line)
+        let delta = primary != 0 ? primary : e.vertical.fixed
+        guard delta != 0 else { return nil }
+        let direction: WheelDirection = (delta > 0) != e.invertedFromDevice ? .up : .down
+        guard let action = settings.wheel.action(for: direction) else {
+            wheelSteps.reset()
+            return nil
+        }
+        let fires = wheelSteps.step(direction, continuousPoints: e.continuous ? abs(delta) : nil, nowNanos: e.nowNanos)
+        return (TapDecision(pass: false), fires ? [.run(action)] : [])
     }
 
     /// nil when the axis carries no movement (nothing to rewrite).

@@ -12,7 +12,7 @@ final class UpdateChecker {
         let feed = (info["SUFeedURL"] as? String).flatMap(URL.init(string:))
         let key = info["SUPublicEDKey"] as? String ?? ""
         if let feed, feed.scheme == "https", feed.host != nil, !key.isEmpty {
-            // Apply the JSON preference before Sparkle schedules its first check.
+            // Apply the configured preference before Sparkle schedules its first check.
             controller = SPUStandardUpdaterController(startingUpdater: false, updaterDelegate: nil, userDriverDelegate: nil)
         } else {
             controller = nil

@@ -2,7 +2,7 @@
 
 ## Permissions
 
-- **Accessibility** supports the keyboard and mouse event tap used by Caps Lock Meh/Hyper, side-button mappings, and scroll inversion.
+- **Accessibility** supports the keyboard and mouse event tap used by Caps Lock Meh/Hyper, side-button and wheel mappings, and scroll inversion.
 - **Input Monitoring** supports raw Caps Lock detection and access to the MX Master 3S thumb button.
 
 Use **Doctor… → Permissions** in the menu to see or grant permissions. Relaunch HyperMug after granting Input Monitoring. Permission grants are tied to the app's code signature. Release builds use a stable Developer ID signature; a local build can use the persistent signing identity described in [Development](development.md).
@@ -23,7 +23,7 @@ Thumb-button remapping supports the MX Master 3S over Bluetooth. Do not run Logi
 
 ### Configuration error
 
-HyperMug keeps the last valid configuration when a file contains invalid JSON, an unsupported value, an invalid action, or a reference to a missing helper. Use the native notification’s **Open Configuration** action or **Configuration Error…** in the menu, repair the JSON in HyperMug, and save it again. HyperMug does not overwrite a non-empty invalid file. See [Configuration](configuration.md#validation-and-recovery).
+HyperMug keeps the last valid configuration when a file contains invalid TOML, an unsupported value, an invalid action, or a reference to a missing helper. Use the native notification’s **Open Configuration** action or **Configuration Error…** in the menu, repair the file in HyperMug, and save it again. TOML syntax errors name the line and column. HyperMug does not overwrite a non-empty invalid file. See [Configuration](configuration.md#validation-and-recovery).
 
 ### Shell action fails or times out
 
@@ -49,7 +49,7 @@ macOS can keep an old holder PID after that process exits. HyperMug verifies tha
 
 ## Doctor and activity
 
-Doctor opens the Overview page of the shared HyperMug window. It summarizes permissions, capture state, configuration errors and binding counts. Configuration edits the raw JSON file; Permissions, Conflicts and Activity diagnose the running setup. Checks update while its window is open. Conflicts lists possible overlaps with macOS gestures and other input apps. Unknown keys are schema errors; remove or correct them in the configuration file.
+Doctor opens the Overview page of the shared HyperMug window. It summarizes permissions, capture state, configuration errors and binding counts. Configuration edits the raw TOML file; Permissions, Conflicts and Activity diagnose the running setup. Checks update while its window is open. Conflicts lists possible overlaps with macOS gestures and other input apps. Unknown keys are schema errors; remove or correct them in the configuration file.
 
 Activity shows detected swipes, shell action IDs and failure statuses; successful actions send no failure notice. It supports filtering and pause. Each launch keeps the last session as `previous.log` beside `debug.log`. Dev logs use `~/Library/Logs/HyperMug Dev/`. Typed keys and command contents are not written to these files.
 

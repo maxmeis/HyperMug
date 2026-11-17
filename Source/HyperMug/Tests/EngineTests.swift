@@ -684,6 +684,20 @@ private func tapEventTests() {
     let wheel = TapEvent(type: .scrollWheel, vertical: ScrollAxis(line: 1, fixed: 1, point: 8))
     expectEqual(engine.handleTapEvent(wheel).vertical, ScrollAxis(line: -1, fixed: -1, point: -8))
 
+    // Wheel bindings: the physical direction is consumed and its resolved helper runs once.
+    var wheelConfig = AppConfig(capsLock: .default, caffeineOnLaunch: false,
+                                mouse: MouseConfig(verticalWheel: WheelMap(down: .helper("next"))), helpers: ["next": "echo next"])
+    engine.apply(wheelConfig)
+    expectEqual(engine.settings.mask, scrollBit, "a wheel binding alone needs the scroll tap")
+    let down = TapEvent(type: .scrollWheel, vertical: ScrollAxis(line: -1, fixed: -1, point: -10), nowNanos: 1_000_000_000)
+    expectEqual(engine.handleTapEvent(down), TapDecision(pass: false))
+    expectEqual(ports.ran.last, .shell("echo next"))
+    let up = TapEvent(type: .scrollWheel, vertical: ScrollAxis(line: 1, fixed: 1, point: 10), nowNanos: 2_000_000_000)
+    expectEqual(engine.handleTapEvent(up), TapDecision(), "unmapped direction scrolls normally")
+    wheelConfig.mouse.verticalWheel = WheelMap()
+    engine.apply(wheelConfig)
+    expectEqual(engine.settings.mask, 0, "no wheel binding, no scroll tap")
+
     // Tap disabled: log effects reach the ports and the tap is asked to re-enable.
     let disabled = engine.handleTapEvent(TapEvent(type: .tapDisabledByTimeout))
     expectEqual(disabled, TapDecision(pass: true, reenableTap: true))

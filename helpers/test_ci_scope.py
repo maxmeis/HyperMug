@@ -20,7 +20,8 @@ class ScopeTests(unittest.TestCase):
                      "helpers/ci_scope.py", "helpers/test_release_metadata.py",
                      "Source/HyperMug/Info.plist", "Source/Branding/HyperMug.icns",
                      "unknown.md", "Casks/other.rb", "docs/../Makefile",
-                     "/docs/guide.md", "docs//guide.md", "README.md\nMakefile"]:
+                     "/docs/guide.md", "docs//guide.md", "README.md\nMakefile",
+                     "docs/examples/aerospace.toml"]:
             with self.subTest(path=path):
                 self.assertFalse(content_only(["README.md", path]))
         self.assertFalse(content_only([]))

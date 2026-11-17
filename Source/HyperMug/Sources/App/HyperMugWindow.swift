@@ -43,7 +43,7 @@ private final class AppWindowModel: ObservableObject {
             inputMonitoring: inputMonitoringAccess() == .granted)
         conflicts = doctorConflictChecks(preferences: DoctorReader.preferences(),
             runningApps: DoctorReader.runningApps(), secureInputHolder: SecureInputReader.current()?.holder.name)
-        overview = [doctorConfigCheck(error: store.error?.reason, unknownKeys: store.unknownKeys),
+        overview = [doctorConfigCheck(error: store.error?.reason, unknownKeys: store.unknownKeys, notice: store.notice),
             doctorCaptureCheck(hasMappings: config.trackpad.hasMappings, enabled: capture.isEnabled,
                 devices: capture.deviceCount, error: capture.captureError)]
         summary = doctorSummary(permissions + overview + conflicts)
@@ -127,7 +127,7 @@ final class HyperMugWindowController: NSObject, NSWindowDelegate {
         confirmingDiscard = true
         let alert = NSAlert()
         alert.messageText = "Discard unsaved configuration changes?"
-        alert.informativeText = "Your changes have not been saved to the JSON file."
+        alert.informativeText = "Your changes have not been saved to the configuration file."
         alert.addButton(withTitle: "Keep Editing")
         alert.addButton(withTitle: "Discard Changes")
         alert.beginSheetModal(for: window) { [weak self] response in
@@ -205,7 +205,7 @@ private struct HyperMugView: View {
                 } label: {
                     Label(copied ? "Copied" : "Copy Diagnostics", systemImage: copied ? "checkmark" : "doc.on.doc")
                 }
-                .help("Copy diagnostic checks and recent activity, excluding your JSON draft")
+                .help("Copy diagnostic checks and recent activity, excluding your configuration draft")
                 .padding(16)
             }
             .frame(minWidth: 180, idealWidth: 190, maxWidth: 230, maxHeight: .infinity)
@@ -214,7 +214,7 @@ private struct HyperMugView: View {
                     HStack {
                         Text((model.page ?? .overview).rawValue).font(.title2.bold())
                         Spacer()
-                        Button("Edit JSON", systemImage: "curlybraces") { model.perform(.config) }
+                        Button("Edit Configuration", systemImage: "doc.text") { model.perform(.config) }
                     }.padding(20)
                     Divider()
                 }
@@ -265,10 +265,10 @@ private struct HyperMugView: View {
                             checkRow(check)
                         }
                         Divider()
-                        LabeledContent("Mouse bindings", value: "\([model.config.mouse.buttons.back, model.config.mouse.buttons.forward, model.config.mouse.buttons.thumb].compactMap { $0 }.count) configured")
+                        LabeledContent("Mouse bindings", value: "\([model.config.mouse.buttons.back, model.config.mouse.buttons.forward, model.config.mouse.buttons.thumb, model.config.mouse.verticalWheel.up, model.config.mouse.verticalWheel.down].compactMap { $0 }.count) configured")
                         LabeledContent("Swipe bindings", value: "\([3, 4].flatMap { fingers in SwipeDirection.allCases.compactMap { model.config.trackpad.action(fingers: fingers, direction: $0) } }.count) configured")
                         LabeledContent("Shell deadline", value: "\(model.config.shellTimeoutSeconds.formatted()) seconds")
-                        Text("Edit the JSON in Configuration. Save applies validated settings; the menu’s Stay Awake checkbox controls only this session.")
+                        Text("Edit the TOML file in Configuration. Save applies validated settings; the menu’s Stay Awake checkbox controls only this session.")
                             .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }.padding(10)
                 }
@@ -375,7 +375,7 @@ private struct HyperMugView: View {
 
     private func actionTitle(_ action: DoctorAction) -> String {
         switch action {
-        case .config: return "Edit JSON"
+        case .config: return "Edit Configuration"
         case .accessibility: return "Allow Accessibility"
         case .inputMonitoring: return "Allow Input Monitoring"
         case .trackpad: return "Trackpad Settings"

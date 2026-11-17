@@ -1,0 +1,34 @@
+#:schema file:///Applications/HyperMug.app/Contents/Resources/hypermug.schema.json
+"$schema" = "file:///Applications/HyperMug.app/Contents/Resources/hypermug.schema.json"
+
+# The owner's configuration (issue #39): Caps Lock as Meh, mouse side buttons and three-finger swipes
+# switch AeroSpace workspaces, four-finger swipes switch windows.
+# Requires AeroSpace at /opt/homebrew/bin/aerospace.
+
+autoUpdate = true
+caffeineOnLaunch = true
+capsLock = "meh"
+launchAtLogin = false
+
+[helpers]
+nextWindow = "/opt/homebrew/bin/aerospace focus --wrap-around dfs-next"
+nextWorkspace = "/opt/homebrew/bin/aerospace workspace --no-stdin --wrap-around next"
+previousWindow = "/opt/homebrew/bin/aerospace focus --wrap-around dfs-prev"
+previousWorkspace = "/opt/homebrew/bin/aerospace workspace --no-stdin --wrap-around prev"
+
+[mouse.buttons]
+back.helper = "previousWorkspace"
+forward.helper = "nextWorkspace"
+thumb = {}
+
+[mouse.invertScroll]
+horizontal = false
+vertical = false
+
+[trackpad.fourFingerSwipe]
+left.helper = "nextWindow"
+right.helper = "previousWindow"
+
+[trackpad.threeFingerSwipe]
+left.helper = "nextWorkspace"
+right.helper = "previousWorkspace"

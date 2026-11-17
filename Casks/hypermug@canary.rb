@@ -1,8 +1,8 @@
 cask "hypermug@canary" do
-  version "0.0.11"
-  sha256 "856c12d5c24c72838040ce531d6b52fe75c16bca1d656c225e670fd9864ba5f5"
+  version "0.0.13"
+  sha256 "3a27a8d5e6543adf05d96f88bd366dcb85b4581e9cc136c81a53d1f49f24e55f"
 
-  url "https://github.com/maxmeis/hypermug/releases/download/v0.0.0-canary.11/HyperMug-0.0.0-canary.11.zip"
+  url "https://github.com/maxmeis/hypermug/releases/download/v0.0.0-canary.13/HyperMug-0.0.0-canary.13.zip"
   name "HyperMug"
   desc "Caps Lock remapping, caffeine, and mouse controls for macOS"
   homepage "https://github.com/maxmeis/hypermug"

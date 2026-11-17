@@ -28,8 +28,8 @@ func statusLogicTests() {
 
     // Config error alert: names the app, carries the reason and the file path.
     let text = configErrorAlertText(ConfigError(reason: "capsLock must be \"default\", \"meh\" or \"hyper\""),
-                                    configPath: "~/.config/hypermug.json")
+                                    configPath: "~/.config/hypermug.toml")
     expectEqual(text.title, "HyperMug config error")
     expectEqual(text.body,
-                "capsLock must be \"default\", \"meh\" or \"hyper\"\n\n~/.config/hypermug.json — last good config stays active.")
+                "capsLock must be \"default\", \"meh\" or \"hyper\"\n\n~/.config/hypermug.toml — last good config stays active.")
 }
