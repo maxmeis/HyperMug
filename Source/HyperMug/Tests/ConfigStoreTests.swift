@@ -34,9 +34,14 @@ private final class Harness {
     var beforeRead: ((URL) -> Void)?
     var failWrite = false
 
-    init(configURL: URL? = nil, schemaURL: URL? = nil, customIO: Bool = false) {
+    var notices: [ConfigNotice] = []
+    var failMove = false
+
+    /// The JSON store suites predate TOML; the format-specific behavior is identical, so they still run on JSON.
+    init(configURL: URL? = nil, schemaURL: URL? = nil, customIO: Bool = false,
+         format: ConfigDocumentFormat = .json, legacyURL: URL? = nil) {
         configDir = root.appendingPathComponent("cfg")
-        url = configURL ?? configDir.appendingPathComponent("hypermug.json")
+        url = configURL ?? configDir.appendingPathComponent(format == .toml ? "hypermug.toml" : "hypermug.json")
         var env = ConfigStoreEnvironment(
             schemaURL: schemaURL,
             log: { [unowned self] level, message in
@@ -63,8 +68,13 @@ private final class Harness {
                 if failWrite { throw NSError(domain: "FixtureWrite", code: 1) }
                 try data.write(to: url, options: .atomic)
             }
+            env.moveItem = { [unowned self] from, to in
+                if failMove { throw NSError(domain: "FixtureMove", code: 1) }
+                try FileManager.default.moveItem(at: from, to: to)
+            }
         }
-        store = ConfigStore(url: url, environment: env)
+        store = ConfigStore(url: url, format: format, legacyURL: legacyURL, environment: env)
+        store.onNotice = { [unowned self] in notices.append($0) }
         store.onChange = { [unowned self] in changes.append($0) }
         store.onError = { [unowned self] in errors.append($0) }
     }
@@ -121,6 +131,8 @@ func configStoreTests() {
     bundledSchemaStoreTests()
     schemaMigrationRaceTests()
     documentSaveTests()
+    tomlStoreTests()
+    legacyMigrationTests()
 }
 
 // MARK: - start
@@ -735,5 +747,242 @@ private func documentSaveTests() {
         let h = Harness(configURL: directory)
         do { _ = try h.store.readDocument(); expect(false) }
         catch { expect(true, "unreadable disk cannot be mistaken for an absent file") }
+    }
+}
+
+// MARK: - TOML and legacy JSON migration
+
+private let tomlSchema = URL(fileURLWithPath: "/Applications/HyperMug.app/Contents/Resources/hypermug.schema.json")
+
+/// A TOML store with a legacy `hypermug.json` beside it.
+private func migrationHarness(schemaURL: URL? = tomlSchema, customIO: Bool = false) -> (Harness, URL) {
+    let root = makeTempDir().appendingPathComponent("cfg")
+    let legacy = root.appendingPathComponent("hypermug.json")
+    let h = Harness(configURL: root.appendingPathComponent("hypermug.toml"), schemaURL: schemaURL, customIO: customIO,
+                    format: .toml, legacyURL: legacy)
+    h.prepareDir()
+    return (h, legacy)
+}
+
+private func readText(_ url: URL) -> String? { (try? Data(contentsOf: url)).map { String(decoding: $0, as: UTF8.self) } }
+private func exists(_ url: URL) -> Bool { (try? FileManager.default.attributesOfItem(atPath: url.path)) != nil }
+
+private func tomlStoreTests() {
+    // A new TOML file shows every slot, links the schema both ways and loads the defaults.
+    do {
+        let h = Harness(schemaURL: tomlSchema, format: .toml)
+        h.store.start()
+        expectEqual(h.fileText, String(decoding: encodeConfigTOML(.newFileDefaults, schemaURL: tomlSchema, includeEmptyKeys: true), as: UTF8.self))
+        expect(h.fileText!.hasPrefix("#:schema \(tomlSchema.absoluteString)\n"), "directive for TOML editors")
+        expectEqual(h.store.config, .newFileDefaults)
+        expectEqual(h.store.documentFormat, .toml)
+        expectEqual(h.store.documentURL, h.url)
+        expect(h.notices.isEmpty && h.store.notice == nil, "no notice without a legacy file")
+    }
+    // Schema links preserve comments; a later poll does not rewrite.
+    do {
+        let h = Harness(schemaURL: tomlSchema, format: .toml)
+        h.put("# my settings\ncapsLock = \"hyper\" # hold for hyper\n")
+        h.store.start()
+        expectEqual(h.store.config, hyperConfig)
+        expectEqual(h.fileText, "#:schema \(tomlSchema.absoluteString)\n\"$schema\" = \"\(tomlSchema.absoluteString)\"\n# my settings\ncapsLock = \"hyper\" # hold for hyper\n")
+        let stable = h.fileText
+        h.store.pollFallback()
+        expectEqual(h.fileText, stable)
+    }
+    // Invalid TOML is reported with its position and never rewritten.
+    do {
+        let h = Harness(schemaURL: tomlSchema, format: .toml)
+        h.put("capsLock = \"hyper\"\nmouse = {\n")
+        h.store.start()
+        expectEqual(h.store.error?.reason, "invalid TOML at line 2, column 10: expected a key")
+        expectEqual(h.fileText, "capsLock = \"hyper\"\nmouse = {\n")
+        h.externalEdit("capsLock = \"other\"\n")
+        expectEqual(h.store.error?.reason, validateConfigDocument(Data(#"{"capsLock":"other"}"#.utf8)).failureReason, "schema errors match JSON")
+        h.externalEdit("capsLock = \"hyper\"\n")
+        expectEqual(h.store.config, hyperConfig)
+        expect(h.store.error == nil)
+    }
+    // Editor saves keep comments; empty saves get a TOML hint.
+    do {
+        let h = Harness(format: .toml)
+        h.put("capsLock = \"meh\"\n")
+        h.store.start()
+        let before = try! h.store.readDocument()
+        let edit = "# comment kept\ncapsLock = \"hyper\" # inline kept\n"
+        try! h.store.saveDocument(Data(edit.utf8), replacing: before)
+        expectEqual(h.fileText, edit, "save writes the user's text")
+        expectEqual(h.store.config, hyperConfig)
+        expectEqual(h.store.validateDocument(Data("  \n".utf8)).failureReason,
+                    "Configuration cannot be empty. Use a comment such as # defaults for default settings.")
+        expect((try? h.store.validateDocument(Data("# defaults\n".utf8)).get())?.config == AppConfig(), "comment-only means defaults")
+        do { try h.store.saveDocument(Data("a =".utf8), replacing: Data(edit.utf8)); expect(false) }
+        catch { expectEqual((error as? ConfigError)?.reason, "invalid TOML at line 1, column 4: expected a value") }
+        let jsonStore = Harness()
+        expectEqual(jsonStore.store.validateDocument(Data()).failureReason, "Configuration cannot be empty. Use {} for default settings.")
+    }
+    // A blank TOML file is initialized with TOML defaults.
+    do {
+        let h = Harness(format: .toml)
+        h.put("")
+        h.store.start()
+        expectEqual(h.fileText, String(decoding: encodeConfigTOML(.newFileDefaults, includeEmptyKeys: true), as: UTF8.self))
+    }
+}
+
+private func legacyMigrationTests() {
+    // Valid JSON migrates once: equivalent TOML, the JSON kept as a backup, one notice.
+    do {
+        let (h, legacy) = migrationHarness()
+        try! Data(issue39JSON.utf8).write(to: legacy)
+        h.store.start()
+        let backup = legacy.deletingLastPathComponent().appendingPathComponent("hypermug.json.migrated-backup")
+        expect(!exists(legacy), "the JSON was renamed")
+        expectEqual(readText(backup), issue39JSON, "the backup holds the original bytes")
+        let toml = try! Data(contentsOf: h.url)
+        expectEqual(try? validateConfigTOML(toml).get(), try? validateConfigDocument(Data(issue39JSON.utf8)).get(), "the TOML validates identically")
+        expectEqual(h.store.config, try! validateConfigDocument(Data(issue39JSON.utf8)).get().config)
+        expect(h.fileText!.hasPrefix("#:schema \(tomlSchema.absoluteString)\n"), "the migrated file links the bundled schema")
+        expect(h.fileText!.contains("[mouse.buttons]\nback.helper = \"previousWorkspace\""), h.fileText!)
+        let notice = ConfigNotice.migrated(from: "hypermug.json", to: "hypermug.toml", backup: "hypermug.json.migrated-backup")
+        expectEqual(h.notices, [notice])
+        expectEqual(h.store.notice, notice)
+        expectEqual(notice.message, "Migrated hypermug.json to hypermug.toml. The original is kept as hypermug.json.migrated-backup.")
+        expectEqual(h.logged(.info, containing: "Migrated hypermug.json"), 1)
+        expect(h.store.error == nil && h.errors.isEmpty)
+        expectEqual(h.store.documentURL, h.url)
+        let stable = h.fileText
+        h.dirWatches.last?.onEvent(false)
+        h.runScheduled()
+        h.store.pollFallback()
+        expectEqual(h.fileText, stable, "the migration runs once")
+        expectEqual(h.notices.count, 1, "the notice is shown once")
+    }
+    // Without a schema URL, an earlier backup gets a numbered name; blank JSON migrates to the defaults.
+    do {
+        let (h, legacy) = migrationHarness(schemaURL: nil)
+        try! Data("  ".utf8).write(to: legacy)
+        let dir = legacy.deletingLastPathComponent()
+        try! Data("old".utf8).write(to: dir.appendingPathComponent("hypermug.json.migrated-backup"))
+        try! Data("old".utf8).write(to: dir.appendingPathComponent("hypermug.json.migrated-backup-2"))
+        h.store.start()
+        expectEqual(readText(dir.appendingPathComponent("hypermug.json.migrated-backup-3")), "  ")
+        expectEqual(readText(dir.appendingPathComponent("hypermug.json.migrated-backup")), "old", "earlier backups are kept")
+        expectEqual(h.fileText, String(decoding: encodeConfigTOML(.newFileDefaults, includeEmptyKeys: true), as: UTF8.self))
+        expectEqual(h.store.config, .newFileDefaults)
+    }
+    // Invalid JSON is not migrated: it stays active, is reported exactly as before, and migrates once fixed.
+    do {
+        let (h, legacy) = migrationHarness()
+        try! Data(#"{"capsLock":"other"}"#.utf8).write(to: legacy)
+        h.store.start()
+        expect(!exists(h.url), "no TOML for invalid JSON")
+        expectEqual(readText(legacy), #"{"capsLock":"other"}"#, "the JSON is untouched")
+        expectEqual(h.store.error?.reason, validateConfigDocument(Data(#"{"capsLock":"other"}"#.utf8)).failureReason)
+        expectEqual(h.errors.count, 1)
+        expectEqual(h.store.documentURL, legacy)
+        expectEqual(h.store.documentFormat, .json)
+        let blocked = ConfigNotice.migrationBlocked(from: "hypermug.json", to: "hypermug.toml")
+        expectEqual(h.store.notice, blocked)
+        expect(blocked.message.hasPrefix("hypermug.json was not migrated to hypermug.toml because it is invalid."))
+        expectEqual(h.fileWatches.count, 0, "the canonical path is not watched yet")
+        expectEqual(h.watch(legacy.path).count, 1, "the legacy document is watched")
+        h.store.createIfAbsent()
+        expect(!exists(h.url), "Settings… does not create a TOML file beside invalid JSON")
+        try! Data(hyperJSON.utf8).write(to: legacy)
+        h.watch(legacy.path).last?.onEvent(false)
+        h.runScheduled()
+        expect(exists(h.url) && !exists(legacy), "a repaired JSON file migrates")
+        expectEqual(h.store.config, hyperConfig)
+        expect(h.store.error == nil)
+        expectEqual(h.store.documentFormat, .toml)
+        expectEqual(h.fileWatches.count, 1, "the TOML file is watched after migration")
+    }
+    // Saving a repaired legacy document from the editor migrates right away.
+    do {
+        let (h, legacy) = migrationHarness()
+        try! Data("{".utf8).write(to: legacy)
+        h.store.start()
+        expect(h.store.error?.reason.hasPrefix("invalid JSON") == true)
+        let before = try! h.store.readDocument()
+        expectEqual(before, Data("{".utf8))
+        expectEqual(h.store.validateDocument(Data("capsLock = 1".utf8)).failureReason?.hasPrefix("invalid JSON"), true, "JSON rules while pending")
+        try! h.store.saveDocument(Data(hyperJSON.utf8), replacing: before)
+        expect(exists(h.url) && !exists(legacy), "the save migrated")
+        expectEqual(h.store.config, hyperConfig)
+        expect(String(decoding: try! h.store.readDocument()!, as: UTF8.self).contains("capsLock = \"hyper\""), "the editor now reads TOML")
+    }
+    // Both files: TOML wins, the JSON is ignored and left alone; removing it clears the warning.
+    do {
+        let (h, legacy) = migrationHarness()
+        h.put("capsLock = \"hyper\"\n")
+        try! Data(#"{"capsLock":"default"}"#.utf8).write(to: legacy)
+        h.store.start()
+        expectEqual(h.store.config, hyperConfig)
+        expectEqual(readText(legacy), #"{"capsLock":"default"}"#)
+        let ignored = ConfigNotice.legacyIgnored(legacy: "hypermug.json", active: "hypermug.toml")
+        expectEqual(h.store.notice, ignored)
+        expectEqual(ignored.message, "hypermug.json is ignored because hypermug.toml exists. Move or delete hypermug.json.")
+        h.dirWatches.last?.onEvent(false)
+        h.runScheduled()
+        expectEqual(h.notices, [ignored], "warned once")
+        try! FileManager.default.removeItem(at: legacy)
+        h.dirWatches.last?.onEvent(false)
+        h.runScheduled()
+        expect(h.store.notice == nil, "the warning clears")
+    }
+    // A failed TOML write keeps the JSON active; a failed rename leaves both files and warns.
+    do {
+        let (h, legacy) = migrationHarness(customIO: true)
+        try! Data(hyperJSON.utf8).write(to: legacy)
+        h.failWrite = true
+        h.store.start()
+        expect(!exists(h.url) && exists(legacy))
+        expect(h.logged(.error, containing: "hypermug.json stays active") >= 1, "write failure logged")
+        expectEqual(h.store.documentURL, legacy)
+        h.failWrite = false
+        h.failMove = true
+        h.dirWatches.last?.onEvent(false)
+        h.runScheduled()
+        expect(exists(h.url) && exists(legacy), "TOML written, JSON kept")
+        expectEqual(h.logged(.error, containing: "cannot rename hypermug.json"), 1)
+        expectEqual(h.store.notice, .legacyIgnored(legacy: "hypermug.json", active: "hypermug.toml"))
+        expectEqual(h.store.config, hyperConfig)
+    }
+    // A legacy file with wheel bindings migrates them.
+    do {
+        let (h, legacy) = migrationHarness()
+        let json = #"{"helpers":{"n":"echo n","p":"echo p"},"mouse":{"verticalWheel":{"up":{"helper":"p"},"down":{"helper":"n"}}}}"#
+        try! Data(json.utf8).write(to: legacy)
+        h.store.start()
+        expect(h.fileText!.contains("\n[mouse.verticalWheel]\ndown.helper = \"n\"\nup.helper = \"p\"\n"), h.fileText!)
+        expectEqual(h.store.config.mouse.verticalWheel.up, .helper("p"))
+        expectEqual(try? validateConfigTOML(Data(h.fileText!.utf8)).get(), try? validateConfigDocument(Data(json.utf8)).get())
+    }
+    // An unreadable legacy path is reported and not migrated.
+    do {
+        let (h, legacy) = migrationHarness()
+        try! FileManager.default.createDirectory(at: legacy, withIntermediateDirectories: true)
+        h.store.start()
+        expect(!exists(h.url))
+        expect(h.store.error?.reason.hasPrefix("cannot read") == true)
+        expectEqual(h.store.documentURL, legacy)
+    }
+    // The TOML file deleted while running, with a new legacy file: Settings… migrates instead of recreating.
+    do {
+        let (h, legacy) = migrationHarness()
+        h.store.start()
+        try! FileManager.default.removeItem(at: h.url)
+        try! Data(hyperJSON.utf8).write(to: legacy)
+        h.store.createIfAbsent()
+        expect(exists(h.url) && !exists(legacy))
+        expect(h.fileText!.contains("capsLock = \"hyper\""))
+    }
+}
+
+private extension Result where Failure == ConfigError {
+    var failureReason: String? {
+        if case .failure(let e) = self { return e.reason }
+        return nil
     }
 }

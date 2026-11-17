@@ -1,6 +1,6 @@
 import Foundation
 
-/// The editor holds raw JSON, never a second preferences model. Refreshing cannot replace edits.
+/// The editor holds the raw document text, never a second preferences model. Refreshing cannot replace edits.
 public struct ConfigDocumentDraft: Equatable {
     public var text = ""
     public private(set) var savedData: Data?
@@ -17,7 +17,7 @@ public struct ConfigDocumentDraft: Equatable {
 
     public mutating func load(_ data: Data?) throws {
         guard let text = String(data: data ?? Data(), encoding: .utf8) else {
-            throw ConfigError(reason: "The configuration is not UTF-8 JSON. Convert the file to UTF-8 before editing it here.")
+            throw ConfigError(reason: "The configuration is not UTF-8 text. Convert the file to UTF-8 before editing it here.")
         }
         self.text = text
         savedData = data

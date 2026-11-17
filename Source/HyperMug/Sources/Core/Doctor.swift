@@ -68,12 +68,14 @@ public func doctorCaptureCheck(hasMappings: Bool, enabled: Bool, devices: Int, e
     return DoctorCheck("Trackpad", "Listening on \(devices) trackpad device(s). Try a swipe and check Activity.", .passed)
 }
 
-public func doctorConfigCheck(error: String?, unknownKeys: [String] = []) -> DoctorCheck {
-    if let error { return DoctorCheck("Configuration", "\(error) The last valid settings remain active.", .blocked, .config) }
+public func doctorConfigCheck(error: String?, unknownKeys: [String] = [], notice: ConfigNotice? = nil) -> DoctorCheck {
+    let note = notice.map { " " + $0.message } ?? ""
+    if let error { return DoctorCheck("Configuration", "\(error)\(note) The last valid settings remain active.", .blocked, .config) }
     if !unknownKeys.isEmpty {
         return DoctorCheck("Configuration", "These settings are ignored: \(unknownKeys.joined(separator: ", ")). Check the setting names.", .warning, .config)
     }
-    return DoctorCheck("Configuration", "Your settings loaded successfully.", .passed, .config)
+    if case .legacyIgnored? = notice { return DoctorCheck("Configuration", "Your settings loaded successfully.\(note)", .warning, .config) }
+    return DoctorCheck("Configuration", "Your settings loaded successfully.\(note)", .passed, .config)
 }
 
 public func doctorActionLabel(_ action: ButtonAction?) -> String {

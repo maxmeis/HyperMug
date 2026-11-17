@@ -20,13 +20,29 @@ For early builds, install `maxmeis/hypermug/hypermug@canary` instead. Stable and
 - **Trackpad swipes:** bind three- and four-finger swipes to shortcuts, shell commands, or shared named helpers.
 - **Mouse remapping:** map back/forward buttons, the MX Master 3S thumb button and vertical wheel steps to the same actions, and invert wheel scrolling.
 - **Secure Input status:** see when macOS blocks keyboard monitoring and which app holds Secure Input.
-- **One native window:** **Settings…** (⌘,) opens the JSON editor alongside overview, permissions, conflicts and activity. Validate and save in HyperMug; the JSON file stays the single source of settings. Native notifications report invalid configuration and failed shell actions.
+- **One native window:** **Settings…** (⌘,) opens the TOML editor alongside overview, permissions, conflicts and activity. Validate and save in HyperMug; the TOML file stays the single source of settings. Native notifications report invalid configuration and failed shell actions.
 
 HyperMug requires macOS Accessibility and Input Monitoring permissions for its input features. The app explains each permission in **Doctor… → Permissions**. See [Permissions and troubleshooting](docs/troubleshooting.md).
 
 ## Configuration
 
-Settings are stored in `~/.config/hypermug.json`. The file links to the JSON Schema inside the signed app bundle. See [Configuration](docs/configuration.md) for defaults, shared helpers, validation and the default 10-second shell deadline.
+Settings are stored in `~/.config/hypermug.toml`. The file links to the JSON Schema inside the signed app bundle, so TOML editors such as Taplo or Even Better TOML can validate and complete it. An existing `~/.config/hypermug.json` is migrated automatically once and kept as a backup. See [Configuration](docs/configuration.md) for defaults, shared helpers, validation, [migration](docs/configuration.md#migrating-from-hypermugjson) and the default 10-second shell deadline.
+
+```toml
+capsLock = "meh"
+
+[helpers]
+nextWorkspace = "/opt/homebrew/bin/aerospace workspace --no-stdin --wrap-around next"
+previousWorkspace = "/opt/homebrew/bin/aerospace workspace --no-stdin --wrap-around prev"
+
+[mouse.buttons]
+back.helper = "previousWorkspace"
+forward.helper = "nextWorkspace"
+
+[trackpad.threeFingerSwipe]
+left.helper = "nextWorkspace"
+right.helper = "previousWorkspace"
+```
 
 ## Development and contributions
 

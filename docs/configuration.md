@@ -1,53 +1,115 @@
 # Configuration
 
-HyperMug stores settings only in `~/.config/hypermug.json`. **Settings…** (⌘,) opens the JSON editor inside HyperMug's single native window. **Doctor…** opens its Overview page; Configuration, Permissions, Conflicts and Activity share that same window. There is no second preferences form or separate settings app. The menu's **Stay Awake** checkmark remains a session-only control.
+HyperMug stores settings only in `~/.config/hypermug.toml` ([TOML 1.0](https://toml.io/en/v1.0.0)). **Settings…** (⌘,) opens the TOML editor inside HyperMug's single native window. **Doctor…** opens its Overview page; Configuration, Permissions, Conflicts and Activity share that same window. There is no second preferences form or separate settings app. The menu's **Stay Awake** checkmark remains a session-only control.
 
-Edit JSON directly, choose **Validate** to check without applying, and **Save** (⌘S) to validate, write atomically and apply. Standard copy/paste, undo/redo and Find (⌘F) work in the native text editor; smart quotes and text substitutions are disabled. **Reveal File** locates the actual document in Finder. You can also edit the same file with an external editor; saved external changes reload automatically, including atomic saves.
+Edit TOML directly, choose **Validate** to check without applying, and **Save** (⌘S) to validate, write atomically and apply. Saving writes your text as typed, so comments and layout are kept; only the schema metadata at the top is updated. Standard copy/paste, undo/redo and Find (⌘F) work in the native text editor; smart quotes and text substitutions are disabled. **Reveal File** locates the actual document in Finder. You can also edit the same file with an external editor; saved external changes reload automatically, including atomic saves.
 
 An open clean editor follows external changes. An unsaved draft is never replaced by background refresh. If disk bytes changed since editing began, Save refuses to overwrite them. Copy your draft if needed, then use **Reload**; discarding a modified draft requires confirmation. Closing, quitting or restarting HyperMug also protects unsaved changes. Invalid drafts stay in the editor for repair and never replace the last valid file.
 
 ## Example
 
-```json
-{
-  "$schema": "file:///Applications/HyperMug.app/Contents/Resources/hypermug.schema.json",
-  "shellTimeoutSeconds": 10,
-  "capsLock": "meh",
-  "caffeineOnLaunch": true,
-  "autoUpdate": true,
-  "launchAtLogin": true,
-  "helpers": {},
-  "mouse": {
-    "invertScroll": { "vertical": false, "horizontal": false },
-    "buttons": {
-      "back": { "shell": "/opt/homebrew/bin/aerospace workspace --no-stdin --wrap-around next" },
-      "forward": { "shell": "/opt/homebrew/bin/aerospace workspace --no-stdin --wrap-around prev" },
-      "thumb": {}
-    },
-    "verticalWheel": { "up": {}, "down": {} }
-  },
-  "trackpad": {
-    "threeFingerSwipe": {
-      "up": {},
-      "down": {},
-      "left": { "shell": "/opt/homebrew/bin/aerospace workspace --no-stdin --wrap-around next" },
-      "right": { "shell": "/opt/homebrew/bin/aerospace workspace --no-stdin --wrap-around prev" }
-    },
-    "fourFingerSwipe": {
-      "up": {},
-      "down": {},
-      "left": { "shell": "/opt/homebrew/bin/aerospace workspace --no-stdin --wrap-around next" },
-      "right": { "shell": "/opt/homebrew/bin/aerospace workspace --no-stdin --wrap-around prev" }
-    }
-  }
-}
+This is the configuration HyperMug writes on first launch:
+
+```toml
+#:schema file:///Applications/HyperMug.app/Contents/Resources/hypermug.schema.json
+"$schema" = "file:///Applications/HyperMug.app/Contents/Resources/hypermug.schema.json"
+
+autoUpdate = true
+caffeineOnLaunch = true
+capsLock = "meh"
+helpers = {}
+launchAtLogin = true
+shellTimeoutSeconds = 10
+
+[mouse.buttons]
+back.shell = "/opt/homebrew/bin/aerospace workspace --no-stdin --wrap-around next"
+forward.shell = "/opt/homebrew/bin/aerospace workspace --no-stdin --wrap-around prev"
+thumb = {}
+
+[mouse.invertScroll]
+horizontal = false
+vertical = false
+
+[mouse.verticalWheel]
+down = {}
+up = {}
+
+[trackpad.fourFingerSwipe]
+down = {}
+left.shell = "/opt/homebrew/bin/aerospace workspace --no-stdin --wrap-around next"
+right.shell = "/opt/homebrew/bin/aerospace workspace --no-stdin --wrap-around prev"
+up = {}
+
+[trackpad.threeFingerSwipe]
+down = {}
+left.shell = "/opt/homebrew/bin/aerospace workspace --no-stdin --wrap-around next"
+right.shell = "/opt/homebrew/bin/aerospace workspace --no-stdin --wrap-around prev"
+up = {}
 ```
 
-On a new or empty file, HyperMug shows every button, wheel and swipe direction, including unassigned slots as `{}` and an empty `helpers` object. These placeholders run no action; they make available keys visible while editing. It writes the example above: `capsLock: "meh"`, `caffeineOnLaunch: true`, `autoUpdate: true`, `launchAtLogin: true`, both scroll inversions off, and the six AeroSpace mappings shown. These shell actions require AeroSpace at the specified path to work. Existing preferences are preserved; only `$schema` metadata is updated when the installed bundle location changes. Missing keys in an existing file retain their previous fallback values; in particular, omitted `launchAtLogin` remains `false` and omitted mappings remain unmapped.
+`back.shell = "…"` is TOML's dotted-key form of the table `back = { shell = "…" }`; both spellings mean the same thing. A `[mouse.buttons]` header opens the `buttons` table inside `mouse`.
 
-The schema is generated from the same Core model into the signed app’s `Contents/Resources/hypermug.schema.json` before signing. HyperMug fills `$schema` with that resource’s actual `file://` URL, including URL escaping when the app path contains spaces. The example assumes `/Applications/HyperMug.app`; Homebrew or a custom app location can produce a different URL. Dev uses its own bundled `hypermug-dev.schema.json`. No schema sidecar is created beside your config. Old sidecars can be removed once your editor uses the bundled URL.
+On a new or empty file, HyperMug shows every button, wheel and swipe direction, including unassigned slots as `{}` and an empty `helpers` table. These placeholders run no action; they make available keys visible while editing. The defaults are `capsLock = "meh"`, `caffeineOnLaunch = true`, `autoUpdate = true`, `launchAtLogin = true`, both scroll inversions off, and the six AeroSpace mappings shown. These shell actions require AeroSpace at the specified path to work. Existing preferences are preserved; only the `$schema` metadata is updated when the installed bundle location changes. Missing keys in an existing file retain their previous fallback values; in particular, omitted `launchAtLogin` remains `false` and omitted mappings remain unmapped.
 
-Editors can use this local resource for validation and autocomplete. Runtime validation uses the same compiled schema and native shortcut/helper checks; it never downloads a user-supplied `$schema` URL. After moving or upgrading the app, launch it to refresh an outdated reference. `$schema` is optional when writing a file yourself.
+### AeroSpace example
+
+[`docs/examples/aerospace.toml`](examples/aerospace.toml) is the owner's own setup: Caps Lock as Meh, the mouse side buttons and three-finger swipes switch AeroSpace workspaces, and four-finger swipes switch windows. It uses shared helpers and needs AeroSpace at `/opt/homebrew/bin/aerospace`. The test suite checks that this file stays valid.
+
+```toml
+#:schema file:///Applications/HyperMug.app/Contents/Resources/hypermug.schema.json
+"$schema" = "file:///Applications/HyperMug.app/Contents/Resources/hypermug.schema.json"
+
+autoUpdate = true
+caffeineOnLaunch = true
+capsLock = "meh"
+launchAtLogin = false
+
+[helpers]
+nextWindow = "/opt/homebrew/bin/aerospace focus --wrap-around dfs-next"
+nextWorkspace = "/opt/homebrew/bin/aerospace workspace --no-stdin --wrap-around next"
+previousWindow = "/opt/homebrew/bin/aerospace focus --wrap-around dfs-prev"
+previousWorkspace = "/opt/homebrew/bin/aerospace workspace --no-stdin --wrap-around prev"
+
+[mouse.buttons]
+back.helper = "previousWorkspace"
+forward.helper = "nextWorkspace"
+thumb = {}
+
+[mouse.invertScroll]
+horizontal = false
+vertical = false
+
+[trackpad.fourFingerSwipe]
+left.helper = "nextWindow"
+right.helper = "previousWindow"
+
+[trackpad.threeFingerSwipe]
+left.helper = "nextWorkspace"
+right.helper = "previousWorkspace"
+```
+
+## Schema and editor support
+
+The JSON Schema is generated from the same Core model into the signed app’s `Contents/Resources/hypermug.schema.json` before signing. A TOML document has the same structure as JSON (tables are objects), so the one schema describes both. HyperMug writes the schema’s actual `file://` URL twice at the top of the file:
+
+- `#:schema <url>` on the first line, the directive used by [Taplo](https://taplo.tamasfe.dev) and the **Even Better TOML** extension for VS Code, Zed and other editors.
+- `"$schema" = "<url>"`, a quoted key that stays valid TOML and matches the JSON convention.
+
+The URL includes URL escaping when the app path contains spaces. The example assumes `/Applications/HyperMug.app`; Homebrew or a custom app location can produce a different URL. Dev uses its own bundled `hypermug-dev.schema.json`. No schema sidecar is created beside your config.
+
+Editors can use this local resource for validation and autocomplete. Runtime validation uses the same compiled schema and native shortcut/helper checks; it never downloads a user-supplied `$schema` URL. After moving or upgrading the app, launch it to refresh an outdated reference. Both schema lines are optional when writing a file yourself.
+
+HyperMug reads TOML 1.0 except for the features the configuration has no use for: dates and times, arrays of tables (`[[name]]`), arrays that mix value types, and `inf`/`nan` are rejected with a clear error. Errors name the line and column, for example `invalid TOML at line 3, column 9: duplicate key capsLock`.
+
+## Migrating from hypermug.json
+
+Earlier versions stored settings in `~/.config/hypermug.json`. HyperMug migrates that file automatically and only once:
+
+1. If `~/.config/hypermug.toml` exists, it is the only configuration. A `hypermug.json` beside it is ignored and left alone; Doctor shows a warning until you move or delete it.
+2. If only `hypermug.json` exists, HyperMug validates it with the same rules as before. A valid file is written as an equivalent `hypermug.toml` (atomically, with the bundled schema linked), and the JSON is renamed to `hypermug.json.migrated-backup`. It is never deleted; an existing backup gets a numbered name such as `hypermug.json.migrated-backup-2`. The activity log and Doctor show the migration.
+3. If `hypermug.json` is invalid, nothing is migrated. HyperMug reports the error exactly as before, keeps the last valid settings, and the editor opens the JSON for repair. Once the JSON is valid, saved in HyperMug or elsewhere, it migrates right away.
+
+The migrated file is written in canonical form: keys sorted, single-key tables as dotted keys. JSON has no comments, so nothing is lost. If `hypermug.json` was a symlink into a dotfiles repository, the symlink itself is renamed; its target is unchanged, and `hypermug.toml` is a regular file you can move into your dotfiles and link again.
 
 ## Settings
 
@@ -71,19 +133,14 @@ Scroll inversion affects mouse wheels only, not trackpads or Magic Mouse scrolli
 
 `mouse.verticalWheel.up` and `.down` bind wheel steps to the same actions as buttons and swipes. For example, with the side buttons switching AeroSpace workspaces, the wheel can move focus between windows:
 
-```json
-{
-  "helpers": {
-    "previousWindow": "/opt/homebrew/bin/aerospace focus --boundaries-action wrap-around-the-workspace left",
-    "nextWindow": "/opt/homebrew/bin/aerospace focus --boundaries-action wrap-around-the-workspace right"
-  },
-  "mouse": {
-    "verticalWheel": {
-      "up": { "helper": "previousWindow" },
-      "down": { "helper": "nextWindow" }
-    }
-  }
-}
+```toml
+[helpers]
+nextWindow = "/opt/homebrew/bin/aerospace focus --boundaries-action wrap-around-the-workspace right"
+previousWindow = "/opt/homebrew/bin/aerospace focus --boundaries-action wrap-around-the-workspace left"
+
+[mouse.verticalWheel]
+down.helper = "nextWindow"
+up.helper = "previousWindow"
 ```
 
 - A mapped direction is consumed: its wheel events no longer scroll, and each wheel step runs the action once. An unmapped direction, and horizontal scrolling, keep scrolling normally.
@@ -94,38 +151,36 @@ Scroll inversion affects mouse wheels only, not trackpads or Magic Mouse scrolli
 
 ## Actions and shortcuts
 
-An empty action object (`{}`) leaves that slot unassigned. To assign an action, set exactly one non-empty key:
+An empty action table (`{}`) leaves that slot unassigned. To assign an action, set exactly one non-empty key:
 
-- `"shortcut"`: an array with any number of modifiers and exactly one key, such as `{"shortcut": ["cmd", "shift", "["]}`.
-- `"shell"`: a supervised command run by `/bin/sh -c`; output is discarded. GUI apps receive a minimal `PATH` (`/usr/bin:/bin:/usr/sbin:/sbin`), so use absolute paths for other tools. Use `open` to launch an app, file, or URL.
-- `"helper"`: the name of a command in top-level `helpers`, such as `{"helper": "mission-control"}`. A helper always resolves to a shell command; nested helper aliases are not supported. An unknown name makes the configuration invalid.
+- `shortcut`: an array with any number of modifiers and exactly one key, such as `back.shortcut = ["cmd", "shift", "["]`. A string such as `"cmd+shift+["` is not accepted.
+- `shell`: a supervised command run by `/bin/sh -c`; output is discarded. GUI apps receive a minimal `PATH` (`/usr/bin:/bin:/usr/sbin:/sbin`), so use absolute paths for other tools. Use `open` to launch an app, file, or URL. TOML literal strings (`'...'`) need no escaping for backslashes and double quotes.
+- `helper`: the name of a command in top-level `helpers`, such as `up.helper = "mission-control"`. A helper always resolves to a shell command; nested helper aliases are not supported. An unknown name makes the configuration invalid.
 
 Shortcut tokens are case-insensitive. Modifiers: `cmd`, `ctrl`, `alt` (`opt` and `option` aliases), `shift`, `meh` (ctrl+alt+cmd), and `hyper` (ctrl+alt+shift+cmd). Keys: `a`–`z`, `0`–`9`, `[ ] ; ' , . / \\ - = \``, `f1`–`f20`, `left`, `right`, `up`, `down`, `escape` (`esc`), `return` (`enter`), `tab`, `space`, `delete` (`backspace`), `forwarddelete`, `home`, `end`, `pageup`, and `pagedown`.
 
-For example, a trackpad configuration can be added alongside `mouse`:
+For example, trackpad mappings can be added alongside `mouse`:
 
-```json
-{
-  "trackpad": {
-    "threeFingerSwipe": {
-      "left": { "shortcut": ["cmd", "shift", "["] },
-      "right": { "shortcut": ["cmd", "shift", "]"] },
-      "up": { "helper": "mission-control" }
-    },
-    "fourFingerSwipe": {
-      "down": { "shell": "open -a Finder" }
-    }
-  }
-}
+```toml
+[helpers]
+mission-control = "open -a 'Mission Control'"
+
+[trackpad.threeFingerSwipe]
+left.shortcut = ["cmd", "shift", "["]
+right.shortcut = ["cmd", "shift", "]"]
+up.helper = "mission-control"
+
+[trackpad.fourFingerSwipe]
+down.shell = "open -a Finder"
 ```
 
-This example requires a `mission-control` helper in top-level `helpers`. Omitted directions run no action. Each configured swipe fires once; lift all fingers before the next swipe. Taps, pinches, rotation, and normal two-finger scrolling are not bindings. Configure the conflicting native macOS swipe assignments as described in [Installation](installation.md#trackpad-setup).
+Omitted directions run no action. Each configured swipe fires once; lift all fingers before the next swipe. Taps, pinches, rotation, and normal two-finger scrolling are not bindings. Configure the conflicting native macOS swipe assignments as described in [Installation](installation.md#trackpad-setup).
 
 ## Validation and recovery
 
-Omit a button, wheel or swipe direction, or set it to `{}`, to leave it unmapped. Optional settings may be omitted to use their fallback values; `null`, unknown keys and invalid action values are errors. Empty action values such as `{"shell":""}` or `{"shortcut":[]}` are errors; an empty object is the explicit unassigned form. A mapped back/forward button is swallowed and its action runs once on press; thumb also runs once per press. Wheel and trackpad actions use the same action format.
+Omit a button, wheel or swipe direction, or set it to `{}`, to leave it unmapped. Optional settings may be omitted to use their fallback values; unknown keys and invalid action values are errors. Empty action values such as `back.shell = ""` or `back.shortcut = []` are errors; an empty table is the explicit unassigned form. A mapped back/forward button is swallowed and its action runs once on press; thumb also runs once per press. Wheel and trackpad actions use the same action format.
 
-If JSON or the bundled schema rules fail, a shortcut is invalid, or a helper reference is missing, HyperMug keeps the last valid settings. It never overwrites a non-empty invalid file. A native notification offers **Open Configuration**, opening the same in-app editor; the menu also shows **Configuration Error…** while the file is invalid. Doctor activity records the validation path and reason. Fix and save the file to recover automatically. Renaming or deleting a helper requires updating every reference in the same save; names, including surrounding spaces, remain exact.
+If the TOML syntax or the bundled schema rules fail, a shortcut is invalid, or a helper reference is missing, HyperMug keeps the last valid settings. It never overwrites a non-empty invalid file. A native notification offers **Open Configuration**, opening the same in-app editor; the menu also shows **Configuration Error…** while the file is invalid. Doctor activity records the validation path and reason. Fix and save the file to recover automatically. Renaming or deleting a helper requires updating every reference in the same save; names, including surrounding spaces, remain exact.
 
 ## Shell failures and notifications
 
@@ -133,4 +188,4 @@ A command that cannot start, exits nonzero, or exceeds `shellTimeoutSeconds` tri
 
 Notifications ask for macOS permission when the first problem occurs. Denial is respected: errors still appear in Doctor activity/logs, and invalid configuration remains visible in the menu. Repeated notifications are limited to one per category every 30 seconds; configuration recovery resets that category. Success is silent. Native notification text and shell activity logs contain status and an action ID, never command contents, environment values or shell output. Configuration validation logs can include setting names; review them before sharing.
 
-The in-app editor writes through the running configuration store, so only the actual JSON document persists settings. Save checks schema/action validity and compares the disk bytes with the opened baseline before replacing a symlink target atomically. Editing a draft alone has no effect on input handling or permissions.
+The in-app editor writes through the running configuration store, so only the actual TOML document persists settings. Save checks schema/action validity and compares the disk bytes with the opened baseline before replacing a symlink target atomically. Editing a draft alone has no effect on input handling or permissions.

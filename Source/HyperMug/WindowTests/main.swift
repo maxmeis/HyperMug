@@ -18,9 +18,9 @@ struct WindowChecks {
         app.setActivationPolicy(.regular)
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("hypermug-window-check-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let url = directory.appendingPathComponent("hypermug-dev.json")
+        let url = directory.appendingPathComponent("hypermug-dev.toml")
         let env = ConfigStoreEnvironment(schemaURL: Bundle.main.url(forResource: AppIdentity.schemaFileName, withExtension: nil), log: { _,_ in }, schedule: { _,_ in Token() }, watch: { _,_ in nil })
-        let store = ConfigStore(url: url, environment: env)
+        let store = ConfigStore(url: url, format: .toml, environment: env)
         store.start()
         let controller = HyperMugWindowController(store: store, capture: TrackpadCapture(log: { _,_ in }))
         let target = CheckTarget(controller)
@@ -40,14 +40,14 @@ struct WindowChecks {
             let window = app.windows.first { $0.identifier?.rawValue == "hypermug.workspace" }!
             check(window.contentView!.subviews.allSatisfy { $0.frame.height <= window.contentView!.bounds.height + 2 }, "native split content fits the window viewport")
             check(window.isVisible, "shared native window is visible")
-            check(window.contentView!.bounds.height <= 700, "long JSON stays in a bounded scrolling editor")
+            check(window.contentView!.bounds.height <= 700, "a long configuration stays in a bounded scrolling editor")
             var editor = textViews(window.contentView!).first { $0.isEditable }!
             window.setContentSize(NSSize(width: 780, height: 540))
             try? await Task.sleep(for: .milliseconds(150))
             check(window.contentView!.bounds.width <= 800 && window.contentView!.bounds.height <= 600, "native window supports its minimum size")
             window.setContentSize(NSSize(width: 880, height: 650))
-            check(editor.string.contains("shellTimeoutSeconds") && editor.string.contains("helpers"), "real JSON editor is loaded")
-            check(!editor.isRichText && !editor.isAutomaticQuoteSubstitutionEnabled && editor.allowsUndo, "JSON-safe native text editing")
+            check(editor.string.contains("shellTimeoutSeconds") && editor.string.contains("helpers"), "real TOML editor is loaded")
+            check(!editor.isRichText && !editor.isAutomaticQuoteSubstitutionEnabled && editor.allowsUndo, "plain native text editing")
             if let capturePath = ProcessInfo.processInfo.environment["HYPERMUG_TEST_CAPTURE_DIRECTORY"],
                CGPreflightScreenCaptureAccess(),
                let content = try? await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true),
@@ -69,13 +69,13 @@ struct WindowChecks {
             editor.insertText("{", replacementRange: editor.selectedRange())
             check(controller.hasUnsavedChanges, "native text changes mark the document edited")
             editor.undoManager?.undo()
-            check(!controller.hasUnsavedChanges, "native Undo restores the loaded JSON")
+            check(!controller.hasUnsavedChanges, "native Undo restores the loaded configuration")
             editor.undoManager?.redo()
             check(controller.hasUnsavedChanges && editor.string == "{", "native Redo restores the draft")
             target.save()
             check(try! Data(contentsOf: url) == initial, "invalid native Save leaves disk unchanged")
             editor.selectAll(nil)
-            editor.insertText(#"{"capsLock":"hyper"}"#, replacementRange: editor.selectedRange())
+            editor.insertText(#"capsLock = "hyper""#, replacementRange: editor.selectedRange())
             let saveEvent = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .command, timestamp: 0, windowNumber: window.windowNumber, context: nil, characters: "s", charactersIgnoringModifiers: "s", isARepeat: false, keyCode: 1)!
             check(app.mainMenu!.performKeyEquivalent(with: saveEvent), "Command-S is handled by the app menu")
             try? await Task.sleep(for: .milliseconds(150))
@@ -92,10 +92,10 @@ struct WindowChecks {
             editor = textViews(window.contentView!).first { $0.isEditable }!
             window.makeFirstResponder(editor)
             editor.selectAll(nil)
-            editor.insertText("{}", replacementRange: editor.selectedRange())
+            editor.insertText("# defaults", replacementRange: editor.selectedRange())
             window.performClose(nil)
             try? await Task.sleep(for: .milliseconds(100))
-            check(window.attachedSheet != nil && window.isVisible, "closing dirty JSON asks before discarding")
+            check(window.attachedSheet != nil && window.isVisible, "closing a dirty configuration asks before discarding")
             if let sheet = window.attachedSheet { window.endSheet(sheet, returnCode: .alertFirstButtonReturn) }
             try? await Task.sleep(for: .milliseconds(200))
             check(controller.hasUnsavedChanges && window.isVisible, "Keep Editing preserves draft and window")
