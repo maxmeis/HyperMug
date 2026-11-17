@@ -498,7 +498,7 @@ public func encodeConfig(_ config: AppConfig, schemaURL: URL? = nil, includeEmpt
     encoder.userInfo[emptyKeysKey] = includeEmptyKeys
     if let schemaURL { encoder.userInfo[schemaReferenceKey] = schemaURL.absoluteString }
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-    // Encoding plain strings/bools cannot fail.
+    // App-created models contain finite numbers and Codable value types.
     var data = try! encoder.encode(config)
     data.append(0x0A)
     return data

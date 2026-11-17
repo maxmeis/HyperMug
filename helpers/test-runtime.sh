@@ -14,3 +14,7 @@ swiftc -parse-as-library "${SWIFT_BASE_FLAGS[@]}" -module-name HyperMugNotificat
   Source/HyperMug/Sources/Platform/Logging.swift Source/HyperMug/Sources/Platform/DebugLog.swift \
   Source/HyperMug/PlatformTests/IssueNotificationTests.swift "$OUT/core/HyperMugCore.o" -o "$OUT/notification-checks"
 "$OUT/notification-checks"
+swiftc -parse-as-library "${SWIFT_BASE_FLAGS[@]}" -module-name HyperMugEditorChecks \
+  -I "$OUT/core" Source/HyperMug/Sources/App/ConfigurationEditor.swift \
+  Source/HyperMug/PlatformTests/ConfigurationEditorTests.swift "$OUT/core/HyperMugCore.o" -o "$OUT/editor-checks"
+"$OUT/editor-checks"

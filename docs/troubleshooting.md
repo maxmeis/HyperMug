@@ -23,7 +23,7 @@ Thumb-button remapping supports the MX Master 3S over Bluetooth. Do not run Logi
 
 ### Configuration error
 
-HyperMug keeps the last valid configuration when a file contains invalid JSON, an unsupported value, an invalid action, or a reference to a missing helper. Use the native notification’s **Open Configuration** action or **Configuration Error…** in the menu, fix the file, and save it again. HyperMug does not overwrite a non-empty invalid file. See [Configuration](configuration.md#validation-and-recovery).
+HyperMug keeps the last valid configuration when a file contains invalid JSON, an unsupported value, an invalid action, or a reference to a missing helper. Use the native notification’s **Open Configuration** action or **Configuration Error…** in the menu, repair the JSON in HyperMug, and save it again. HyperMug does not overwrite a non-empty invalid file. See [Configuration](configuration.md#validation-and-recovery).
 
 ### Shell action fails or times out
 
@@ -47,8 +47,8 @@ The menu's **Blocked by Secure Input** item opens a reusable status panel. It re
 
 ## Doctor and activity
 
-Doctor shows permissions, capture state, configuration errors, mouse actions, and swipe bindings. Checks update while its window is open. Conflicts lists possible overlaps with macOS gestures and other input apps. Unknown keys are schema errors; remove or correct them in the configuration file.
+Doctor opens the Overview page of the shared HyperMug window. It summarizes permissions, capture state, configuration errors and binding counts. Configuration edits the raw JSON file; Permissions, Conflicts and Activity diagnose the running setup. Checks update while its window is open. Conflicts lists possible overlaps with macOS gestures and other input apps. Unknown keys are schema errors; remove or correct them in the configuration file.
 
-Activity shows detected swipes and shell exit status. It supports filtering and pause. Each launch keeps the last session as `previous.log` beside `debug.log`. Dev logs use `~/Library/Logs/HyperMug Dev/`. Typed keys and command contents are not written to these files.
+Activity shows detected swipes, shell action IDs and failure statuses; successful actions send no failure notice. It supports filtering and pause. Each launch keeps the last session as `previous.log` beside `debug.log`. Dev logs use `~/Library/Logs/HyperMug Dev/`. Typed keys and command contents are not written to these files.
 
 In Meh/Hyper mode, HyperMug clears the macOS Caps Lock latch and strips Caps Lock flags from key events. Shift keeps its normal function. Default mode leaves Caps Lock unchanged.

@@ -31,7 +31,9 @@ The layer rules use `make check-layers`:
 - `Source/HyperMug/Sources/App`: native UI and composition root.
 - `Source/HyperMug/Tests`: Core tests.
 
-`make test-runtime` runs actual subprocess isolation/exit/timeout/cleanup checks and a fake native-notification delivery adapter, without requesting macOS notification permissions or launching HyperMug.
+`make test-runtime` runs actual subprocess isolation/exit/timeout/cleanup checks and fake native-notification delivery and in-app JSON-editor model adapters, without requesting macOS notification permissions or launching HyperMug.
+
+`make test-window` opens an isolated native window fixture on a logged-in Mac. It tests window reuse, resizing, raw JSON editing, Undo/Redo, Command-S, invalid saves and discard confirmation with a temporary file and no input engine or permission requests. It is intentionally excluded from headless CI. Optional `HYPERMUG_TEST_CAPTURE_DIRECTORY=/tmp/hypermug-ui-evidence make test-window` captures only the fixture window, using existing Screen Recording permission; it never requests that permission.
 
 `make test` requires 100% executable-line coverage. `make compile-check` type-checks the app. `make test-release` checks release metadata and publication with temporary repositories. `make check-automation` and `make check-website` check repository automation and website assets. CI and Git hooks use these Makefile targets.
 

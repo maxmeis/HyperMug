@@ -120,6 +120,7 @@ func configStoreTests() {
     watcherLifecycleTests()
     bundledSchemaStoreTests()
     schemaMigrationRaceTests()
+    documentSaveTests()
 }
 
 // MARK: - start
@@ -675,5 +676,64 @@ private func schemaMigrationRaceTests() {
         expectEqual(try? FileManager.default.destinationOfSymbolicLink(atPath: h.url.path), target.path, "schema migration preserves dotfiles symlink")
         expectEqual(h.store.config, hyperConfig)
         expect((try? String(contentsOf: target, encoding: .utf8))?.contains(schema.absoluteString) == true)
+    }
+}
+
+
+private func documentSaveTests() {
+    do {
+        let h = Harness(customIO: true)
+        h.put(hyperJSON)
+        h.store.start()
+        let before = try! h.store.readDocument()
+        let edit = Data(#"{"capsLock":"default"}"#.utf8)
+        try! h.store.saveDocument(edit, replacing: before)
+        expectEqual(h.store.config.capsLock, .default, "the editor saves through the running store")
+        expectEqual(try! h.store.readDocument(), edit, "raw formatting survives without schema migration")
+        expectEqual(h.changes.count, 2, "save applies once")
+        for invalid in ["", "{", #"{"capsLock":"typo"}"#] {
+            do { try h.store.saveDocument(Data(invalid.utf8), replacing: edit); expect(false) }
+            catch { expectEqual(try! h.store.readDocument(), edit, "invalid drafts never replace disk") }
+        }
+        h.put(hyperJSON + "\n")
+        do { try h.store.saveDocument(edit, replacing: edit); expect(false) }
+        catch { expectEqual(h.fileText, hyperJSON + "\n", "external edits win a stale Save") }
+        h.failWrite = true
+        do { try h.store.saveDocument(edit, replacing: try h.store.readDocument()); expect(false) }
+        catch { expectEqual(h.store.config.capsLock, .default, "write failure cannot apply a draft") }
+        h.failWrite = false
+        try! FileManager.default.removeItem(at: h.url)
+        expectEqual(try! h.store.readDocument(), nil)
+        try! h.store.saveDocument(edit, replacing: nil)
+        expectEqual(try! h.store.readDocument(), edit, "an explicitly absent baseline can be recreated")
+    }
+    do {
+        let schema = URL(fileURLWithPath: "/Applications/HyperMug.app/Contents/Resources/hypermug.schema.json")
+        let h = Harness(schemaURL: schema)
+        h.prepareDir()
+        let target = h.root.appendingPathComponent("editor-dotfiles.json")
+        try! Data(hyperJSON.utf8).write(to: target)
+        try! FileManager.default.createSymbolicLink(at: h.url, withDestinationURL: target)
+        h.store.start()
+        let baseline = try! h.store.readDocument()
+        try! h.store.saveDocument(Data(#"{"capsLock":"default"}"#.utf8), replacing: baseline)
+        expectEqual(try? FileManager.default.destinationOfSymbolicLink(atPath: h.url.path), target.path)
+        let saved = try! JSONSerialization.jsonObject(with: Data(contentsOf: target)) as! [String: Any]
+        expectEqual(saved["$schema"] as? String, schema.absoluteString, "editor writes the real bundle reference")
+    }
+    do {
+        let h = Harness()
+        h.put("{")
+        h.store.start()
+        try! FileManager.default.removeItem(at: h.url)
+        h.store.pollFallback()
+        h.externalEdit("{")
+        expectEqual(h.errors.count, 2, "recreating an invalid file reports a new error after absence cleared it")
+    }
+    do {
+        let directory = makeTempDir()
+        let h = Harness(configURL: directory)
+        do { _ = try h.store.readDocument(); expect(false) }
+        catch { expect(true, "unreadable disk cannot be mistaken for an absent file") }
     }
 }

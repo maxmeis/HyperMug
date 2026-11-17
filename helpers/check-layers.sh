@@ -150,11 +150,20 @@ done < <(swift_files Tests)
 # Each adapter check has its own entrypoint and an explicit compilation target.
 while IFS= read -r f; do
   case "$f" in
-    PlatformTests/ShellExecutorTests.swift|PlatformTests/IssueNotificationTests.swift) ;;
+    PlatformTests/ShellExecutorTests.swift|PlatformTests/IssueNotificationTests.swift|PlatformTests/ConfigurationEditorTests.swift) ;;
     *) violation "$f" 1 "adapter check needs an explicit test-runtime.sh compilation target" ;;
   esac
   check_imports "$f" "Foundation Darwin UserNotifications HyperMugCore" "HyperMugCore"
 done < <(swift_files PlatformTests)
+
+# Optional interactive tests are isolated from both the Core gate and headless CI.
+while IFS= read -r f; do
+  case "$f" in
+    WindowTests/main.swift) ;;
+    *) violation "$f" 1 "window check needs an explicit test-window.sh compilation target" ;;
+  esac
+  check_imports "$f" "AppKit HyperMugCore ScreenCaptureKit" "HyperMugCore"
+done < <(swift_files WindowTests)
 
 # ---- 6. No selftest remnants -----------------------------------------------------------------
 if [ -d Sources ]; then

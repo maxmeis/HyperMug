@@ -35,11 +35,8 @@ private final class HyperMugRuntime {
         updateChecker = UpdateChecker()
         statusItem = StatusItemController(store: store, engine: engine, updateChecker: updateChecker, trackpad: trackpad)
         notifications = IssueNotifications()
-        notifications.openConfiguration = { [weak store] in
-            guard let store else { return }
-            store.createIfAbsent()
-            EditorLauncher.open(store.url)
-        }
+        notifications.openConfiguration = { [statusItem] in statusItem.showConfiguration() }
+        PrivilegeActions.confirmRelaunch = { [statusItem] in statusItem.confirmDiscard($0) }
         ActionRunner.onIssue = { [notifications] in notifications.report($0) }
 
         tap.handler = { [engine] in engine.handleTapEvent($0) }
@@ -96,6 +93,9 @@ private final class HyperMugRuntime {
     }
 
     func showDoctor() { statusItem.showDoctor() }
+    func showWindow() { statusItem.showWindow() }
+    var hasUnsavedConfiguration: Bool { statusItem.hasUnsavedConfiguration }
+    func confirmDiscard(_ reply: @escaping (Bool) -> Void) { statusItem.confirmDiscard(reply) }
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -108,12 +108,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if CommandLine.arguments.contains("--doctor") { runtime.showDoctor() }
     }
 
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let runtime, runtime.hasUnsavedConfiguration else { return .terminateNow }
+        runtime.confirmDiscard { sender.reply(toApplicationShouldTerminate: $0) }
+        return .terminateLater
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         runtime?.shutdown()
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        runtime?.showDoctor()
+        runtime?.showWindow()
         return true
     }
 }

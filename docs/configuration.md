@@ -1,6 +1,10 @@
 # Configuration
 
-HyperMug settings are edited only in `~/.config/hypermug.json`. **Settings…** (⌘,) opens it in your configured GUI editor or the default JSON app. Save in that editor to apply changes; atomic-save edits are supported. Doctor diagnoses settings and permissions but does not provide a second settings editor. The menu’s **Stay Awake** checkmark remains a session-only control.
+HyperMug stores settings only in `~/.config/hypermug.json`. **Settings…** (⌘,) opens the JSON editor inside HyperMug's single native window. **Doctor…** opens its Overview page; Configuration, Permissions, Conflicts and Activity share that same window. There is no second preferences form or separate settings app. The menu's **Stay Awake** checkmark remains a session-only control.
+
+Edit JSON directly, choose **Validate** to check without applying, and **Save** (⌘S) to validate, write atomically and apply. Standard copy/paste, undo/redo and Find (⌘F) work in the native text editor; smart quotes and text substitutions are disabled. **Reveal File** locates the actual document in Finder. You can also edit the same file with an external editor; saved external changes reload automatically, including atomic saves.
+
+An open clean editor follows external changes. An unsaved draft is never replaced by background refresh. If disk bytes changed since editing began, Save refuses to overwrite them. Copy your draft if needed, then use **Reload**; discarding a modified draft requires confirmation. Closing, quitting or restarting HyperMug also protects unsaved changes. Invalid drafts stay in the editor for repair and never replace the last valid file.
 
 ## Example
 
@@ -94,7 +98,7 @@ This example requires a `mission-control` helper in top-level `helpers`. Omitted
 
 Omit a button or swipe direction, or set it to `{}`, to leave it unmapped. Optional settings may be omitted to use their fallback values; `null`, unknown keys and invalid action values are errors. Empty action values such as `{"shell":""}` or `{"shortcut":[]}` are errors; an empty object is the explicit unassigned form. A mapped back/forward button is swallowed and its action runs once on press; thumb also runs once per press. Trackpad actions use the same action format.
 
-If JSON or the bundled schema rules fail, a shortcut is invalid, or a helper reference is missing, HyperMug keeps the last valid settings. It never overwrites a non-empty invalid file. A native notification offers **Open Configuration**; the menu also shows **Configuration Error…** while the file is invalid. Doctor activity records the validation path and reason. Fix and save the file to recover automatically. Renaming or deleting a helper requires updating every reference in the same save; names, including surrounding spaces, remain exact.
+If JSON or the bundled schema rules fail, a shortcut is invalid, or a helper reference is missing, HyperMug keeps the last valid settings. It never overwrites a non-empty invalid file. A native notification offers **Open Configuration**, opening the same in-app editor; the menu also shows **Configuration Error…** while the file is invalid. Doctor activity records the validation path and reason. Fix and save the file to recover automatically. Renaming or deleting a helper requires updating every reference in the same save; names, including surrounding spaces, remain exact.
 
 ## Shell failures and notifications
 
@@ -102,4 +106,4 @@ A command that cannot start, exits nonzero, or exceeds `shellTimeoutSeconds` tri
 
 Notifications ask for macOS permission when the first problem occurs. Denial is respected: errors still appear in Doctor activity/logs, and invalid configuration remains visible in the menu. Repeated notifications are limited to one per category every 30 seconds; configuration recovery resets that category. Success is silent. Native notification text and shell activity logs contain status and an action ID, never command contents, environment values or shell output. Configuration validation logs can include setting names; review them before sharing.
 
-**Settings…** uses `$EDITOR` when it identifies a GUI editor, otherwise the default `.json` app. It never launches an interactive terminal editor inside the menu-bar app. There is no separate Settings window or Save/Cancel workflow.
+The in-app editor writes through the running configuration store, so only the actual JSON document persists settings. Save checks schema/action validity and compares the disk bytes with the opened baseline before replacing a symlink target atomically. Editing a draft alone has no effect on input handling or permissions.

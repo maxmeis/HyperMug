@@ -20,7 +20,7 @@ Stable Homebrew installation requires a future compiled Stable release and succe
 - **Trackpad swipes:** bind three- and four-finger swipes to shortcuts, shell commands, or shared named helpers.
 - **Mouse remapping:** map back/forward buttons and the MX Master 3S thumb button to the same actions, and invert wheel scrolling.
 - **Secure Input status:** see when macOS blocks keyboard monitoring and which app holds Secure Input.
-- **File-based settings:** **Settings…** (⌘,) opens your JSON configuration; saved edits reload automatically, with native notifications for invalid settings or failed shell actions.
+- **One native window:** **Settings…** (⌘,) opens the JSON editor alongside overview, permissions, conflicts and activity. Validate and save in HyperMug; the JSON file stays the single source of settings. Native notifications report invalid configuration and failed shell actions.
 
 HyperMug requires macOS Accessibility and Input Monitoring permissions for its input features. The app explains each permission in **Doctor… → Permissions**. See [Permissions and troubleshooting](docs/troubleshooting.md).
 

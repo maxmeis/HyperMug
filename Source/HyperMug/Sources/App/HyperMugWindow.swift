@@ -2,12 +2,13 @@ import AppKit
 import SwiftUI
 import HyperMugCore
 
-private enum DoctorPage: String, CaseIterable, Identifiable {
-    case overview = "Overview", permissions = "Permissions", conflicts = "Conflicts", activity = "Activity"
+private enum AppPage: String, CaseIterable, Identifiable {
+    case overview = "Overview", configuration = "Configuration", permissions = "Permissions", conflicts = "Conflicts", activity = "Activity"
     var id: String { rawValue }
     var symbol: String {
         switch self {
-        case .overview: return "stethoscope"
+        case .overview: return "square.grid.2x2"
+        case .configuration: return "curlybraces"
         case .permissions: return "hand.raised"
         case .conflicts: return "arrow.triangle.branch"
         case .activity: return "waveform.path"
@@ -15,7 +16,10 @@ private enum DoctorPage: String, CaseIterable, Identifiable {
     }
 }
 
-private final class DoctorModel: ObservableObject {
+@MainActor
+private final class AppWindowModel: ObservableObject {
+    @Published var page: AppPage? = .overview
+    let editor: ConfigurationEditorModel
     @Published var permissions: [DoctorCheck] = []
     @Published var conflicts: [DoctorCheck] = []
     @Published var overview: [DoctorCheck] = []
@@ -29,10 +33,12 @@ private final class DoctorModel: ObservableObject {
     init(store: ConfigStore, capture: TrackpadCapture) {
         self.store = store
         self.capture = capture
+        editor = ConfigurationEditorModel(store: store)
     }
 
     func refresh() {
         config = store.config
+        editor.refreshFromDisk()
         permissions = doctorPermissionChecks(accessibility: accessibilityTrusted(),
             inputMonitoring: inputMonitoringAccess() == .granted)
         conflicts = doctorConflictChecks(preferences: DoctorReader.preferences(),
@@ -55,15 +61,15 @@ private final class DoctorModel: ObservableObject {
         case .pointer:
             NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.universalaccess?Mouse")!)
         case .config:
-            store.createIfAbsent()
-            EditorLauncher.open(store.url)
+            if !editor.draft.isLoaded { editor.reload() }
+            page = .configuration
         }
     }
 
     func copyReport() {
         refresh()
         let checks = permissions + overview + conflicts
-        let report = ["HyperMug Doctor", "Checked: \(updated.formatted())", summary.title,
+        let report = ["HyperMug Diagnostics", "Checked: \(updated.formatted())", summary.title,
             checks.map { "\($0.title): \($0.state.rawValue)\n\($0.detail)" }.joined(separator: "\n\n"),
             "Recent activity\n\(logs)"].joined(separator: "\n\n")
         NSPasteboard.general.clearContents()
@@ -71,23 +77,32 @@ private final class DoctorModel: ObservableObject {
     }
 }
 
-final class DoctorWindowController: NSObject, NSWindowDelegate {
-    private let model: DoctorModel
+@MainActor
+final class HyperMugWindowController: NSObject, NSWindowDelegate {
+    private let model: AppWindowModel
     private var window: NSWindow?
     private var timer: Timer?
+    private var confirmingDiscard = false
+    var hasUnsavedChanges: Bool { model.editor.draft.isModified }
 
     init(store: ConfigStore, capture: TrackpadCapture) {
-        model = DoctorModel(store: store, capture: capture)
+        model = AppWindowModel(store: store, capture: capture)
+        super.init()
+        model.editor.onChange = { [weak self] in self?.window?.isDocumentEdited = self?.hasUnsavedChanges ?? false }
     }
 
-    func show() {
-        DebugLog.write("Doctor show requested")
+    func show(configuration: Bool? = nil) {
+        if configuration == true { model.perform(.config) }
+        else if configuration == false { model.page = .overview }
+        DebugLog.write("HyperMug window requested")
         NSApp.setActivationPolicy(.regular)
         let panel = window ?? makeWindow()
         window = panel
         model.refresh()
         timer?.invalidate()
-        let timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in self?.model.refresh() }
+        let timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.model.refresh() }
+        }
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
         RunLoop.main.perform(inModes: [.common]) {
@@ -95,8 +110,41 @@ final class DoctorWindowController: NSObject, NSWindowDelegate {
             panel.deminiaturize(nil)
             panel.makeKeyAndOrderFront(nil)
             panel.orderFrontRegardless()
-            DebugLog.write("Doctor window visible=\(panel.isVisible) frame=\(panel.frame)")
+            DebugLog.write("HyperMug window visible=\(panel.isVisible) frame=\(panel.frame)")
         }
+    }
+
+    func saveConfiguration() {
+        show(configuration: true)
+        model.editor.save()
+    }
+
+    func confirmDiscard(_ completion: @escaping (Bool) -> Void) {
+        guard hasUnsavedChanges else { completion(true); return }
+        guard !confirmingDiscard else { completion(false); return }
+        show(configuration: true)
+        guard let window else { completion(false); return }
+        confirmingDiscard = true
+        let alert = NSAlert()
+        alert.messageText = "Discard unsaved configuration changes?"
+        alert.informativeText = "Your changes have not been saved to the JSON file."
+        alert.addButton(withTitle: "Keep Editing")
+        alert.addButton(withTitle: "Discard Changes")
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard let self else { completion(false); return }
+            self.confirmingDiscard = false
+            let discard = response == .alertSecondButtonReturn
+            if discard { self.model.editor.discardChanges() }
+            completion(discard)
+        }
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard hasUnsavedChanges else { return true }
+        // The sheet has already confirmed the discard. Close directly rather than asking
+        // performClose to validate again while the ending sheet is still attached.
+        confirmDiscard { [weak self] discard in if discard { self?.window?.close() } }
+        return false
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -107,137 +155,135 @@ final class DoctorWindowController: NSObject, NSWindowDelegate {
 
     private func makeWindow() -> NSWindow {
         let panel = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 880, height: 650),
-            styleMask: [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView],
+            styleMask: [.titled, .closable, .resizable, .miniaturizable],
             backing: .buffered, defer: false)
-        panel.title = "\(AppIdentity.appName) Doctor"
-        panel.subtitle = AppIdentity.appName
+        panel.identifier = NSUserInterfaceItemIdentifier("hypermug.workspace")
+        panel.title = AppIdentity.appName
+        panel.subtitle = "Configuration and diagnostics"
         panel.titlebarAppearsTransparent = true
         panel.toolbarStyle = .unified
         panel.isReleasedWhenClosed = false
         panel.minSize = NSSize(width: 780, height: 540)
-        panel.setFrameAutosaveName("HyperMugDoctor")
+        panel.setFrameAutosaveName("HyperMugWorkspace")
         panel.delegate = self
         panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
-        panel.contentViewController = NSHostingController(rootView: DoctorView(model: model))
+        let hosting = NSHostingController(rootView: HyperMugView(model: model))
+        hosting.sizingOptions = []
+        panel.contentViewController = hosting
         panel.setContentSize(NSSize(width: 880, height: 650))
         panel.center()
         return panel
     }
 }
 
-private struct DoctorView: View {
-    @ObservedObject var model: DoctorModel
-    @State private var page: DoctorPage? = .overview
+private struct HyperMugView: View {
+    @ObservedObject var model: AppWindowModel
     @State private var search = ""
     @State private var paused = false
     @State private var pausedLogs = ""
     @State private var copied = false
 
     var body: some View {
-        NavigationSplitView {
-            List(DoctorPage.allCases, selection: $page) { page in
-                Label(page.rawValue, systemImage: page.symbol).tag(page)
-                    .padding(.vertical, 4)
-            }
-            .listStyle(.sidebar)
-            .navigationSplitViewColumnWidth(min: 160, ideal: 180, max: 210)
-            .safeAreaInset(edge: .bottom) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(AppIdentity.appName).font(.headline)
-                    Label("Checks update every 2 seconds", systemImage: "arrow.clockwise")
-                        .font(.caption).foregroundStyle(.secondary)
-                }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
-            }
-        } detail: {
+        HSplitView {
             VStack(spacing: 0) {
-                switch page ?? .overview {
-                case .overview: overview
-                case .permissions: permissions
-                case .conflicts: conflicts
-                case .activity: activity
-                }
-                Divider()
-                HStack {
-                    Text("Checked \(model.updated.formatted(date: .omitted, time: .standard))")
-                    Spacer()
-                    Button("Check Again", action: model.refresh).buttonStyle(.link)
-                }
-                .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 24).padding(.vertical, 10)
-            }
-            .navigationTitle((page ?? .overview).rawValue)
-            .toolbar {
-                ToolbarItemGroup {
-                    Button {
-                        model.copyReport()
-                        copied = true
-                    } label: {
-                        Label(copied ? "Copied" : "Copy Report", systemImage: copied ? "checkmark" : "doc.on.doc")
+                HStack(spacing: 10) {
+                    Image(nsImage: NSImage(named: NSImage.applicationIconName) ?? NSImage())
+                        .resizable().frame(width: 32, height: 32).accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(AppIdentity.appName).font(.headline)
+                        Text(bundleVersion).font(.caption).foregroundStyle(.secondary)
                     }
-                    .help("Copy diagnostic checks and recent activity")
-                    Button { model.perform(.config) } label: { Label("Open Configuration", systemImage: "doc.text") }
-                        .help("Open the HyperMug configuration")
+                    Spacer(minLength: 0)
+                }.padding(16)
+                List(AppPage.allCases, selection: $model.page) { page in
+                    Label(page.rawValue, systemImage: page.symbol).tag(page).padding(.vertical, 5)
+                }.listStyle(.sidebar)
+                Divider()
+                Button {
+                    model.copyReport()
+                    copied = true
+                } label: {
+                    Label(copied ? "Copied" : "Copy Diagnostics", systemImage: copied ? "checkmark" : "doc.on.doc")
                 }
+                .help("Copy diagnostic checks and recent activity, excluding your JSON draft")
+                .padding(16)
             }
-            .onChange(of: page) { _, _ in copied = false }
+            .frame(minWidth: 180, idealWidth: 190, maxWidth: 230, maxHeight: .infinity)
+            VStack(spacing: 0) {
+                if model.page != .configuration {
+                    HStack {
+                        Text((model.page ?? .overview).rawValue).font(.title2.bold())
+                        Spacer()
+                        Button("Edit JSON", systemImage: "curlybraces") { model.perform(.config) }
+                    }.padding(20)
+                    Divider()
+                }
+                Group {
+                    switch model.page ?? .overview {
+                    case .overview: overview
+                    case .configuration: ConfigurationEditorView(model: model.editor)
+                    case .permissions: permissions
+                    case .conflicts: conflicts
+                    case .activity: activity
+                    }
+                }.frame(maxWidth: .infinity, maxHeight: .infinity)
+                if model.page != .configuration {
+                    Divider()
+                    HStack {
+                        Text("Checked \(model.updated.formatted(date: .omitted, time: .standard))")
+                        Spacer()
+                        Button("Check Again", action: model.refresh).buttonStyle(.link)
+                    }
+                    .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 24).padding(.vertical, 10)
+                }
+            }.frame(minWidth: 560, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onChange(of: model.page) { _, _ in copied = false }
+    }
+
+    private var bundleVersion: String {
+        let info = Bundle.main.infoDictionary ?? [:]
+        let version = info["CFBundleShortVersionString"] as? String ?? "Local"
+        let channel = info["HyperMugReleaseChannel"] as? String ?? "local"
+        return "\(version) · \(channel.capitalized)"
     }
 
     private var overview: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                HStack(alignment: .top, spacing: 16) {
-                    stateIcon(model.summary.state).font(.system(size: 38))
-                    VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 20) {
+                HStack(alignment: .top, spacing: 14) {
+                    stateIcon(model.summary.state).font(.system(size: 30))
+                    VStack(alignment: .leading, spacing: 5) {
                         Text(model.summary.title).font(.title2.bold())
                         Text(model.summary.detail).foregroundStyle(.secondary)
                     }
-                }.padding(.vertical, 8)
-                GroupBox {
+                }
+                GroupBox("Your configuration") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        ForEach(Array(model.overview.filter { $0.title == "Configuration" }.enumerated()), id: \.offset) { _, check in
+                            checkRow(check)
+                        }
+                        Divider()
+                        LabeledContent("Mouse bindings", value: "\([model.config.mouse.buttons.back, model.config.mouse.buttons.forward, model.config.mouse.buttons.thumb].compactMap { $0 }.count) configured")
+                        LabeledContent("Swipe bindings", value: "\([3, 4].flatMap { fingers in SwipeDirection.allCases.compactMap { model.config.trackpad.action(fingers: fingers, direction: $0) } }.count) configured")
+                        LabeledContent("Shell deadline", value: "\(model.config.shellTimeoutSeconds.formatted()) seconds")
+                        Text("Edit the JSON in Configuration. Save applies validated settings; the menu’s Stay Awake checkbox controls only this session.")
+                            .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }.padding(10)
+                }
+                GroupBox("Input and permissions") {
                     VStack(spacing: 0) {
-                        ForEach(Array((model.permissions + model.overview).enumerated()), id: \.offset) { index, check in
+                        ForEach(Array((model.permissions + model.overview.filter { $0.title != "Configuration" }).enumerated()), id: \.offset) { index, check in
                             if index > 0 { Divider() }
                             checkRow(check)
                         }
                     }
                 }
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Mouse controls").font(.headline)
-                    GroupBox {
-                        VStack(spacing: 10) {
-                            LabeledContent("Back button", value: doctorActionLabel(model.config.mouse.buttons.back))
-                            LabeledContent("Forward button", value: doctorActionLabel(model.config.mouse.buttons.forward))
-                            LabeledContent("Thumb button", value: doctorActionLabel(model.config.mouse.buttons.thumb))
-                            Divider()
-                            LabeledContent("Vertical scroll", value: model.config.mouse.invertScroll.vertical ? "Reversed" : "System direction")
-                            LabeledContent("Horizontal scroll", value: model.config.mouse.invertScroll.horizontal ? "Reversed" : "System direction")
-                        }.font(.callout).padding(8)
-                    }
-                    Button("Edit Configuration") { model.perform(.config) }
+                HStack {
+                    Button("Review Conflicts", systemImage: "arrow.triangle.branch") { model.page = .conflicts }
+                    Button("View Activity", systemImage: "waveform.path") { model.page = .activity }
                 }
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Swipe controls").font(.headline)
-                    Text("Lift all fingers between swipes. Activity shows each detected swipe and its command result.")
-                        .font(.callout).foregroundStyle(.secondary)
-                    GroupBox {
-                        VStack(alignment: .leading, spacing: 14) {
-                            ForEach([3, 4], id: \.self) { fingers in
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text("\(fingers)-finger swipes").font(.subheadline.bold())
-                                    ForEach(SwipeDirection.allCases, id: \.rawValue) { direction in
-                                        HStack {
-                                            Text(direction.rawValue.capitalized).frame(width: 48, alignment: .leading)
-                                                .foregroundStyle(.secondary)
-                                            Text(doctorActionLabel(model.config.trackpad.action(fingers: fingers, direction: direction)))
-                                            Spacer()
-                                        }.font(.callout)
-                                    }
-                                }
-                                if fingers == 3 { Divider() }
-                            }
-                        }.padding(8).frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                }
-                Button("Review Possible Conflicts") { page = .conflicts }
             }.padding(24).frame(maxWidth: .infinity, alignment: .leading)
         }
     }
@@ -279,7 +325,7 @@ private struct DoctorView: View {
     private var activity: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Test a swipe").font(.title2.bold())
-            Text("Look for “swipe recognized”, then “shell action exited status=0”. A nonzero status means that the command failed.")
+            Text("Look for a recognized swipe and a shell action ID. Failures report an exit status or deadline; successful commands stay quiet.")
                 .foregroundStyle(.secondary)
             HStack {
                 TextField("Filter activity", text: $search)
@@ -321,10 +367,21 @@ private struct DoctorView: View {
             }
             Spacer(minLength: 8)
             if check.action != .none {
-                Button(check.action == .config ? "Open Configuration" : "Open System Settings") { model.perform(check.action) }
+                Button(actionTitle(check.action)) { model.perform(check.action) }
                     .controlSize(.small)
             }
         }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func actionTitle(_ action: DoctorAction) -> String {
+        switch action {
+        case .config: return "Edit JSON"
+        case .accessibility: return "Allow Accessibility"
+        case .inputMonitoring: return "Allow Input Monitoring"
+        case .trackpad: return "Trackpad Settings"
+        case .pointer: return "Pointer Settings"
+        case .none: return ""
+        }
     }
 
     @ViewBuilder private func stateIcon(_ state: DoctorState) -> some View {

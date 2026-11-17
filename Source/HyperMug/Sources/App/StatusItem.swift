@@ -3,6 +3,7 @@ import HyperMugCore
 
 /// Menu bar icon. Clicking opens the native menu; its Stay Awake checkbox toggles Caffeine for the
 /// running session (never written to the config). All click decisions live in Core `StatusLogic`.
+@MainActor
 final class StatusItemController: NSObject {
     private let store: ConfigStore
     private let engine: Engine
@@ -16,7 +17,7 @@ final class StatusItemController: NSObject {
     private var secureTimer: Timer?
     private var doctorObserver: NSObjectProtocol?
     private let trackpad: TrackpadCapture
-    private lazy var doctor = DoctorWindowController(store: store, capture: trackpad)
+    private lazy var appWindow = HyperMugWindowController(store: store, capture: trackpad)
     /// Details window; each refresh re-polls so "seen since" stays owned by this controller.
     private lazy var secureWindow = SecureInputWindowController { [weak self] in
         self?.pollSecureInput()
@@ -29,8 +30,8 @@ final class StatusItemController: NSObject {
         self.trackpad = trackpad
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         super.init()
-        doctorObserver = NotificationCenter.default.addObserver(forName: .showHyperMugDoctor, object: nil, queue: .main) { [weak self] _ in self?.showDoctor() }
-        ApplicationMenu.install(settingsTarget: self, settingsAction: #selector(openSettings), doctorAction: #selector(showDoctor))
+        doctorObserver = NotificationCenter.default.addObserver(forName: .showHyperMugDoctor, object: nil, queue: .main) { [weak self] _ in MainActor.assumeIsolated { self?.showDoctor() } }
+        ApplicationMenu.install(settingsTarget: self, settingsAction: #selector(openSettings), doctorAction: #selector(showDoctor), saveAction: #selector(saveConfiguration))
 
         let settings = NSMenuItem(title: MenuText.settings, action: #selector(openSettings), keyEquivalent: ",")
         settings.keyEquivalentModifierMask = [.command]
@@ -63,7 +64,7 @@ final class StatusItemController: NSObject {
             button.action = #selector(clicked)
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
-        let timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in self?.pollSecureInput() }
+        let timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.pollSecureInput() } }
         RunLoop.main.add(timer, forMode: .common)
         secureTimer = timer
         pollSecureInput()
@@ -135,11 +136,15 @@ final class StatusItemController: NSObject {
     }
 
     @objc private func openSettings() {
-        store.createIfAbsent()
-        EditorLauncher.open(store.url)
+        showConfiguration()
     }
 
-    @objc func showDoctor() { doctor.show() }
+    func showConfiguration() { appWindow.show(configuration: true) }
+    @objc func showDoctor() { appWindow.show(configuration: false) }
+    func showWindow() { appWindow.show() }
+    @objc private func saveConfiguration() { appWindow.saveConfiguration() }
+    var hasUnsavedConfiguration: Bool { appWindow.hasUnsavedChanges }
+    func confirmDiscard(_ reply: @escaping (Bool) -> Void) { appWindow.confirmDiscard(reply) }
 
     @objc private func quit() {
         NSApp.terminate(nil)

@@ -31,7 +31,7 @@ public struct ConfigStoreEnvironment {
 }
 
 /// Owns the config: first-run creation, schema-reference migration and live reload.
-/// Existing settings are never replaced; a migration changes only `$schema`.
+/// Automatic migration changes only `$schema`; explicit editor saves compare the original bytes.
 /// Main thread only.
 public final class ConfigStore {
     public let url: URL
@@ -110,6 +110,31 @@ public final class ConfigStore {
         ensureFileWatcher()
     }
 
+    /// Read the actual document, including invalid JSON so it can be repaired in the app.
+    public func readDocument() throws -> Data? {
+        switch readDisk() {
+        case .data(let data): return data
+        case .absent: return nil
+        case .unreadable(let reason): throw ConfigError(reason: reason)
+        }
+    }
+
+    /// Save raw JSON after validation and a byte comparison against the editor's baseline.
+    /// The same store applies the result; the UI has no separate preferences representation.
+    public func saveDocument(_ data: Data, replacing expected: Data?) throws {
+        guard !isBlankConfigData(data) else { throw ConfigError(reason: "Configuration cannot be empty. Use {} for default settings.") }
+        let decoded = try validateConfigDocument(data).get()
+        let linked = try env.schemaURL.map { try configDataLinkingSchema(data, schemaURL: $0) } ?? data
+        guard try readDocument() == expected else {
+            throw ConfigError(reason: "The file changed on disk. Copy your draft if needed, then reload before saving.")
+        }
+        try env.writeData(linked, url.resolvingSymlinksInPath())
+        noteValid(linked)
+        lastStamp = stamp()
+        ensureFileWatcher()
+        adopt(decoded.config, emitChange: true)
+    }
+
     /// Called by the 2 s timer: catches watcher misses and re-arms lost watchers.
     public func pollFallback() {
         guard started else { return }
@@ -176,7 +201,7 @@ public final class ConfigStore {
         }
     }
 
-    /// Loads the file. The only write it ever does is filling a file that is still empty with the defaults.
+    /// Reload never replaces preferences: it links schema metadata and initializes only blank files.
     private func reload(emitChange: Bool = true) {
         debounce?.cancel()
         debounce = nil
@@ -186,6 +211,7 @@ public final class ConfigStore {
             // Keep the last good config; recreated by `createIfAbsent`.
             lastBytes = nil
             error = nil
+            lastAlertedReason = nil
             env.log(.info, "config file absent; keeping current settings")
         case .unreadable(let reason):
             noteInvalid(nil, ConfigError(reason: reason))

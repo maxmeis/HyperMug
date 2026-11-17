@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
-.PHONY: help dev check-content check-automation check-website triage setup install-tools ci-tools hooks signing build build-production run restart test test-release test-runtime check-shell check-layers compile-check check release publish validate-release sparkle-keys lint-commit lint-commits clean
+.PHONY: help dev check-content check-automation check-website triage setup install-tools ci-tools hooks signing build build-production run restart test test-release test-runtime test-window check-shell check-layers compile-check check release publish validate-release sparkle-keys lint-commit lint-commits clean
 
 help:
 	@printf '%s\n' \
@@ -13,7 +13,8 @@ help:
 	  'make check             Run all checks' \
 	  'make test              Run Core tests with the coverage gate' \
 	  'make test-release      Run release integration tests' \
-	  'make test-runtime      Check shell supervision and notification delivery' \
+	  'make test-runtime      Check shell supervision, notifications and JSON editing' \
+	  'make test-window       Open an isolated native UI test window (no input capture)' \
 	  'make compile-check     Type-check the app' \
 	  'make signing           Create the persistent local signing identity' \
 	  'make sparkle-keys      Open the Sparkle signing key tool' \
@@ -53,6 +54,9 @@ test:
 
 test-runtime:
 	./helpers/test-runtime.sh
+
+test-window:
+	./helpers/test-window.sh
 
 test-release:
 	GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s helpers -p 'test_release*.py'
