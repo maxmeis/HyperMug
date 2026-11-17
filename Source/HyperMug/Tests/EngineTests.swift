@@ -26,6 +26,11 @@ private final class FakePorts: EnginePorts {
     var logs: [String] = []
     var errors: [String] = []
     var debugLines: [String] = []
+    /// Simulated system Caps Lock latch. `staleReads` makes that many read-backs report "unlocked" while latched,
+    /// like an IOHIDSystem lock state that lags the event stream.
+    var latched = false
+    var staleReads = 0
+    var pendingChecks: [Int] = []
 
     func count(_ call: String) -> Int { calls.filter { $0 == call }.count }
     func count(prefix: String) -> Int { calls.filter { $0.hasPrefix(prefix) }.count }
@@ -50,7 +55,17 @@ private final class FakePorts: EnginePorts {
     func shutdownTrackpad() { calls.append("shutdownTrackpad") }
     func run(_ action: ButtonAction) { ran.append(action) }
     func postEscape() { calls.append("escape") }
-    func clearCapsLock() { calls.append("clearCapsLock") }
+    func clearCapsLock(force: Bool) -> Bool {
+        calls.append(force ? "clearCapsLock:force" : "clearCapsLock:read")
+        if force { latched = false; return true }
+        if staleReads > 0 { staleReads -= 1; return false }
+        defer { latched = false }
+        return latched
+    }
+    func scheduleCapsLatchCheck(afterMilliseconds: Int, attempt: Int) {
+        calls.append("check:\(afterMilliseconds):\(attempt)")
+        pendingChecks.append(attempt)
+    }
     func log(_ level: LogLevel, _ message: String) {
         if level == .error { errors.append(message) } else { logs.append(message) }
     }
@@ -84,6 +99,7 @@ func engineTests() {
     capsMonitoringTests()
     swallowedButtonTests()
     capsEventTests()
+    capsLatchTests()
     tapEventTests()
     stateChangeTests()
     shutdownTests()
@@ -412,11 +428,11 @@ private func capsEventTests() {
     // Short tap sends Esc once; the same press with a typed key does not.
     var (engine, ports) = makeEngine()
     engine.apply(config(caps: .meh))
-    expect(ports.count("clearCapsLock") > 0, "modifier mode clears an existing system latch")
+    expect(ports.count(prefix: "clearCapsLock") > 0, "modifier mode clears an existing system latch")
     ports.clear()
     let latched = engine.handleTapEvent(TapEvent(type: .flagsChanged, keyCode: 57, flags: .maskAlphaShift))
     expect(!latched.pass)
-    expectEqual(ports.count("clearCapsLock"), 1)
+    expectEqual(ports.calls, ["clearCapsLock:force", "check:\(capsLatchCheckDelayMs):1"])
     engine.capsKeyChanged(down: true, nowNanos: 0)
     engine.capsKeyChanged(down: false, nowNanos: 50 * ms)
     expectEqual(ports.count("escape"), 1)
@@ -477,6 +493,178 @@ private func capsEventTests() {
     expectEqual(ports.count(prefix: "install:"), 2)
     engine.capsKeyChanged(down: false, nowNanos: 10 * ms)
     expectEqual(ports.count("escape"), 0)
+}
+
+// MARK: - Caps Lock latch suppression
+
+/// Runs scheduled latch checks in order, as the main run loop would once their delay passes.
+private func runChecks(_ engine: Engine, _ ports: FakePorts) {
+    var budget = 1_000
+    while !ports.pendingChecks.isEmpty && budget > 0 {
+        budget -= 1
+        engine.capsLatchCheckDue(attempt: ports.pendingChecks.removeFirst())
+    }
+    expect(ports.pendingChecks.isEmpty, "latch checks terminate")
+}
+
+/// One physical Caps Lock press as macOS delivers it: HyperMug's HID monitor sees down and up, the system toggles
+/// its latch at some point relative to those callbacks, and the toggle's flagsChanged reaches the tap only while
+/// the tap is live. Every press toggles, which is the worst case (no activation delay rejects it).
+private enum TogglePoint { case beforeDown, afterDown, afterUp }
+
+private func press(_ engine: Engine, _ ports: FakePorts, at t: UInt64, holdMs: UInt64 = 10,
+                   toggle: TogglePoint, tapLive: Bool) {
+    func systemToggles() {
+        ports.latched.toggle()
+        guard tapLive else { return }
+        let event = engine.handleTapEvent(TapEvent(type: .flagsChanged, keyCode: 57, flags: ports.latched ? .maskAlphaShift : []))
+        expect(!event.pass, "the Caps Lock toggle never reaches apps")
+        expect(event.flags?.contains(.maskAlphaShift) != true, "no alpha-shift passes on")
+    }
+    if toggle == .beforeDown { systemToggles() }
+    engine.capsKeyChanged(down: true, nowNanos: t)
+    if toggle == .afterDown { systemToggles() }
+    engine.capsKeyChanged(down: false, nowNanos: t + holdMs * ms)
+    if toggle == .afterUp { systemToggles() }
+}
+
+private func capsLatchTests() {
+    for mode in [CapsMode.meh, .hyper] {
+        for toggle in [TogglePoint.beforeDown, .afterDown, .afterUp] {
+            for tapLive in [true, false] {
+                // Rapid taps 15 ms apart, faster than any debounce; tap off = disabled by macOS or blocked by Secure Input.
+                let (engine, ports) = makeEngine()
+                engine.apply(config(caps: mode))
+                ports.clear()
+                for i in 0..<30 {
+                    press(engine, ports, at: UInt64(i) * 15 * ms, toggle: toggle, tapLive: tapLive)
+                    // A toggle landing after the last callback is only caught by the scheduled check.
+                    if toggle != .afterUp { expect(!ports.latched, "\(mode) \(toggle) tap=\(tapLive) press \(i) left Caps Lock latched") }
+                    runChecks(engine, ports)
+                    expect(!ports.latched, "\(mode) \(toggle) tap=\(tapLive) press \(i) still latched after checks")
+                }
+                expectEqual(ports.count("escape"), 30)
+                expectEqual(engine.handleTapEvent(TapEvent(type: .keyDown, keyCode: 0)), TapDecision())
+            }
+        }
+    }
+
+    // The read-back lags the toggle: the observed alpha-shift alone forces the clear.
+    var (engine, ports) = makeEngine()
+    engine.apply(config(caps: .meh))
+    ports.staleReads = .max
+    for i in 0..<30 {
+        press(engine, ports, at: UInt64(i) * 15 * ms, toggle: .afterDown, tapLive: true)
+        expect(!ports.latched, "stale read-back press \(i) left Caps Lock latched")
+    }
+    runChecks(engine, ports)
+    expect(!ports.latched, "stale read-back")
+
+    // Unobserved toggle plus a lagging read-back: the next key event carries alpha-shift, which is stripped and
+    // forces the latch off, whether or not Caps is held, and in either key phase.
+    for held in [false, true] {
+        for type in [CGEventType.keyDown, .keyUp] {
+            (engine, ports) = makeEngine()
+            engine.apply(config(caps: .meh))
+            ports.staleReads = 2
+            if held { engine.capsKeyChanged(down: true, nowNanos: 0) }
+            ports.latched = true
+            runChecks(engine, ports)
+            expect(ports.latched, "precondition: the stale read hides the latch")
+            ports.clear()
+            let key = engine.handleTapEvent(TapEvent(type: type, keyCode: 0, flags: [.maskAlphaShift, .maskShift]))
+            let expected: CGEventFlags = held ? capsModifierFlags(for: .meh).union(.maskShift) : .maskShift
+            expectEqual(key.flags, Optional(expected))
+            expect(!ports.latched, "key event with alpha-shift clears the latch (held=\(held) \(type))")
+            expectEqual(ports.calls, ["clearCapsLock:force", "check:\(capsLatchCheckDelayMs):1"])
+            runChecks(engine, ports)
+            expect(!ports.latched)
+        }
+    }
+
+    // Interleaved: a held Caps with typed keys, a modifier change and a stray toggle in between.
+    (engine, ports) = makeEngine()
+    engine.apply(config(caps: .hyper))
+    engine.capsKeyChanged(down: true, nowNanos: 0)
+    ports.latched = true
+    let shift = engine.handleTapEvent(TapEvent(type: .flagsChanged, keyCode: 56, flags: [.maskAlphaShift, .maskShift]))
+    expectEqual(shift, TapDecision(flags: .maskShift))
+    expect(!ports.latched, "modifier change with alpha-shift clears the latch")
+    ports.latched = true
+    let down = engine.handleTapEvent(TapEvent(type: .keyDown, keyCode: 40, flags: .maskAlphaShift))
+    expectEqual(down.flags, Optional(capsModifierFlags(for: .hyper)))
+    expect(!ports.latched)
+    expectEqual(engine.handleTapEvent(TapEvent(type: .keyUp, keyCode: 40)).flags, Optional(capsModifierFlags(for: .hyper)))
+    engine.capsKeyChanged(down: false, nowNanos: 300 * ms)
+    expectEqual(ports.count("escape"), 0)
+    runChecks(engine, ports)
+    expect(!ports.latched)
+
+    // macOS disables the tap, toggles pass unfiltered, then the tap is re-enabled.
+    for type in [CGEventType.tapDisabledByTimeout, .tapDisabledByUserInput] {
+        (engine, ports) = makeEngine()
+        engine.apply(config(caps: .meh))
+        engine.capsKeyChanged(down: true, nowNanos: 0)
+        ports.staleReads = 1
+        ports.latched = true
+        ports.clear()
+        expectEqual(engine.handleTapEvent(TapEvent(type: type)), TapDecision(reenableTap: true))
+        expect(!ports.latched, "re-enabling the tap clears a latch set while it was off (\(type))")
+        expectEqual(ports.calls, ["clearCapsLock:force", "check:\(capsLatchCheckDelayMs):1"])
+        // The release lost with the tap sends no Esc; the press after re-enable works normally.
+        engine.capsKeyChanged(down: false, nowNanos: 10 * ms)
+        expectEqual(ports.count("escape"), 0)
+        press(engine, ports, at: 100 * ms, toggle: .afterUp, tapLive: true)
+        expect(!ports.latched)
+        expectEqual(ports.count("escape"), 1)
+        runChecks(engine, ports)
+        expect(!ports.latched)
+    }
+
+    // A check that still finds the latch (something keeps re-latching it) retries up to the limit, then the 2 s sync
+    // takes over.
+    (engine, ports) = makeEngine()
+    engine.apply(config(caps: .meh))
+    ports.clear()
+    ports.pendingChecks = [1]
+    var due = 0
+    while let attempt = ports.pendingChecks.first {
+        ports.pendingChecks.removeFirst()
+        ports.latched = true
+        engine.capsLatchCheckDue(attempt: attempt)
+        due += 1
+    }
+    expectEqual(due, capsLatchCheckLimit)
+    expectEqual(ports.count(prefix: "check:"), capsLatchCheckLimit - 1)
+    ports.latched = true
+    engine.sync()
+    expect(!ports.latched, "sync clears the latch")
+    expectEqual(ports.calls.last(where: { $0.hasPrefix("check:") }), "check:\(capsLatchCheckDelayMs):1")
+    ports.pendingChecks = []
+    ports.clear()
+    engine.sync()
+    expectEqual(ports.calls.filter { $0.hasPrefix("check:") || $0.hasPrefix("clearCapsLock") }, ["clearCapsLock:read"])
+
+    // Checks scheduled before Meh/Hyper was turned off (or the tap went away) leave the native latch alone.
+    for off in [config(caps: .default, back: backAction), config(caps: .meh)] {
+        (engine, ports) = makeEngine()
+        engine.apply(config(caps: .meh))
+        press(engine, ports, at: 0, toggle: .afterUp, tapLive: false)
+        if off.capsLock == .meh { ports.trusted = false; engine.sync() } else { engine.apply(off) }
+        ports.clear()
+        ports.latched = true
+        runChecks(engine, ports)
+        expect(ports.latched, "the user's own Caps Lock is untouched")
+        expectEqual(ports.count(prefix: "clearCapsLock"), 0)
+    }
+
+    // Default mode: physical presses never touch the latch.
+    (engine, ports) = makeEngine()
+    engine.apply(config(back: backAction))
+    ports.clear()
+    press(engine, ports, at: 0, toggle: .afterDown, tapLive: false)
+    expect(ports.latched, "default mode keeps native Caps Lock")
+    expectEqual(ports.calls.filter { $0.hasPrefix("check:") || $0.hasPrefix("clearCapsLock") }, [])
 }
 
 // MARK: - Tap events
