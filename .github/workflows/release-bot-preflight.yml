@@ -1,0 +1,30 @@
+name: Release bot preflight
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    if: github.repository == 'maxmeis/hypermug' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Mint and verify repository-scoped App token
+        id: publisher
+        uses: maxmeis/release-bot/actions/publisher-token@d55c4615e92b116f6899a61992acc9b979fb13b5 # pinned release-bot commit
+        with:
+          app-id: ${{ vars.RELEASE_BOT_APP_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repository: ${{ github.event.repository.name }}
+          expected-app-slug: ${{ vars.RELEASE_BOT_APP_SLUG }}
+          expected-installation-id: ${{ vars.RELEASE_BOT_INSTALLATION_ID }}
+      - name: Check consumer API access
+        env:
+          GH_TOKEN: ${{ steps.publisher.outputs.token }}
+          EXPECTED_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          actual="$(gh api "repos/$EXPECTED_REPOSITORY" --jq .full_name)"
+          test "$actual" = "$EXPECTED_REPOSITORY"
+          echo 'Verified release-bot App access to HyperMug.'

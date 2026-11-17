@@ -19,7 +19,7 @@ concurrency:
   queue: max
 jobs:
   authorize:
-    if: github.actor == 'maxmeis' && github.triggering_actor == 'maxmeis' && github.ref == 'refs/heads/main'
+    if: vars.RELEASE_BOT_ENABLED == 'true' && github.actor == 'maxmeis' && github.triggering_actor == 'maxmeis' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -92,6 +92,14 @@ jobs:
             gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$tag" -f sha="$object" >/dev/null
           fi
           test "$(gh api "repos/$GITHUB_REPOSITORY/commits/$tag" --jq .sha)" = "$AUTHORIZED_SHA"
+      - name: Check out shared signing implementation
+        if: inputs.build_app
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: maxmeis/release-bot
+          ref: d55c4615e92b116f6899a61992acc9b979fb13b5
+          path: .release-bot-signing
+          persist-credentials: false
       - name: Build and notarize
         if: inputs.build_app
         env:
@@ -110,6 +118,7 @@ jobs:
           APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
           APP_STORE_CONNECT_KEY_ID: ${{ vars.APP_STORE_CONNECT_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ vars.APP_STORE_CONNECT_ISSUER_ID }}
+          RELEASE_BOT_SIGNING_SCRIPT: ${{ github.workspace }}/.release-bot-signing/macos/signing.sh
           SPARKLE_EDDSA_PRIVATE_KEY: ${{ secrets.SPARKLE_EDDSA_PRIVATE_KEY }}
           SPARKLE_PUBLIC_ED_KEY: ${{ vars.SPARKLE_PUBLIC_ED_KEY }}
         run: |
@@ -117,7 +126,17 @@ jobs:
           GITHUB_REF="refs/tags/v$VERSION"
           BUILD_NUMBER="$VERSION"
           export VERSION BUILD_NUMBER GITHUB_REF GITHUB_SHA
-          make release
+          bash "$RELEASE_BOT_SIGNING_SCRIPT" run -- bash helpers/release.sh
+      - name: Mint verified release publisher token
+        id: publisher
+        uses: maxmeis/release-bot/actions/publisher-token@d55c4615e92b116f6899a61992acc9b979fb13b5 # pinned release-bot commit
+        with:
+          app-id: ${{ vars.RELEASE_BOT_APP_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repository: ${{ github.event.repository.name }}
+          expected-app-slug: ${{ vars.RELEASE_BOT_APP_SLUG }}
+          expected-installation-id: ${{ vars.RELEASE_BOT_INSTALLATION_ID }}
       - name: Publish stable
         env:
           CHANNEL: stable
@@ -128,8 +147,7 @@ jobs:
           SOURCE_REPOSITORY: ${{ github.repository }}
           RELEASES_REPOSITORY: ${{ vars.RELEASES_REPOSITORY || github.repository }}
           TAP_REPOSITORY: ${{ vars.TAP_REPOSITORY || 'maxmeis/homebrew-formulae' }}
-          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-          TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
+          PUBLISHER_TOKEN: ${{ steps.publisher.outputs.token }}
           TAP_SSH_PRIVATE_KEY: ${{ secrets.TAP_SSH_PRIVATE_KEY }}
         run: |
           GITHUB_SHA="$(git rev-parse HEAD)"

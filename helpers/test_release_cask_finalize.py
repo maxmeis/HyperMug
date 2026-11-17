@@ -48,7 +48,7 @@ class CaskFinalizerTests(unittest.TestCase):
         self.git("commit", "-m", "chore: update published cask", cwd=self.seed)
         self.head = self.git("rev-parse", "HEAD", cwd=self.seed)
         self.git("push", "origin", self.branch, cwd=self.seed)
-        self.ci = dict(event="workflow_dispatch", status="completed", conclusion="success",
+        self.ci = dict(event="push", actor={"login": "maxmeisreleasebot[bot]", "id": 357859028}, status="completed", conclusion="success",
                        path=".github/workflows/ci.yml", head_repository={"full_name": REPOSITORY},
                        head_branch=self.branch, head_sha=self.head)
         self.check = dict(name="ci", app={"id": 15368}, head_sha=self.head,
@@ -59,7 +59,7 @@ class CaskFinalizerTests(unittest.TestCase):
                             assets=[dict(name="hypermug@canary.rb", digest="sha256:" + hashlib.sha256(self.content.encode()).hexdigest()),
                                     dict(name="HyperMug-" + self.version + ".zip", digest="sha256:" + "a" * 64)])
         self.asset_data = self.content.encode()
-        self.publisher = {"login": "maxmeis", "id": 41482988}
+        self.publisher = {"login": "maxmeisreleasebot[bot]", "id": 357859028}
 
     def tearDown(self):
         self.temp.cleanup()
@@ -105,7 +105,7 @@ class CaskFinalizerTests(unittest.TestCase):
 
     def invoke(self):
         work = Path(tempfile.mkdtemp(prefix="finalize-", dir=self.root))
-        with patch.dict(os.environ, RELEASE_TOKEN="fixture"), \
+        with patch.dict(os.environ, PUBLISHER_TOKEN="fixture"), \
              patch.object(subject, "api", side_effect=self.fake_api), \
              patch.object(subject, "run", side_effect=self.fake_run):
             return subject.finalize(REPOSITORY, REPOSITORY, 42, work)
@@ -262,7 +262,7 @@ class CaskFinalizerTests(unittest.TestCase):
             if args[:2] == ("git", "push"):
                 raise subprocess.CalledProcessError(1, args)
             return self.fake_run(*args, **kwargs)
-        with patch.dict(os.environ, RELEASE_TOKEN="fixture"), \
+        with patch.dict(os.environ, PUBLISHER_TOKEN="fixture"), \
              patch.object(subject, "api", side_effect=self.fake_api), \
              patch.object(subject, "run", side_effect=reject_push), \
              patch.object(subject, "publish") as prepare:
@@ -280,7 +280,7 @@ class CaskFinalizerTests(unittest.TestCase):
                 self.git("push", "origin", "main", cwd=self.seed)
                 raise subprocess.CalledProcessError(1, args)
             return self.fake_run(*args, **kwargs)
-        with patch.dict(os.environ, RELEASE_TOKEN="fixture"), \
+        with patch.dict(os.environ, PUBLISHER_TOKEN="fixture"), \
              patch.object(subject, "api", side_effect=self.fake_api), \
              patch.object(subject, "run", side_effect=racing_push), \
              patch.object(subject, "publish") as prepare:
@@ -293,7 +293,7 @@ class CaskFinalizerTests(unittest.TestCase):
 class GitCredentialTests(unittest.TestCase):
     def test_token_stays_out_of_git_arguments_and_remote_urls(self):
         result = subprocess.CompletedProcess([], 0, stdout="ok\n")
-        with patch.dict(os.environ, RELEASE_TOKEN="private-fixture-token", GIT_CONFIG_COUNT="0"), \
+        with patch.dict(os.environ, PUBLISHER_TOKEN="private-fixture-token", GIT_CONFIG_COUNT="0"), \
              patch.object(subprocess, "run", return_value=result) as execute:
             self.assertEqual(publish_source_cask.run("git", "clone",
                              "https://github.com/maxmeis/hypermug.git", "checkout", capture=True), "ok")

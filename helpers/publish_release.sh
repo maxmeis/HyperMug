@@ -2,18 +2,26 @@
 # Publish immutable assets first; channel pointers move only after both release and metadata exist.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-: "${CHANNEL:?}" "${VERSION:?}" "${BUILD_NUMBER:?}" "${BUILD_APP:?}" "${SOURCE_REPOSITORY:?}" "${RELEASES_REPOSITORY:?}" "${TAP_REPOSITORY:?}" "${RELEASE_TOKEN:?}" "${GITHUB_SHA:?}"
+: "${CHANNEL:?}" "${VERSION:?}" "${BUILD_NUMBER:?}" "${BUILD_APP:?}" "${SOURCE_REPOSITORY:?}" "${RELEASES_REPOSITORY:?}" "${TAP_REPOSITORY:?}" "${PUBLISHER_TOKEN:?}" "${GITHUB_SHA:?}"
 python3 helpers/release_metadata.py validate --channel "$CHANNEL" --version "$VERSION" --actor "$GITHUB_ACTOR" --triggering-actor "$GITHUB_TRIGGERING_ACTOR" --ref "$GITHUB_REF" --sha "$GITHUB_SHA" --source-repo "$SOURCE_REPOSITORY" --releases-repo "$RELEASES_REPOSITORY" --tap-repo "$TAP_REPOSITORY"
 [[ "$BUILD_NUMBER" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]] || exit 1
 [[ "$BUILD_APP" == true || "$BUILD_APP" == false ]] || { echo 'BUILD_APP must be true or false' >&2; exit 1; }
 PUBLISH_EXTERNAL_TAP="${PUBLISH_EXTERNAL_TAP:-false}"
 [[ "$PUBLISH_EXTERNAL_TAP" == true || "$PUBLISH_EXTERNAL_TAP" == false ]] || { echo 'PUBLISH_EXTERNAL_TAP must be true or false' >&2; exit 1; }
 [[ "$CHANNEL" != canary || "$BUILD_APP" == true ]] || { echo 'Canary requires an app build' >&2; exit 1; }
-if [[ "$BUILD_APP" == true && "$PUBLISH_EXTERNAL_TAP" == true && -z "${TAP_SSH_PRIVATE_KEY:-}" && -z "${TAP_TOKEN:-}" ]]; then
-  echo 'TAP_SSH_PRIVATE_KEY or TAP_TOKEN is required' >&2
+if [[ "$BUILD_APP" == true && "$PUBLISH_EXTERNAL_TAP" == true && -z "${TAP_SSH_PRIVATE_KEY:-}" ]]; then
+  echo 'TAP_SSH_PRIVATE_KEY is required for external tap publication' >&2
   exit 1
 fi
-export GH_TOKEN="$RELEASE_TOKEN"
+[[ "$RELEASES_REPOSITORY" == "$SOURCE_REPOSITORY" ]] || { echo 'App publisher token only permits the source repository' >&2; exit 1; }
+export GH_TOKEN="$PUBLISHER_TOKEN"
+# Git reads the App token from process-local configuration. Keep it out of
+# clone URLs, command arguments, remotes, and persistent credential stores.
+export GIT_CONFIG_COUNT="${GIT_CONFIG_COUNT:-0}"
+git_config_index="$GIT_CONFIG_COUNT"
+export GIT_CONFIG_COUNT="$((git_config_index + 1))"
+export "GIT_CONFIG_KEY_${git_config_index}=http.https://github.com/.extraheader"
+export "GIT_CONFIG_VALUE_${git_config_index}=AUTHORIZATION: basic $(printf 'x-access-token:%s' "$PUBLISHER_TOKEN" | base64 | tr -d '\n')"
 if [[ "$BUILD_APP" == true && "$PUBLISH_EXTERNAL_TAP" == true ]]; then
   tap_archived="$(gh api "repos/${TAP_REPOSITORY}" --jq .archived)" || { echo 'External tap is unavailable; disable PUBLISH_EXTERNAL_TAP or repair its access' >&2; exit 1; }
   [[ "$tap_archived" == false ]] || { echo 'External tap is archived; disable PUBLISH_EXTERNAL_TAP or choose a writable destination' >&2; exit 1; }
@@ -158,7 +166,7 @@ fi
 
 # Feed version determines whether this run advances a channel. A retry of the
 # current version resumes the cask step; an older version fails closed.
-git clone "https://x-access-token:${RELEASE_TOKEN}@github.com/${RELEASES_REPOSITORY}.git" "$work/releases" >/dev/null 2>&1
+git clone "https://github.com/${RELEASES_REPOSITORY}.git" "$work/releases" >/dev/null 2>&1
 (
   cd "$work/releases"
   if git ls-remote --exit-code origin refs/heads/updates >/dev/null; then
@@ -192,7 +200,7 @@ PY
   if [[ "$decision" == advance ]]; then
     cp "$work/$feed" "$feed"
     git add "$feed"
-    git -c user.name=maxmeis -c user.email=41482988+maxmeis@users.noreply.github.com commit -m "chore: update ${CHANNEL} appcast to ${VERSION}"
+    git -c user.name=maxmeisreleasebot[bot] -c user.email=357859028+maxmeisreleasebot[bot]@users.noreply.github.com commit -m "chore: update ${CHANNEL} appcast to ${VERSION}"
     git push origin HEAD:updates
   fi
 )
@@ -203,7 +211,7 @@ if [[ -n "${TAP_SSH_PRIVATE_KEY:-}" ]]; then
   export GIT_SSH_COMMAND="$tap_ssh_command"
   tap_url="git@github.com:${TAP_REPOSITORY}.git"
 else
-  tap_url="https://x-access-token:${TAP_TOKEN}@github.com/${TAP_REPOSITORY}.git"
+  echo "External tap requires SSH authentication" >&2; exit 1
 fi
 git clone "$tap_url" "$work/tap" >/dev/null 2>&1
 (
@@ -212,7 +220,7 @@ git clone "$tap_url" "$work/tap" >/dev/null 2>&1
   if [[ -f "Casks/${token}.rb" ]] && cmp -s "$work/${token}.rb" "Casks/${token}.rb"; then exit 0; fi
   cp "$work/${token}.rb" "Casks/${token}.rb"
   git add "Casks/${token}.rb"
-  git -c user.name=maxmeis -c user.email=41482988+maxmeis@users.noreply.github.com commit -m "chore: update ${token} to ${VERSION}"
+  git -c user.name=maxmeisreleasebot[bot] -c user.email=357859028+maxmeisreleasebot[bot]@users.noreply.github.com commit -m "chore: update ${token} to ${VERSION}"
   git push origin HEAD
 )
 fi

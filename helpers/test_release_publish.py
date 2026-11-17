@@ -37,7 +37,7 @@ def fail_once(name):
 if args[0] == "api":
     post = "-X" in args and args[args.index("-X") + 1] == "POST"
     if "meta" in args:
-        if os.environ.get("GH_TOKEN") != os.environ.get("RELEASE_TOKEN"):
+        if os.environ.get("GH_TOKEN") != os.environ.get("PUBLISHER_TOKEN"):
             sys.exit("meta used wrong token")
         print("ssh-ed25519 TEST_PUBLIC_HOST_KEY")
         sys.exit(0)
@@ -285,7 +285,7 @@ class PublishReleaseIntegrationTests(unittest.TestCase):
             "BUILD_APP": "true",
             "PUBLISH_EXTERNAL_TAP": "true",
             "SOURCE_REPOSITORY": self.releases_repo, "RELEASES_REPOSITORY": self.releases_repo,
-            "TAP_REPOSITORY": self.tap_repo, "RELEASE_TOKEN": "release-token", "TAP_TOKEN": "tap-token",
+            "TAP_REPOSITORY": self.tap_repo, "PUBLISHER_TOKEN": "app-token", "TAP_SSH_PRIVATE_KEY": "test-private-key",
             "GITHUB_ACTOR": "maxmeis", "GITHUB_TRIGGERING_ACTOR": "maxmeis",
             "GITHUB_REF": "refs/tags/v1.2.3", "GITHUB_SHA": SHA_A,
         })
@@ -378,7 +378,7 @@ class PublishReleaseIntegrationTests(unittest.TestCase):
         return self._state()["releases"].get(self.releases_repo + "|" + tag)
 
     def test_source_only_release_has_no_installable_assets_or_pointer_changes(self):
-        first = self._run(BUILD_APP="false", TAP_TOKEN="")
+        first = self._run(BUILD_APP="false")
         self.assertEqual(first.returncode, 0, first.stderr)
         release = self._release()
         self.assertFalse(release["draft"])
@@ -390,7 +390,7 @@ class PublishReleaseIntegrationTests(unittest.TestCase):
         self.assertIsNone(self._remote_file(self.tap_bare, "Casks/hypermug.rb"))
         self.assertFalse(any(e[0] == "git-push" for e in self._state()["events"]))
         events = list(self._state()["events"])
-        repeat = self._run(BUILD_APP="false", TAP_TOKEN="")
+        repeat = self._run(BUILD_APP="false")
         self.assertEqual(repeat.returncode, 0, repeat.stderr)
         self.assertEqual(self._state()["events"], events)
 
@@ -401,37 +401,37 @@ class PublishReleaseIntegrationTests(unittest.TestCase):
                                      "assets": {"HyperMug-1.2.2.zip": "00"},
                                      "latest": True, "prerelease": False}
         self._save_state(state)
-        first = self._run(BUILD_APP="false", TAP_TOKEN="")
+        first = self._run(BUILD_APP="false")
         self.assertEqual(first.returncode, 0, first.stderr)
         events = list(self._state()["events"])
-        repeat = self._run(BUILD_APP="false", TAP_TOKEN="")
+        repeat = self._run(BUILD_APP="false")
         self.assertEqual(repeat.returncode, 0, repeat.stderr)
         self.assertEqual(self._state()["events"], events)
         self.assertTrue(self._state()["releases"][prior]["latest"])
         self.assertFalse(self._release()["latest"])
 
     def test_source_only_retry_fails_closed_on_latest_lookup_error_or_bad_pointer(self):
-        first = self._run(BUILD_APP="false", TAP_TOKEN="")
+        first = self._run(BUILD_APP="false")
         self.assertEqual(first.returncode, 0, first.stderr)
         events = list(self._state()["events"])
-        unavailable = self._run(BUILD_APP="false", TAP_TOKEN="", FAKE_LATEST_API_ERROR="503")
+        unavailable = self._run(BUILD_APP="false", FAKE_LATEST_API_ERROR="503")
         self.assertNotEqual(unavailable.returncode, 0)
         self.assertIn("HTTP 503", unavailable.stderr)
         self.assertEqual(self._state()["events"], events)
         state = self._state()
         state["releases"][self.releases_repo + "|v1.2.3"]["latest"] = True
         self._save_state(state)
-        bad_pointer = self._run(BUILD_APP="false", TAP_TOKEN="")
+        bad_pointer = self._run(BUILD_APP="false")
         self.assertNotEqual(bad_pointer.returncode, 0)
         self.assertIn("cannot repair immutable release", bad_pointer.stderr)
         self.assertEqual(self._state()["events"], events)
         self.assertTrue(self._release()["latest"])
 
     def test_source_only_draft_retry_and_binary_same_tag_refusal(self):
-        failed = self._run(BUILD_APP="false", TAP_TOKEN="", FAKE_FAIL_ONCE="release-publish")
+        failed = self._run(BUILD_APP="false", FAKE_FAIL_ONCE="release-publish")
         self.assertNotEqual(failed.returncode, 0)
         self.assertTrue(self._release()["draft"])
-        retry = self._run(BUILD_APP="false", TAP_TOKEN="")
+        retry = self._run(BUILD_APP="false")
         self.assertEqual(retry.returncode, 0, retry.stderr)
         self.assertFalse(self._release()["draft"])
         self._build()
@@ -443,7 +443,7 @@ class PublishReleaseIntegrationTests(unittest.TestCase):
         self.assertEqual(self._release()["assets"], {})
 
     def test_source_only_version_counts_for_ordering_but_not_feed(self):
-        first = self._run(BUILD_APP="false", TAP_TOKEN="")
+        first = self._run(BUILD_APP="false")
         self.assertEqual(first.returncode, 0, first.stderr)
         self._seed_tag(self.releases_repo, "v1.2.2", SHA_B)
         self._build(version="1.2.2")
@@ -457,26 +457,40 @@ class PublishReleaseIntegrationTests(unittest.TestCase):
         self.assertIn("1.2.4", self._remote_file(self.releases_bare, "appcast-stable.xml"))
         self.assertEqual(self._release()["assets"], {})
 
-    def test_ssh_tap_uses_ephemeral_key_and_original_release_token(self):
+    def test_ssh_tap_uses_ephemeral_key_and_app_token(self):
         self._build()
-        result = self._run(TAP_SSH_PRIVATE_KEY="test-private-key", TAP_TOKEN="")
+        result = self._run(TAP_SSH_PRIVATE_KEY="test-private-key")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual((self.state_dir / "tap-url").read_text(), "git@github.com:maxmeis/homebrew-formulae.git")
         self.assertIn('cask "hypermug"', self._remote_file(self.tap_bare, "Casks/hypermug.rb"))
         work = Path((self.state_dir / "ssh-work-path").read_text())
         self.assertFalse(work.exists(), "publisher must remove ephemeral credentials")
 
+    def test_user_token_is_not_a_fallback_for_missing_app_token(self):
+        self._build()
+        result = self._run(PUBLISHER_TOKEN="", RELEASE_TOKEN="legacy-user-token")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("PUBLISHER_TOKEN", result.stderr)
+        self.assertEqual(self._state()["events"], [])
+
+    def test_app_token_refuses_another_release_repository_before_writes(self):
+        self._build()
+        result = self._run(RELEASES_REPOSITORY="maxmeis/other")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("only permits the source repository", result.stderr)
+        self.assertEqual(self._state()["events"], [])
+
     def test_missing_tap_credentials_fails_before_api_writes(self):
         self._build()
-        result = self._run(TAP_TOKEN="", TAP_SSH_PRIVATE_KEY="")
+        result = self._run(TAP_SSH_PRIVATE_KEY="")
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("TAP_SSH_PRIVATE_KEY or TAP_TOKEN is required", result.stderr)
+        self.assertIn("TAP_SSH_PRIVATE_KEY is required for external tap publication", result.stderr)
         self.assertEqual(self._state()["events"], [])
         self.assertIsNone(self._release())
 
     def test_default_in_repo_publication_needs_no_external_tap_or_credentials(self):
         self._build()
-        result = self._run(PUBLISH_EXTERNAL_TAP="", TAP_TOKEN="", TAP_SSH_PRIVATE_KEY="")
+        result = self._run(PUBLISH_EXTERNAL_TAP="", TAP_SSH_PRIVATE_KEY="")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(self._release()["draft"])
         self.assertIn("1.2.3", self._remote_file(self.releases_bare, "appcast-stable.xml"))
@@ -500,7 +514,7 @@ class PublishReleaseIntegrationTests(unittest.TestCase):
         self._build(channel="canary", version=version, build_number="12")
         result = self._run(CHANNEL="canary", VERSION=version, BUILD_NUMBER="12",
                            GITHUB_REF="refs/heads/main", PUBLISH_EXTERNAL_TAP="",
-                           TAP_TOKEN="", TAP_SSH_PRIVATE_KEY="")
+                           TAP_SSH_PRIVATE_KEY="")
         self.assertEqual(result.returncode, 0, result.stderr)
         release = self._release("v" + version)
         self.assertFalse(release["draft"])
@@ -516,7 +530,7 @@ class PublishReleaseIntegrationTests(unittest.TestCase):
         events = list(self._state()["events"])
         retry = self._run(CHANNEL="canary", VERSION=version, BUILD_NUMBER="12",
                           GITHUB_REF="refs/heads/main", PUBLISH_EXTERNAL_TAP="",
-                          TAP_TOKEN="", TAP_SSH_PRIVATE_KEY="")
+                          TAP_SSH_PRIVATE_KEY="")
         self.assertEqual(retry.returncode, 0, retry.stderr)
         self.assertEqual(self._state()["events"], events)
 
@@ -526,7 +540,7 @@ class PublishReleaseIntegrationTests(unittest.TestCase):
         events = list(self._state()["events"])
         outdated = self._run(CHANNEL="canary", VERSION=old, BUILD_NUMBER="11",
                              GITHUB_REF="refs/heads/main", GITHUB_SHA=SHA_B,
-                             PUBLISH_EXTERNAL_TAP="", TAP_TOKEN="")
+                             PUBLISH_EXTERNAL_TAP="")
         self.assertNotEqual(outdated.returncode, 0)
         self.assertIn("newer canary release already exists", outdated.stderr)
         self.assertEqual(self._state()["events"], events)
@@ -536,7 +550,7 @@ class PublishReleaseIntegrationTests(unittest.TestCase):
         self._build()
         result = self._run()
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual((self.state_dir / "tap-url").read_text(), "https://x-access-token:tap-token@github.com/maxmeis/homebrew-formulae.git")
+        self.assertEqual((self.state_dir / "tap-url").read_text(), "git@github.com:maxmeis/homebrew-formulae.git")
         state = self._state()
         self.assertEqual(state["tags"][self.releases_repo + "|v1.2.3"]["target"], SHA_A)
         self.assertEqual([e for e in state["events"] if e[0] == "ref"], [])
@@ -552,7 +566,7 @@ class PublishReleaseIntegrationTests(unittest.TestCase):
         self.assertIsNone(self._remote_file(self.releases_bare, "Casks/hypermug.rb", "main"))
         self.assertEqual(self._state().get("prs", {}), {})
         self.assertEqual(len([e for e in self._state()["events"] if e[0] == "ci-dispatch"]), 0)
-        identity = "maxmeis|41482988+maxmeis@users.noreply.github.com"
+        identity = "maxmeisreleasebot[bot]|357859028+maxmeisreleasebot[bot]@users.noreply.github.com"
         for bare, branch in ((self.releases_bare, "updates"),
                              (self.releases_bare, "release-casks/stable"),
                              (self.tap_bare, "main")):

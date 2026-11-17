@@ -15,7 +15,7 @@ concurrency:
   queue: max
 jobs:
   release:
-    if: github.repository == 'maxmeis/hypermug' && github.ref == 'refs/heads/main'
+    if: vars.RELEASE_BOT_ENABLED == 'true' && github.repository == 'maxmeis/hypermug' && github.ref == 'refs/heads/main'
     runs-on: macos-latest
     timeout-minutes: 60
     # The existing beta environment supplies the Canary signing and Sparkle key.
@@ -42,7 +42,7 @@ jobs:
       - name: Skip a superseded queued run
         id: freshness
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+          GH_TOKEN: ${{ github.token }}
           VERSION: 0.0.0-canary.${{ github.run_number }}
           RELEASES_REPOSITORY: ${{ vars.RELEASES_REPOSITORY || github.repository }}
         run: |
@@ -70,7 +70,7 @@ jobs:
       - name: Ensure unique Canary tag points to tested source
         if: steps.freshness.outputs.skip != 'true'
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+          GH_TOKEN: ${{ github.token }}
           VERSION: 0.0.0-canary.${{ github.run_number }}
         run: |
           tag="v$VERSION"
@@ -79,6 +79,14 @@ jobs:
             gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$tag" -f sha="$object" >/dev/null
           fi
           test "$(gh api "repos/$GITHUB_REPOSITORY/commits/$tag" --jq .sha)" = "$GITHUB_SHA"
+      - name: Check out shared signing implementation
+        if: steps.freshness.outputs.skip != 'true'
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: maxmeis/release-bot
+          ref: d55c4615e92b116f6899a61992acc9b979fb13b5
+          path: .release-bot-signing
+          persist-credentials: false
       - name: Build and notarize
         if: steps.freshness.outputs.skip != 'true'
         env:
@@ -97,9 +105,21 @@ jobs:
           APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
           APP_STORE_CONNECT_KEY_ID: ${{ vars.APP_STORE_CONNECT_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ vars.APP_STORE_CONNECT_ISSUER_ID }}
+          RELEASE_BOT_SIGNING_SCRIPT: ${{ github.workspace }}/.release-bot-signing/macos/signing.sh
           SPARKLE_EDDSA_PRIVATE_KEY: ${{ secrets.SPARKLE_EDDSA_PRIVATE_KEY }}
           SPARKLE_PUBLIC_ED_KEY: ${{ vars.SPARKLE_PUBLIC_ED_KEY }}
-        run: make release
+        run: bash "$RELEASE_BOT_SIGNING_SCRIPT" run -- bash helpers/release.sh
+      - if: steps.freshness.outputs.skip != 'true'
+        name: Mint verified release publisher token
+        id: publisher
+        uses: maxmeis/release-bot/actions/publisher-token@d55c4615e92b116f6899a61992acc9b979fb13b5 # pinned release-bot commit
+        with:
+          app-id: ${{ vars.RELEASE_BOT_APP_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repository: ${{ github.event.repository.name }}
+          expected-app-slug: ${{ vars.RELEASE_BOT_APP_SLUG }}
+          expected-installation-id: ${{ vars.RELEASE_BOT_INSTALLATION_ID }}
       - name: Publish Canary
         if: steps.freshness.outputs.skip != 'true'
         env:
@@ -111,7 +131,6 @@ jobs:
           SOURCE_REPOSITORY: ${{ github.repository }}
           RELEASES_REPOSITORY: ${{ vars.RELEASES_REPOSITORY || github.repository }}
           TAP_REPOSITORY: ${{ vars.TAP_REPOSITORY || 'maxmeis/homebrew-formulae' }}
-          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-          TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
+          PUBLISHER_TOKEN: ${{ steps.publisher.outputs.token }}
           TAP_SSH_PRIVATE_KEY: ${{ secrets.TAP_SSH_PRIVATE_KEY }}
         run: make publish

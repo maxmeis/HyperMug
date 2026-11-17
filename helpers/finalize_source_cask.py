@@ -64,14 +64,16 @@ def finalize(repository, releases_repository, run_id, work):
     if not re.fullmatch(r"[1-9][0-9]*", str(run_id)):
         raise ValueError("a CI workflow run ID is required")
     publisher = api("user")
-    if publisher.get("login") != "maxmeis" or publisher.get("id") != 41482988:
-        raise ValueError("publication requires maxmeis user credentials")
+    if publisher.get("login") != "maxmeisreleasebot[bot]" or publisher.get("id") != 357859028:
+        raise ValueError("publication requires the verified release-bot App identity")
     work.mkdir(parents=True, exist_ok=True)
     ci = api(f"repos/{repository}/actions/runs/{run_id}")
     branch = ci.get("head_branch", "")
-    if (ci.get("event") not in ("push", "workflow_dispatch") or ci.get("status") != "completed"
+    if (ci.get("event") != "push" or ci.get("status") != "completed"
             or ci.get("conclusion") != "success"
             or ci.get("path") != ".github/workflows/ci.yml"
+            or (ci.get("actor") or {}).get("login") != "maxmeisreleasebot[bot]"
+            or (ci.get("actor") or {}).get("id") != 357859028
             or (ci.get("head_repository") or {}).get("full_name", "").lower() != repository.lower()
             or branch not in ("release-casks/stable", "release-casks/canary")):
         raise ValueError("only successful same-repository release metadata CI is accepted")
