@@ -51,6 +51,40 @@ func configTests() {
     encodeTests()
     anyKeyTests()
     trackpadTests()
+    verticalWheelTests()
+}
+
+private func verticalWheelTests() {
+    for json in [#"{"mouse":{"verticalWheel":null}}"#, #"{"mouse":{"verticalWheel":{}}}"#,
+                 #"{"mouse":{"verticalWheel":{"up":{},"down":null}}}"#] {
+        expectConfig(json, AppConfig())
+    }
+    expect(AppConfig().mouse.verticalWheel.isEmpty && AppConfig.newFileDefaults.mouse.verticalWheel.isEmpty,
+           "wheel directions are unbound by default")
+    let json = #"{"helpers":{"previousWindow":"aerospace focus left"},"mouse":{"verticalWheel":{"up":{"helper":"previousWindow"},"down":{"shortcut":["ctrl","down"]}}}}"#
+    let config = decode(json)!.config
+    expectEqual(config.mouse.verticalWheel, WheelMap(up: .helper("previousWindow"), down: shortcut(["ctrl", "down"])))
+    expectEqual(config.mouse.verticalWheel.action(for: .up), .helper("previousWindow"))
+    expectEqual(config.mouse.verticalWheel.action(for: .down), shortcut(["ctrl", "down"]))
+    expectEqual(config.resolvedActions().mouse.verticalWheel.up, .shell("aerospace focus left"), "wheel helpers resolve")
+    expectConfig(text(config), config)
+
+    // Only mapped directions are written; an empty map is omitted.
+    let single = AppConfig(mouse: MouseConfig(verticalWheel: WheelMap(down: .shell("next"))))
+    let wheel = (jsonObject(encodeConfig(single))["mouse"] as? [String: Any])?["verticalWheel"] as? [String: Any]
+    expectEqual(Set(wheel?.keys.map { $0 } ?? []), ["down"], "unmapped up is omitted")
+    expect((jsonObject(encodeConfig(AppConfig()))["mouse"] as? [String: Any])?["verticalWheel"] == nil, "empty wheel map omitted")
+
+    expectEqual(decode(#"{"mouse":{"verticalWheel":{"left":{},"up":{"open":"x","shell":"a"}}}}"#)?.unknownKeys,
+                ["mouse.verticalWheel.left", "mouse.verticalWheel.up.open"], "unknown wheel keys are reported")
+    expectRejected(#"{"mouse":{"verticalWheel":{"up":{"helper":"missing"}}}}"#, "mouse.verticalWheel.up.helper: unknown helper \"missing\"")
+    expectRejected(#"{"mouse":{"verticalWheel":{"down":{"helper":"missing"}}}}"#, "mouse.verticalWheel.down.helper: unknown helper \"missing\"")
+    expectRejected(#"{"mouse":{"verticalWheel":{"up":{"shell":"a","shortcut":["cmd","a"]}}}}"#,
+                   "mouse.verticalWheel.up: needs exactly one of shortcut/shell/helper")
+    expectRejected(#"{"mouse":{"verticalWheel":{"down":{"shortcut":["cmd"]}}}}"#,
+                   "mouse.verticalWheel.down.shortcut: shortcut [\"cmd\"] needs exactly one key besides modifiers")
+    expectRejected(#"{"mouse":{"verticalWheel":{"up":"next"}}}"#, "mouse.verticalWheel.up: expected an object")
+    expectRejected(#"{"mouse":{"verticalWheel":[]}}"#, "mouse.verticalWheel: expected an object")
 }
 
 private func helperTests() {

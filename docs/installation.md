@@ -25,7 +25,7 @@ brew upgrade --cask --greedy maxmeis/hypermug/hypermug
 
 HyperMug creates `~/.config/hypermug.json` with defaults at first launch. No settings are imported from other apps. The app requests Accessibility permission and prompts for Input Monitoring when needed. Review or grant them from **Doctor… → Permissions** in the menu. Relaunch HyperMug after granting Input Monitoring; the privileges window has a restart button.
 
-- **Accessibility** enables the keyboard and mouse event tap used by Caps Lock Meh/Hyper, side-button mappings, and scroll inversion.
+- **Accessibility** enables the keyboard and mouse event tap used by Caps Lock Meh/Hyper, side-button and wheel mappings, and scroll inversion.
 - **Input Monitoring** enables raw Caps Lock detection and access to the MX Master 3S thumb button.
 
 Permission grants are tied to the app's code signature. Release builds use Developer ID signing. Local `make build` uses the persistent local signing identity; see [Development](development.md) for a persistent local signing identity when permission continuity matters.

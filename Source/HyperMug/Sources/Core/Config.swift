@@ -94,13 +94,37 @@ public struct InvertScroll: Equatable {
     }
 }
 
+public enum WheelDirection: String, CaseIterable, Equatable {
+    case up, down
+}
+
+/// Actions for physical vertical wheel steps; an unmapped direction keeps normal scrolling.
+public struct WheelMap: Equatable {
+    public var up: ButtonAction?
+    public var down: ButtonAction?
+
+    public init(up: ButtonAction? = nil, down: ButtonAction? = nil) {
+        self.up = up
+        self.down = down
+    }
+
+    public var isEmpty: Bool { up == nil && down == nil }
+
+    public func action(for direction: WheelDirection) -> ButtonAction? {
+        direction == .up ? up : down
+    }
+}
+
 public struct MouseConfig: Equatable {
     public var invertScroll: InvertScroll
     public var buttons: ButtonMap
+    public var verticalWheel: WheelMap
 
-    public init(invertScroll: InvertScroll = InvertScroll(), buttons: ButtonMap = ButtonMap()) {
+    public init(invertScroll: InvertScroll = InvertScroll(), buttons: ButtonMap = ButtonMap(),
+                verticalWheel: WheelMap = WheelMap()) {
         self.invertScroll = invertScroll
         self.buttons = buttons
+        self.verticalWheel = verticalWheel
     }
 }
 
@@ -150,6 +174,8 @@ public struct AppConfig: Equatable {
         result.mouse.buttons.back = resolve(mouse.buttons.back)
         result.mouse.buttons.forward = resolve(mouse.buttons.forward)
         result.mouse.buttons.thumb = resolve(mouse.buttons.thumb)
+        result.mouse.verticalWheel.up = resolve(mouse.verticalWheel.up)
+        result.mouse.verticalWheel.down = resolve(mouse.verticalWheel.down)
         for direction in SwipeDirection.allCases {
             switch direction {
             case .up:
@@ -349,6 +375,22 @@ extension SwipeMap: Codable {
     }
 }
 
+extension WheelMap: Codable {
+    public init(from decoder: Decoder) throws {
+        self.init()
+        let c = try decoder.container(keyedBy: AnyKey.self)
+        noteUnknownKeys(c, known: ["up", "down"], in: decoder)
+        up = try decodeAction(c, "up", in: decoder)
+        down = try decodeAction(c, "down", in: decoder)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: AnyKey.self)
+        if up != nil || encoder.includeEmptyKeys { try c.encode(ActionFields(action: up), forKey: AnyKey("up")) }
+        if down != nil || encoder.includeEmptyKeys { try c.encode(ActionFields(action: down), forKey: AnyKey("down")) }
+    }
+}
+
 extension TrackpadConfig: Codable {
     public init(from decoder: Decoder) throws {
         self.init()
@@ -369,16 +411,18 @@ extension MouseConfig: Codable {
     public init(from decoder: Decoder) throws {
         self.init()
         let c = try decoder.container(keyedBy: AnyKey.self)
-        noteUnknownKeys(c, known: ["invertScroll", "buttons"], in: decoder)
+        noteUnknownKeys(c, known: ["invertScroll", "buttons", "verticalWheel"], in: decoder)
         invertScroll = try c.decodeIfPresent(InvertScroll.self, forKey: AnyKey("invertScroll")) ?? InvertScroll()
         buttons = try c.decodeIfPresent(ButtonMap.self, forKey: AnyKey("buttons")) ?? ButtonMap()
+        verticalWheel = try c.decodeIfPresent(WheelMap.self, forKey: AnyKey("verticalWheel")) ?? WheelMap()
     }
 
-    /// Show the button slots when initializing a configuration file.
+    /// Show the button and wheel slots when initializing a configuration file.
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: AnyKey.self)
         try c.encode(invertScroll, forKey: AnyKey("invertScroll"))
         if !buttons.isEmpty || encoder.includeEmptyKeys { try c.encode(buttons, forKey: AnyKey("buttons")) }
+        if !verticalWheel.isEmpty || encoder.includeEmptyKeys { try c.encode(verticalWheel, forKey: AnyKey("verticalWheel")) }
     }
 }
 
@@ -411,7 +455,8 @@ extension AppConfig: Codable {
         trackpad = try c.decodeIfPresent(TrackpadConfig.self, forKey: AnyKey("trackpad")) ?? TrackpadConfig()
         let references: [(String, ButtonAction?)] = [
             ("mouse.buttons.back", mouse.buttons.back), ("mouse.buttons.forward", mouse.buttons.forward),
-            ("mouse.buttons.thumb", mouse.buttons.thumb)
+            ("mouse.buttons.thumb", mouse.buttons.thumb),
+            ("mouse.verticalWheel.up", mouse.verticalWheel.up), ("mouse.verticalWheel.down", mouse.verticalWheel.down)
         ] + [3, 4].flatMap { fingers in SwipeDirection.allCases.map { direction in
             ("trackpad.\(fingers == 3 ? "threeFingerSwipe" : "fourFingerSwipe").\(direction.rawValue)",
              trackpad.action(fingers: fingers, direction: direction))
