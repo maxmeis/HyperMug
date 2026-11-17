@@ -114,6 +114,9 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: package.json
+          # Release jobs sign and publish; never restore a shared Actions cache that
+          # another workflow could have poisoned. setup-node v5+ caches automatically.
+          package-manager-cache: false
       - name: Check out shared signing implementation
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
