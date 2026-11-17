@@ -142,10 +142,15 @@ if [[ "$release_exists" == 0 ]]; then
   gh release create "$tag" "$work/$asset" "$work/$feed" "$work/${token}.rb" "$work/sha256.txt" "${release_args[@]}"
 else
   # Never regenerate a signed ZIP or its metadata on retry. Any missing asset
-  # fails closed; gh release upload --clobber is deliberately absent.
+  # fails closed; gh release upload --clobber is deliberately absent. The
+  # rebuilt copies are discarded: only the published bytes are used, downloaded
+  # into an empty directory so no download ever overwrites a file.
+  published="$work/published"
+  mkdir "$published"
   for name in "$asset" "$feed" "${token}.rb" sha256.txt; do
-    gh release download "$tag" --repo "$RELEASES_REPOSITORY" --pattern "$name" --dir "$work" >/dev/null
-    test -s "$work/$name" || { echo "Release asset missing: $name" >&2; exit 1; }
+    gh release download "$tag" --repo "$RELEASES_REPOSITORY" --pattern "$name" --dir "$published" >/dev/null
+    test -s "$published/$name" || { echo "Release asset missing: $name" >&2; exit 1; }
+    mv -f "$published/$name" "$work/$name"
   done
 fi
 actual="$(shasum -a 256 "$work/$asset" | awk '{print $1}')"

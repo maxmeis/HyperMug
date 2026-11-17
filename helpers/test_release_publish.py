@@ -156,6 +156,8 @@ elif args[0] == "release" and args[1] == "download":
     name = args[args.index("--pattern") + 1]
     out = Path(args[args.index("--dir") + 1]) / name
     if not release or name not in release["assets"]: sys.exit(1)
+    # Like gh: an existing file is never overwritten without --clobber.
+    if out.exists() and "--clobber" not in args: sys.exit(f"{out} already exists (use `--clobber` to overwrite file)")
     out.write_bytes(bytes.fromhex(release["assets"][name]))
 elif args[:2] == ["pr", "list"]:
     repo = repo_arg(args); head = args[args.index("--head") + 1]
