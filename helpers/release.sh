@@ -33,6 +33,8 @@ bundle_plist="$app"/Contents/Info.plist
 [[ "$(plutil -extract CFBundleShortVersionString raw -o - "$bundle_plist")" == "$app_version" ]] || { echo 'Built marketing version mismatch' >&2; exit 1; }
 [[ "$(plutil -extract CFBundleVersion raw -o - "$bundle_plist")" == "$BUILD_NUMBER" ]] || { echo 'Built build version mismatch' >&2; exit 1; }
 [[ "$(plutil -extract HyperMugReleaseChannel raw -o - "$bundle_plist")" == "$CHANNEL" ]] || { echo 'Built channel mismatch' >&2; exit 1; }
+embedded_sparkle_key="$(plutil -extract SUPublicEDKey raw -o - "$bundle_plist")"
+[[ "$embedded_sparkle_key" == "$SPARKLE_PUBLIC_ED_KEY" ]] || { echo 'Built Sparkle public key mismatch' >&2; exit 1; }
 bash "$RELEASE_BOT_SIGNING_SCRIPT" sign-app "$app"
 bash "$RELEASE_BOT_SIGNING_SCRIPT" notarize-app "$app"
 mkdir -p build/release
@@ -44,5 +46,5 @@ SPARKLE_ROOT="$(cd "$source_root" && source helpers/sparkle.sh && printf '%s' "$
 signature="$("${SPARKLE_ROOT:?}/bin/sign_update" "$archive" --ed-key-file "$work/eddsa.key")"
 signature="$(printf '%s' "$signature" | sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p')"
 [[ -n "$signature" ]] || { echo 'Sparkle signature missing' >&2; exit 1; }
-swift helpers/verify-update.swift "$archive" "$signature"
+SPARKLE_PUBLIC_ED_KEY="$embedded_sparkle_key" swift helpers/verify-update.swift "$archive" "$signature"
 python3 helpers/release_metadata.py render "${args[@]}" --build-number "$BUILD_NUMBER" --zip "$archive" --signature "$signature" --output build/release

@@ -44,7 +44,7 @@ if [[ "$1" == -dv ]]; then printf 'Authority=Developer ID Application: Example\\
 ''',
             "ditto": 'printf "archive" > "${@: -1}"',
             "plutil": '''
-case "$2" in CFBundleShortVersionString) echo 1.2.3;; CFBundleVersion) echo 1.2.3;; HyperMugReleaseChannel) echo stable;; *) exit 1;; esac
+case "$2" in CFBundleShortVersionString) echo 1.2.3;; CFBundleVersion) echo 1.2.3;; HyperMugReleaseChannel) echo stable;; SUPublicEDKey) echo "${EMBEDDED_SPARKLE_KEY:-public-key}";; *) exit 1;; esac
 ''',
             "swift": ":",
             "make": '''
@@ -101,6 +101,13 @@ chmod +x "$RELEASE_SOURCE_DIR/build/deps/Sparkle-2.10.1/bin/sign_update"
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Mixed notarization modes", result.stderr)
         self.assertFalse(self.log.exists())
+
+    def test_wrong_bundled_sparkle_key_prevents_notarization_and_archive(self):
+        result = self.run_release(EMBEDDED_SPARKLE_KEY="wrong-public-key")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Built Sparkle public key mismatch", result.stderr)
+        self.assertNotIn("xcrun notarytool submit", self.log.read_text())
+        self.assertFalse((self.automation / "build/release/HyperMug-1.2.3.zip").exists())
 
 
 if __name__ == "__main__":
