@@ -45,6 +45,7 @@ jobs:
           GH_TOKEN: ${{ steps.publisher.outputs.token }}
           PUBLISHER_TOKEN: ${{ steps.publisher.outputs.token }}
           PUBLISHER_REPOSITORY: ${{ steps.publisher.outputs.repository }}
+          PUBLISHER_APP_ID: ${{ steps.publisher.outputs.app-id }}
           PUBLISHER_INSTALLATION_ID: ${{ steps.publisher.outputs.installation-id }}
           PUBLISHER_APP_SLUG: ${{ steps.publisher.outputs.app-slug }}
           PUBLISHER_BOT_USER_ID: ${{ steps.publisher.outputs.bot-user-id }}
