@@ -45,6 +45,8 @@ When macOS Secure Input is active, the system blocks keyboard event taps. Caps L
 
 The menu's **Blocked by Secure Input** item opens a reusable status panel. It refreshes while visible and shows the reported app and process details, including whether it is frontmost. **Bring to Front** activates the reported app. **Quit** and **Force Quit** ask for confirmation and are disabled for HyperMug itself, system processes, invalid process IDs, and processes owned by another user. macOS may report that Secure Input is active without identifying an owner; in that case HyperMug reports an unknown app.
 
+macOS can keep an old holder PID after that process exits. HyperMug verifies that the PID still exists before it shows process actions. It reports a stale holder as an unknown app. The Secure Input on/off state remains independent of this holder metadata.
+
 ## Doctor and activity
 
 Doctor opens the Overview page of the shared HyperMug window. It summarizes permissions, capture state, configuration errors and binding counts. Configuration edits the raw JSON file; Permissions, Conflicts and Activity diagnose the running setup. Checks update while its window is open. Conflicts lists possible overlaps with macOS gestures and other input apps. Unknown keys are schema errors; remove or correct them in the configuration file.
