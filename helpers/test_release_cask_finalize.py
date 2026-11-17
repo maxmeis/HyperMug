@@ -48,7 +48,7 @@ class CaskFinalizerTests(unittest.TestCase):
         self.git("commit", "-m", "chore: update published cask", cwd=self.seed)
         self.head = self.git("rev-parse", "HEAD", cwd=self.seed)
         self.git("push", "origin", self.branch, cwd=self.seed)
-        self.ci = dict(event="workflow_dispatch", status="completed", conclusion="success",
+        self.ci = dict(event="push", actor={"login": "maxmeisreleasebot[bot]", "id": 357859028}, status="completed", conclusion="success",
                        path=".github/workflows/ci.yml", head_repository={"full_name": REPOSITORY},
                        head_branch=self.branch, head_sha=self.head)
         self.check = dict(name="ci", app={"id": 15368}, head_sha=self.head,
@@ -59,7 +59,10 @@ class CaskFinalizerTests(unittest.TestCase):
                             assets=[dict(name="hypermug@canary.rb", digest="sha256:" + hashlib.sha256(self.content.encode()).hexdigest()),
                                     dict(name="HyperMug-" + self.version + ".zip", digest="sha256:" + "a" * 64)])
         self.asset_data = self.content.encode()
-        self.publisher = {"login": "maxmeis", "id": 41482988}
+        self.publisher = {"total_count": 1, "repositories": [{"full_name": REPOSITORY}]}
+        self.immutable = {"enabled": True}
+        self.actions = {"total_count": 1, "workflow_runs": [{}]}
+        self.api_calls = []
 
     def tearDown(self):
         self.temp.cleanup()
@@ -77,8 +80,13 @@ class CaskFinalizerTests(unittest.TestCase):
         self.git("push", "--force", "origin", self.branch, cwd=self.seed)
 
     def fake_api(self, endpoint):
-        if endpoint == "user":
+        self.api_calls.append(endpoint)
+        if endpoint == "installation/repositories?per_page=100&page=1":
             return copy.deepcopy(self.publisher)
+        if endpoint == f"repos/{REPOSITORY}/immutable-releases":
+            return copy.deepcopy(self.immutable)
+        if endpoint == f"repos/{REPOSITORY}/actions/runs?per_page=1":
+            return copy.deepcopy(self.actions)
         if "/actions/runs/" in endpoint:
             return copy.deepcopy(self.ci)
         if "/check-runs" in endpoint:
@@ -105,7 +113,9 @@ class CaskFinalizerTests(unittest.TestCase):
 
     def invoke(self):
         work = Path(tempfile.mkdtemp(prefix="finalize-", dir=self.root))
-        with patch.dict(os.environ, RELEASE_TOKEN="fixture"), \
+        with patch.dict(os.environ, PUBLISHER_TOKEN="fixture", PUBLISHER_REPOSITORY=REPOSITORY,
+                        PUBLISHER_APP_ID="5801152", PUBLISHER_APP_SLUG="maxmeisreleasebot", PUBLISHER_BOT_USER_ID="357859028",
+                        PUBLISHER_INSTALLATION_ID="182962225"), \
              patch.object(subject, "api", side_effect=self.fake_api), \
              patch.object(subject, "run", side_effect=self.fake_run):
             return subject.finalize(REPOSITORY, REPOSITORY, 42, work)
@@ -123,6 +133,15 @@ class CaskFinalizerTests(unittest.TestCase):
         self.assertEqual(actual, self.content.strip())
         self.assertEqual(self.invoke(), "already published")
         self.assertEqual(self.main_head(), self.head)
+
+    def test_installation_scope_must_be_exactly_this_repository(self):
+        self.publisher["total_count"] = 2
+        self.publisher["repositories"].append({"full_name": "maxmeis/other"})
+        self.assert_rejected()
+
+    def test_installation_scope_rejects_wrong_repository(self):
+        self.publisher["repositories"] = [{"full_name": "maxmeis/other"}]
+        self.assert_rejected()
 
     def test_stable_metadata_uses_its_own_release_asset_and_cask(self):
         self.channel, self.branch, self.version = "stable", "release-casks/stable", "1.2.3"
@@ -143,7 +162,7 @@ class CaskFinalizerTests(unittest.TestCase):
         self.assertEqual(self.main_head(), self.head)
         self.assertNotIn("hypermug@canary.rb", self.git("--git-dir", str(self.bare), "ls-tree", "-r", "main"))
 
-    def test_user_token_push_ci_can_publish_without_an_extra_dispatch(self):
+    def test_app_token_push_ci_can_publish_without_an_extra_dispatch(self):
         self.ci["event"] = "push"
         self.assertEqual(self.invoke(), "published")
         self.assertEqual(self.main_head(), self.head)
@@ -158,8 +177,47 @@ class CaskFinalizerTests(unittest.TestCase):
                 self.ci = copy.deepcopy(original); self.ci[field] = value
                 self.assert_rejected()
 
-    def test_commit_author_does_not_replace_authenticated_owner_credentials(self):
-        self.publisher = {"login": "github-actions[bot]", "id": 41898282}
+    def test_wrong_publisher_proof_fails_before_api_access(self):
+        with patch.dict(os.environ, PUBLISHER_REPOSITORY=REPOSITORY,
+                        PUBLISHER_APP_ID="wrong", PUBLISHER_APP_SLUG="maxmeisreleasebot",
+                        PUBLISHER_BOT_USER_ID="357859028", PUBLISHER_INSTALLATION_ID="182962225"), \
+             patch.object(subject, "api", side_effect=self.fake_api):
+            with self.assertRaisesRegex(ValueError, "verified release-bot action output"):
+                subject.verify_publisher(REPOSITORY)
+        self.assertEqual(self.api_calls, [])
+
+    def test_each_pinned_publisher_output_is_required(self):
+        proof = dict(PUBLISHER_REPOSITORY=REPOSITORY, PUBLISHER_APP_ID="5801152",
+                     PUBLISHER_APP_SLUG="maxmeisreleasebot", PUBLISHER_BOT_USER_ID="357859028",
+                     PUBLISHER_INSTALLATION_ID="182962225")
+        wrong = dict(PUBLISHER_REPOSITORY="maxmeis/other", PUBLISHER_APP_ID="5801153",
+                     PUBLISHER_APP_SLUG="other-app", PUBLISHER_BOT_USER_ID="357859029",
+                     PUBLISHER_INSTALLATION_ID="182962226")
+        for field, value in wrong.items():
+            with self.subTest(field=field), patch.dict(os.environ, dict(proof, **{field: value})), \
+                 patch.object(subject, "api", side_effect=self.fake_api):
+                with self.assertRaisesRegex(ValueError, "verified release-bot action output"):
+                    subject.verify_publisher(REPOSITORY)
+        self.assertEqual(self.api_calls, [])
+
+    def test_consumer_preflight_reads_exact_scope_immutability_and_actions(self):
+        with patch.dict(os.environ, PUBLISHER_REPOSITORY=REPOSITORY,
+                        PUBLISHER_APP_ID="5801152", PUBLISHER_APP_SLUG="maxmeisreleasebot",
+                        PUBLISHER_BOT_USER_ID="357859028", PUBLISHER_INSTALLATION_ID="182962225"), \
+             patch.object(subject, "api", side_effect=self.fake_api):
+            subject.verify_publisher(REPOSITORY)
+        self.assertEqual(self.api_calls, [
+            "installation/repositories?per_page=100&page=1",
+            f"repos/{REPOSITORY}/immutable-releases",
+            f"repos/{REPOSITORY}/actions/runs?per_page=1",
+        ])
+        self.assertNotIn("user", self.api_calls)
+
+    def test_consumer_preflight_rejects_missing_immutable_or_actions_access(self):
+        self.immutable["enabled"] = False
+        self.assert_rejected()
+        self.immutable["enabled"] = True
+        self.actions = {"message": "Resource not accessible by integration"}
         self.assert_rejected()
 
     def test_required_check_must_belong_to_this_exact_run_head_and_actions_app(self):
@@ -262,7 +320,9 @@ class CaskFinalizerTests(unittest.TestCase):
             if args[:2] == ("git", "push"):
                 raise subprocess.CalledProcessError(1, args)
             return self.fake_run(*args, **kwargs)
-        with patch.dict(os.environ, RELEASE_TOKEN="fixture"), \
+        with patch.dict(os.environ, PUBLISHER_TOKEN="fixture", PUBLISHER_REPOSITORY=REPOSITORY,
+                        PUBLISHER_APP_ID="5801152", PUBLISHER_APP_SLUG="maxmeisreleasebot", PUBLISHER_BOT_USER_ID="357859028",
+                        PUBLISHER_INSTALLATION_ID="182962225"), \
              patch.object(subject, "api", side_effect=self.fake_api), \
              patch.object(subject, "run", side_effect=reject_push), \
              patch.object(subject, "publish") as prepare:
@@ -280,7 +340,9 @@ class CaskFinalizerTests(unittest.TestCase):
                 self.git("push", "origin", "main", cwd=self.seed)
                 raise subprocess.CalledProcessError(1, args)
             return self.fake_run(*args, **kwargs)
-        with patch.dict(os.environ, RELEASE_TOKEN="fixture"), \
+        with patch.dict(os.environ, PUBLISHER_TOKEN="fixture", PUBLISHER_REPOSITORY=REPOSITORY,
+                        PUBLISHER_APP_ID="5801152", PUBLISHER_APP_SLUG="maxmeisreleasebot", PUBLISHER_BOT_USER_ID="357859028",
+                        PUBLISHER_INSTALLATION_ID="182962225"), \
              patch.object(subject, "api", side_effect=self.fake_api), \
              patch.object(subject, "run", side_effect=racing_push), \
              patch.object(subject, "publish") as prepare:
@@ -293,7 +355,7 @@ class CaskFinalizerTests(unittest.TestCase):
 class GitCredentialTests(unittest.TestCase):
     def test_token_stays_out_of_git_arguments_and_remote_urls(self):
         result = subprocess.CompletedProcess([], 0, stdout="ok\n")
-        with patch.dict(os.environ, RELEASE_TOKEN="private-fixture-token", GIT_CONFIG_COUNT="0"), \
+        with patch.dict(os.environ, PUBLISHER_TOKEN="private-fixture-token", GIT_CONFIG_COUNT="0"), \
              patch.object(subprocess, "run", return_value=result) as execute:
             self.assertEqual(publish_source_cask.run("git", "clone",
                              "https://github.com/maxmeis/hypermug.git", "checkout", capture=True), "ok")

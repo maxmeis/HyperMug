@@ -136,44 +136,26 @@ class ReleaseNotaryAuthTests(unittest.TestCase):
         self.assertIn("Missing Apple app-specific password", result.stderr)
         self.assertFalse(self.capture.exists())
 
-    def test_keychain_snapshot_failure_stops_before_creating_signing_keychain(self):
+    def test_release_requires_shared_signing_context_before_build(self):
         project = Path(self.temp_dir.name) / "project"
         scripts = project / "helpers"
         scripts.mkdir(parents=True)
-        for name in ("release.sh", "notary_auth.sh", "release_metadata.py"):
+        for name in ("release.sh", "release_metadata.py"):
             shutil.copy2(ROOT / "helpers" / name, scripts / name)
-        calls = Path(self.temp_dir.name) / "security-calls.jsonl"
-        security = self.bin_dir / "security"
-        security.write_text(
-            "#!/usr/bin/env python3\n"
-            "import json, os, sys\n"
-            "with open(os.environ['SECURITY_CALLS'], 'a') as f: f.write(json.dumps(sys.argv[1:]) + '\\n')\n"
-            "if sys.argv[1] == 'list-keychains':\n"
-            "    print('injected keychain snapshot failure', file=sys.stderr)\n"
-            "    sys.exit(64)\n"
-        )
-        security.chmod(0o755)
         env = os.environ.copy()
         env.update({
-            "PATH": f"{self.bin_dir}:{env['PATH']}", "SECURITY_CALLS": str(calls),
             "CHANNEL": "stable", "VERSION": "1.2.3", "BUILD_NUMBER": "1.2.3",
             "SOURCE_REPOSITORY": "maxmeis/hypermug", "RELEASES_REPOSITORY": "maxmeis/hypermug",
             "TAP_REPOSITORY": "maxmeis/homebrew-formulae", "GITHUB_ACTOR": "maxmeis",
             "GITHUB_TRIGGERING_ACTOR": "maxmeis", "GITHUB_REF": "refs/tags/v1.2.3",
-            "GITHUB_SHA": "a" * 40, "DEVELOPER_ID_P12_BASE64": "ZmFrZQ==",
-            "DEVELOPER_ID_P12_PASSWORD": "test-only", "SIGN_ID": "test-only",
-            "SPARKLE_EDDSA_PRIVATE_KEY": "test-only", "RUNNER_TEMP": str(self.work),
-            "APP_STORE_CONNECT_PRIVATE_KEY": "test-only", "APP_STORE_CONNECT_KEY_ID": "test-only",
-            "APP_STORE_CONNECT_ISSUER_ID": "test-only",
+            "GITHUB_SHA": "a" * 40, "SPARKLE_EDDSA_PRIVATE_KEY": "test-only",
         })
+        for name in ("SIGN_KEYCHAIN", "RELEASE_BOT_SIGNING_SCRIPT", "RELEASE_BOT_SIGN_ID", "RELEASE_BOT_NOTARY_PROFILE"):
+            env.pop(name, None)
         result = subprocess.run(["bash", str(scripts / "release.sh")], env=env, capture_output=True, text=True)
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("injected keychain snapshot failure", result.stderr)
-        invocations = [json.loads(line) for line in calls.read_text().splitlines()]
-        self.assertEqual(invocations[0], ["list-keychains", "-d", "user"])
-        self.assertFalse(any(args[0] == "create-keychain" for args in invocations))
-        self.assertEqual(invocations[-1][0], "delete-keychain")
-        self.assertFalse(Path(invocations[-1][1]).parent.exists(), "Temporary signing data must be removed")
+        self.assertIn("SIGN_KEYCHAIN", result.stderr)
+        self.assertFalse((project / "build").exists())
 
 
 if __name__ == "__main__":

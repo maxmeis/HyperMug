@@ -1,0 +1,41 @@
+name: Release bot preflight
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    if: github.repository == 'maxmeis/hypermug' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out exact trusted main
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify preflight source before minting
+        run: |
+          test "$GITHUB_REPOSITORY" = maxmeis/hypermug
+          test "$GITHUB_REF" = refs/heads/main
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - name: Mint and verify repository-scoped App token
+        id: publisher
+        uses: maxmeis/release-bot/actions/publisher-token@ac8269adb164a9e768bf637169229f9bd0bb4d0e # pinned release-bot commit
+        with:
+          app-id: ${{ vars.RELEASE_BOT_APP_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repository: ${{ github.event.repository.name }}
+          expected-app-slug: ${{ vars.RELEASE_BOT_APP_SLUG }}
+          expected-installation-id: ${{ vars.RELEASE_BOT_INSTALLATION_ID }}
+      - name: Verify HyperMug consumer publisher without writes
+        env:
+          GH_TOKEN: ${{ steps.publisher.outputs.token }}
+          PUBLISHER_TOKEN: ${{ steps.publisher.outputs.token }}
+          PUBLISHER_REPOSITORY: ${{ steps.publisher.outputs.repository }}
+          PUBLISHER_APP_ID: ${{ steps.publisher.outputs.app-id }}
+          PUBLISHER_APP_SLUG: ${{ steps.publisher.outputs.app-slug }}
+          PUBLISHER_INSTALLATION_ID: ${{ steps.publisher.outputs.installation-id }}
+          PUBLISHER_BOT_USER_ID: ${{ steps.publisher.outputs.bot-user-id }}
+        run: python3 helpers/finalize_source_cask.py --verify-publisher --repository maxmeis/hypermug

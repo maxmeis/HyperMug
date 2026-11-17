@@ -2,6 +2,7 @@
 """Publish only verified, CI-passing release cask metadata without a release PR."""
 import argparse
 import hashlib
+import os
 import json
 import re
 import subprocess
@@ -58,20 +59,45 @@ def verified_asset(repository, releases_repository, channel, content, directory)
     return version, source, asset
 
 
+def verify_publisher(repository):
+    """Verify pinned App proof and live, read-only consumer API permissions."""
+    if repository != "maxmeis/hypermug":
+        raise ValueError("unexpected publication repository")
+    if (os.environ.get("PUBLISHER_REPOSITORY") != repository
+            or os.environ.get("PUBLISHER_APP_ID") != "5801152"
+            or os.environ.get("PUBLISHER_APP_SLUG") != "maxmeisreleasebot"
+            or os.environ.get("PUBLISHER_BOT_USER_ID") != "357859028"
+            or os.environ.get("PUBLISHER_INSTALLATION_ID") != "182962225"):
+        raise ValueError("verified release-bot action output is required")
+    scope = api("installation/repositories?per_page=100&page=1")
+    repositories = scope.get("repositories")
+    if (scope.get("total_count") != 1 or not isinstance(repositories, list)
+            or len(repositories) != 1 or not isinstance(repositories[0], dict)
+            or repositories[0].get("full_name", "").lower() != repository.lower()):
+        raise ValueError("publisher token must access exactly this repository")
+    immutable = api(f"repos/{repository}/immutable-releases")
+    if immutable.get("enabled") is not True:
+        raise ValueError("immutable releases must be enabled")
+    actions = api(f"repos/{repository}/actions/runs?per_page=1")
+    if (not isinstance(actions.get("total_count"), int)
+            or not isinstance(actions.get("workflow_runs"), list)):
+        raise ValueError("publisher token lacks readable Actions API access")
+
+
 def finalize(repository, releases_repository, run_id, work):
     if repository != "maxmeis/hypermug" or not REPO.fullmatch(releases_repository):
         raise ValueError("unexpected publication repository")
     if not re.fullmatch(r"[1-9][0-9]*", str(run_id)):
         raise ValueError("a CI workflow run ID is required")
-    publisher = api("user")
-    if publisher.get("login") != "maxmeis" or publisher.get("id") != 41482988:
-        raise ValueError("publication requires maxmeis user credentials")
+    verify_publisher(repository)
     work.mkdir(parents=True, exist_ok=True)
     ci = api(f"repos/{repository}/actions/runs/{run_id}")
     branch = ci.get("head_branch", "")
-    if (ci.get("event") not in ("push", "workflow_dispatch") or ci.get("status") != "completed"
+    if (ci.get("event") != "push" or ci.get("status") != "completed"
             or ci.get("conclusion") != "success"
             or ci.get("path") != ".github/workflows/ci.yml"
+            or (ci.get("actor") or {}).get("login") != "maxmeisreleasebot[bot]"
+            or (ci.get("actor") or {}).get("id") != 357859028
             or (ci.get("head_repository") or {}).get("full_name", "").lower() != repository.lower()
             or branch not in ("release-casks/stable", "release-casks/canary")):
         raise ValueError("only successful same-repository release metadata CI is accepted")
@@ -136,9 +162,18 @@ def finalize(repository, releases_repository, run_id, work):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--repository", required=True)
-    parser.add_argument("--releases-repository", required=True)
-    parser.add_argument("--run-id", required=True)
+    parser.add_argument("--repository")
+    parser.add_argument("--releases-repository")
+    parser.add_argument("--run-id")
+    parser.add_argument("--verify-publisher", action="store_true")
     args = parser.parse_args()
-    with tempfile.TemporaryDirectory(prefix="hypermug-cask-finalize-") as directory:
-        print(finalize(args.repository, args.releases_repository, args.run_id, Path(directory)))
+    if args.verify_publisher:
+        if args.repository != "maxmeis/hypermug" or args.releases_repository or args.run_id:
+            parser.error("--verify-publisher requires only --repository maxmeis/hypermug")
+        verify_publisher(args.repository)
+        print("Verified HyperMug release publisher API access")
+    else:
+        if not all((args.repository, args.releases_repository, args.run_id)):
+            parser.error("finalization requires --repository, --releases-repository and --run-id")
+        with tempfile.TemporaryDirectory(prefix="hypermug-cask-finalize-") as directory:
+            print(finalize(args.repository, args.releases_repository, args.run_id, Path(directory)))

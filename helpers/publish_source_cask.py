@@ -11,12 +11,14 @@ from release_metadata import bundle_identity
 
 def run(*args, cwd=None, capture=False):
     env = os.environ.copy()
-    if args[0] == "git" and env.get("RELEASE_TOKEN"):
+    if args[0] == "git" and env.get("PUBLISHER_TOKEN") and not any(
+            env.get(f"GIT_CONFIG_KEY_{i}") == "http.https://github.com/.extraheader"
+            for i in range(int(env.get("GIT_CONFIG_COUNT", "0")))):
         # Keep credentials out of remote URLs, process arguments, and error text.
         index = int(env.get("GIT_CONFIG_COUNT", "0"))
         env["GIT_CONFIG_COUNT"] = str(index + 1)
         env[f"GIT_CONFIG_KEY_{index}"] = "http.https://github.com/.extraheader"
-        credential = base64.b64encode(("x-access-token:" + env["RELEASE_TOKEN"]).encode()).decode()
+        credential = base64.b64encode(("x-access-token:" + env["PUBLISHER_TOKEN"]).encode()).decode()
         env[f"GIT_CONFIG_VALUE_{index}"] = "AUTHORIZATION: basic " + credential
     result = subprocess.run(args, cwd=cwd, check=True, text=True,
                             env=env,
@@ -85,15 +87,15 @@ def publish(channel, version, repository, asset, work):
         main_file.parent.mkdir(parents=True, exist_ok=True)
         main_file.write_text(desired)
         run("git", "add", "--", path, cwd=work)
-        run("git", "-c", "user.name=maxmeis",
-            "-c", "user.email=41482988+maxmeis@users.noreply.github.com", "commit",
+        run("git", "-c", "user.name=maxmeisreleasebot[bot]",
+            "-c", "user.email=357859028+maxmeisreleasebot[bot]@users.noreply.github.com", "commit",
             "-m", f"chore: update {token} cask to {version}", cwd=work)
         refspec = f"HEAD:refs/heads/{branch}"
         if previous_sha:
             run("git", "push", f"--force-with-lease=refs/heads/{branch}:{previous_sha}", "origin", refspec, cwd=work)
         else:
             run("git", "push", "origin", refspec, cwd=work)
-    # RELEASE_TOKEN is the owner credential. Its push already starts CI.
+    # PUBLISHER_TOKEN is the App publisher token. Its push already starts CI.
     # A second dispatch races check-run registration, cancels the push run,
     # and can leave GitHub's required ci context cancelled even after success.
 
