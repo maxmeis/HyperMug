@@ -18,7 +18,7 @@ if gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json body >/dev/null 2>&
   body="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json body --jq .body)"
   [[ "$body" == "$notes" ]] || { echo 'Existing release belongs to a different source' >&2; exit 1; }
   is_draft="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)"
-  if gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | rg -qx "$asset"; then
+  if gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | grep -Fxq "$asset"; then
     local_digest=''
   elif [[ "$is_draft" == true ]]; then
     gh release upload "$tag" "$archive" --repo "$GITHUB_REPOSITORY"
