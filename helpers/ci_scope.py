@@ -10,7 +10,7 @@ from pathlib import PurePosixPath
 SHA = re.compile(r"[0-9a-f]{40}")
 CONTENT_FILES = {"README.md", "CONTRIBUTING.md", "Casks/README.md"}
 CONTENT_TREES = ("docs/", "Source/Website/", "Source/Skills/")
-CASK_FILES = {"Casks/hypermug.rb", "Casks/hypermug@canary.rb"}
+CASK_FILES = {"Casks/hypermug.rb"}
 # Example configurations are validated by the Core tests, so they need native checks.
 TESTED_CONTENT = ("docs/examples/",)
 

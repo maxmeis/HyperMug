@@ -14,7 +14,6 @@ This is the configuration HyperMug writes on first launch:
 #:schema file:///Applications/HyperMug.app/Contents/Resources/hypermug.schema.json
 "$schema" = "file:///Applications/HyperMug.app/Contents/Resources/hypermug.schema.json"
 
-autoUpdate = true
 caffeineOnLaunch = true
 capsLock = "meh"
 helpers = {}
@@ -49,7 +48,7 @@ up = {}
 
 `back.shell = "…"` is TOML's dotted-key form of the table `back = { shell = "…" }`; both spellings mean the same thing. A `[mouse.buttons]` header opens the `buttons` table inside `mouse`.
 
-On a new or empty file, HyperMug shows every button, wheel and swipe direction, including unassigned slots as `{}` and an empty `helpers` table. These placeholders run no action; they make available keys visible while editing. The defaults are `capsLock = "meh"`, `caffeineOnLaunch = true`, `autoUpdate = true`, `launchAtLogin = true`, both scroll inversions off, and the six AeroSpace mappings shown. These shell actions require AeroSpace at the specified path to work. Existing preferences are preserved; only the `$schema` metadata is updated when the installed bundle location changes. Missing keys in an existing file retain their previous fallback values; in particular, omitted `launchAtLogin` remains `false` and omitted mappings remain unmapped.
+On a new or empty file, HyperMug shows every button, wheel and swipe direction, including unassigned slots as `{}` and an empty `helpers` table. These placeholders run no action; they make available keys visible while editing. The defaults are `capsLock = "meh"`, `caffeineOnLaunch = true`, `launchAtLogin = true`, both scroll inversions off, and the six AeroSpace mappings shown. These shell actions require AeroSpace at the specified path to work. Existing preferences are preserved; only the `$schema` metadata is updated when the installed bundle location changes. Missing keys in an existing file retain their previous fallback values; in particular, omitted `launchAtLogin` remains `false` and omitted mappings remain unmapped.
 
 ### AeroSpace example
 
@@ -59,7 +58,6 @@ On a new or empty file, HyperMug shows every button, wheel and swipe direction, 
 #:schema file:///Applications/HyperMug.app/Contents/Resources/hypermug.schema.json
 "$schema" = "file:///Applications/HyperMug.app/Contents/Resources/hypermug.schema.json"
 
-autoUpdate = true
 caffeineOnLaunch = true
 capsLock = "meh"
 launchAtLogin = false
@@ -118,7 +116,7 @@ The migrated file is written in canonical form: keys sorted, single-key tables a
 | --- | --- |
 | `capsLock` | `"default"` leaves Caps Lock alone; `"meh"` maps hold to ⌃⌥⌘ and tap to Escape; `"hyper"` maps hold to ⌃⌥⇧⌘ and tap to Escape. |
 | `caffeineOnLaunch` | Whether Stay Awake starts enabled. The menu's checked **Stay Awake** item changes the running session only; it does not edit this preference. |
-| `autoUpdate` | Whether Sparkle performs scheduled checks on the installed Stable or Canary feed. Defaults to `true`; manual **Check for Updates…** remains available when false. |
+| `autoUpdate` | Legacy compatibility key, accepted but ignored. Update Production with Homebrew; rebuild local apps. |
 | `launchAtLogin` | Registers HyperMug as a login item when true. |
 | `shellTimeoutSeconds` | Shell action deadline in seconds, from `1` through `300`; defaults to `10`. At the deadline HyperMug terminates the action’s process group and sends a native notification. |
 | `helpers` | Optional names mapped to non-empty shell commands. Mouse buttons, wheel directions and three- or four-finger swipes may reference a name; a command is defined once and shared. |

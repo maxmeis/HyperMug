@@ -4,23 +4,19 @@ App source and Core tests live in `Source/HyperMug/`. Build and automation helpe
 
 ## Build and run
 
-On macOS with Xcode Command Line Tools installed:
+On macOS with Xcode Command Line Tools installed, one command builds the local app:
 
 ```sh
-make setup     # install development tools and the local signing identity
-make build     # build HyperMug Dev without launching it
-make run       # build Dev, stop other instances, and open Doctor
-make restart   # restart the existing Dev build
-make check     # run all checks
+make dev
 ```
 
-Run `make help` for the command list. Build products use the root `build/` directory. Set `BUILD_ROOT=/path/to/disposable-output` to build isolated bundles without replacing your running Dev app. The builder generates the variant’s schema into `Contents/Resources` before signing. `make clean` removes generated files.
+This produces `build/HyperMug Dev.app` with an ad-hoc signature (`codesign -s -`). It needs no Apple Developer account, certificate or notarization. `make run` builds and launches Dev; `make restart` launches its existing build. `make setup` installs the repository's Node development tools when you need commit hooks and their checks.
 
-Local builds use **HyperMug Dev** (`com.maxmeis.hypermug.dev`). Dev uses `~/.config/hypermug-dev.toml` (and migrates a legacy `hypermug-dev.json` itself) and `~/Library/Logs/HyperMug Dev/`. Production keeps its own name, bundle ID, permissions, settings, and logs. The local launcher copies production settings once (from `hypermug.toml`, or converted from a not yet migrated `hypermug.json`, which it only reads), disables login launch and updates in that copy, and stops both app variants before launching Dev. If AeroSpace is available, it brings Doctor to the current workspace.
+Run `make help` for other commands. Set `BUILD_ROOT=/path/to/disposable-output` to isolate build products. The builder generates the variant's schema into `Contents/Resources` before signing. `make clean` removes the root build output.
 
-Run `make signing` to create `HyperMug Local Signing` in the login keychain. This needs no administrator access. The first build can ask you to allow codesign to use the key. Choose Always Allow. Builds stop if the signing identity is missing. Disposable CI builds can use `SIGN_ID=- ALLOW_ADHOC_SIGNING=1 make build`. These builds can lose permission grants when their signature changes.
+Local **HyperMug Dev** uses bundle ID `com.maxmeis.hypermug.dev`, `~/.config/hypermug-dev.toml`, and `~/Library/Logs/HyperMug Dev/`. Production keeps its own name, bundle ID, settings, permissions and logs. Both apps are independently installable. The local launcher copies Production settings only on the first run, disables local login launch, and restarts only Dev. Avoid enabling conflicting input mappings in two running instances.
 
-Use `make build-production` for a local build with the production identity. Release CI uses `make release` with Developer ID signing and notarization. Release builds always use the production identity.
+Ad-hoc signatures can require Accessibility or Input Monitoring grants again after rebuilding. They do not require a local signing identity or Apple credentials. Production signing and notarization run only in release CI; Production app updates use Homebrew, and local updates use `make dev`.
 
 ## Architecture and checks
 
@@ -41,13 +37,9 @@ Run `make ci-tools` to install the locked Node tooling. Run `make hooks` to inst
 
 ## CI scope and workflow dependencies
 
-The required GitHub Actions check remains `ci`. Pull requests run CI; pushes run CI on `main` and the two managed `release-casks/stable` and `release-casks/canary` branches. This avoids running the same feature change twice on push and pull request. A branch without a pull request can be checked through manual CI dispatch.
+The required GitHub Actions check remains `ci`. Pull requests and `main` pushes run CI; a branch without a pull request can be checked through manual CI dispatch. An Ubuntu job inspects the complete change range. README/CONTRIBUTING, `docs/`, website, skills and the Production cask qualify for Linux checks. Examples used by Core tests, app sources, branding, build scripts, workflows, dependencies and unknown paths require native macOS checks. Missing or empty ranges select native checks conservatively. Renames inspect both paths. Run `make test-ci` for Git-history regression tests.
 
-An Ubuntu job examines the complete change range. Only README/CONTRIBUTING, `docs/`, website, skills, and the two existing channel casks qualify for Linux CI. Linux still runs layer rules, release/publication tests, shell syntax, CI-selection tests, automation tests, content checks and commit lint. App, branding, build, workflow, dependency and unknown changes run all checks on macOS, including Core coverage, native adapters, compilation and the ad-hoc bundle build. Manual runs and missing/invalid/empty change ranges also use full macOS checks. Failed selection fails the required check. Renames inspect both paths. Run `make test-ci` for the Git-history regression tests.
-
-All workflow Actions are pinned to upstream commit SHAs. Dependabot proposes weekly Actions updates for review; it does not merge them automatically. Checkout credentials are not persisted. Job timeouts bound CI and release execution. Stable stays manually versioned with production approval, Canary stays automatic, and verified cask metadata continues publishing without a release PR. These changes do not grant tokens or change repository/environment protection.
-
-The measured pre-change docs PR #27 used 212 seconds for PR CI and 267 seconds for duplicate push CI (479 macOS runner-seconds total). A pure cask update used 224 seconds. Removing the duplicate eliminates one macOS run per ordinary feature PR update; moving known content-only runs to Linux removes their native build work. Actual new runtimes must be measured from live workflows; these baseline numbers are not claimed savings or a latency guarantee.
+Actions are pinned to full commit SHAs. PR tests use ad-hoc signing without production credentials. There is no external release-bot checkout. The single Production workflow independently tests the pushed source before signing and publishing; see [Release process](releases.md) for credentials and repository settings.
 
 ## Issue-first planning
 

@@ -18,6 +18,6 @@ assert deadline['type'] == 'number' and deadline['default'] == 10, 'Missing defa
 assert deadline['minimum'] == 1 and deadline['maximum'] == 300, 'Missing deadline bounds'
 assert schema['additionalProperties'] is False, 'Unknown settings must fail validation'
 assert schema['properties']['autoUpdate']['type'] == 'boolean'
-assert info['HyperMugReleaseChannel'] in ('local', 'stable', 'canary')
+assert info['HyperMugReleaseChannel'] in ('local', 'production')
 assert sorted(p.name for p in resource.parent.glob('*.schema.json')) == [name]
 print(f'Bundled schema: {resource}')

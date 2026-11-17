@@ -12,7 +12,6 @@ private final class HyperMugRuntime {
     let trackpad: TrackpadCapture
     let ports: SystemPorts
     let engine: Engine
-    let updateChecker: UpdateChecker
     let statusItem: StatusItemController
     let notifications: IssueNotifications
     private var syncTimer: Timer?
@@ -31,8 +30,7 @@ private final class HyperMugRuntime {
         trackpad = TrackpadCapture(log: makeLogSink(category: "trackpad"))
         ports = SystemPorts(log: makeLogSink(category: "engine"), tap: tap, caps: caps, thumb: thumb, trackpad: trackpad)
         engine = Engine(ports: ports)
-        updateChecker = UpdateChecker()
-        statusItem = StatusItemController(store: store, engine: engine, updateChecker: updateChecker, trackpad: trackpad)
+        statusItem = StatusItemController(store: store, engine: engine, trackpad: trackpad)
         notifications = IssueNotifications()
         notifications.openConfiguration = { [statusItem] in statusItem.showConfiguration() }
         PrivilegeActions.confirmRelaunch = { [statusItem] in statusItem.confirmDiscard($0) }
@@ -45,9 +43,8 @@ private final class HyperMugRuntime {
         ports.onTrackpadSwipe = { [engine] swipe in engine.trackpadSwiped(swipe) }
         ports.onCapsLatchCheck = { [engine] attempt in engine.capsLatchCheckDue(attempt: attempt) }
         engine.onStateChange = { [statusItem] in statusItem.refresh() }
-        store.onChange = { [weak store, engine, updateChecker, notifications] config in
+        store.onChange = { [weak store, engine, notifications] config in
             engine.apply(config)
-            updateChecker.apply(autoUpdate: config.autoUpdate)
             ActionRunner.configure(timeout: config.shellTimeoutSeconds)
             if store?.error == nil && Bundle.main.url(forResource: AppIdentity.schemaFileName, withExtension: nil) != nil { notifications.configurationRecovered() }
         }

@@ -136,7 +136,6 @@ public struct AppConfig: Equatable {
         let swipes = SwipeMap(left: next, right: prev)
         return AppConfig(
             launchAtLogin: !AppIdentity.isDevelopment,
-            autoUpdate: !AppIdentity.isDevelopment,
             mouse: MouseConfig(buttons: ButtonMap(back: next, forward: prev)),
             trackpad: TrackpadConfig(threeFingerSwipe: swipes, fourFingerSwipe: swipes)
         )
@@ -146,12 +145,10 @@ public struct AppConfig: Equatable {
     public var capsLock: CapsMode
     public var caffeineOnLaunch: Bool
     public var launchAtLogin: Bool
-    public var autoUpdate: Bool
     public var mouse: MouseConfig
     public var trackpad: TrackpadConfig
 
     public init(capsLock: CapsMode = .meh, caffeineOnLaunch: Bool = true, launchAtLogin: Bool = false,
-                autoUpdate: Bool = true,
                 mouse: MouseConfig = MouseConfig(), trackpad: TrackpadConfig = TrackpadConfig(),
                 helpers: [String: String] = [:], shellTimeoutSeconds: Double = 10) {
         self.helpers = helpers
@@ -159,7 +156,6 @@ public struct AppConfig: Equatable {
         self.capsLock = capsLock
         self.caffeineOnLaunch = caffeineOnLaunch
         self.launchAtLogin = launchAtLogin
-        self.autoUpdate = autoUpdate
         self.mouse = mouse
         self.trackpad = trackpad
     }
@@ -450,7 +446,8 @@ extension AppConfig: Codable {
         }
         caffeineOnLaunch = try c.decodeIfPresent(Bool.self, forKey: AnyKey("caffeineOnLaunch")) ?? true
         launchAtLogin = try c.decodeIfPresent(Bool.self, forKey: AnyKey("launchAtLogin")) ?? false
-        autoUpdate = try c.decodeIfPresent(Bool.self, forKey: AnyKey("autoUpdate")) ?? true
+        // Accept the retired setting so existing files keep loading. Updates are managed by Homebrew.
+        _ = try c.decodeIfPresent(Bool.self, forKey: AnyKey("autoUpdate"))
         mouse = try c.decodeIfPresent(MouseConfig.self, forKey: AnyKey("mouse")) ?? MouseConfig()
         trackpad = try c.decodeIfPresent(TrackpadConfig.self, forKey: AnyKey("trackpad")) ?? TrackpadConfig()
         let references: [(String, ButtonAction?)] = [
@@ -477,7 +474,6 @@ extension AppConfig: Codable {
         try c.encode(capsLock.rawValue, forKey: AnyKey("capsLock"))
         try c.encode(caffeineOnLaunch, forKey: AnyKey("caffeineOnLaunch"))
         try c.encode(launchAtLogin, forKey: AnyKey("launchAtLogin"))
-        try c.encode(autoUpdate, forKey: AnyKey("autoUpdate"))
         try c.encode(mouse, forKey: AnyKey("mouse"))
         if !helpers.isEmpty || encoder.includeEmptyKeys { try c.encode(helpers, forKey: AnyKey("helpers")) }
         if trackpad.hasMappings || encoder.includeEmptyKeys { try c.encode(trackpad, forKey: AnyKey("trackpad")) }

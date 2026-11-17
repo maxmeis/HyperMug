@@ -4,14 +4,14 @@ HyperMug is a macOS menu bar utility that combines a Hyperkey, Caffeine, trackpa
 
 ## Install
 
-Requires macOS 14 Sonoma or later on Apple Silicon. Install the signed, notarized **Stable** app with:
+Requires macOS 14 Sonoma or later on Apple Silicon. Install the signed, notarized **Production** app with:
 
 ```sh
 brew tap maxmeis/hypermug https://github.com/maxmeis/hypermug
 brew install maxmeis/hypermug/hypermug
 ```
 
-For early builds, install `maxmeis/hypermug/hypermug@canary` instead. Stable and Canary stay on separate update feeds; uninstall one before switching to the other. See [Installation](docs/installation.md) for channel choice, updates, permissions, and first-run setup. For a source build, see [Development](docs/development.md).
+Update with `brew upgrade --cask maxmeis/hypermug/hypermug`. See [Installation](docs/installation.md) for permissions and first-run setup. For an independent local app, clone this repository and run `make dev`; see [Development](docs/development.md).
 
 ## Features
 
@@ -50,4 +50,4 @@ Swift app sources and tests live under `Source/HyperMug/`; repository commit hoo
 
 ## Releases
 
-Stable releases use owner-selected `vX.Y.Z` tags and can ship a signed, notarized app or source only. Canary builds automatically from app changes on `main` with its own immutable prerelease tags and binary feed. See [Release process](docs/releases.md).
+Source pushes to protected `main` automatically run tests, increment the patch version, build and notarize the Production app, publish a GitHub Release, and update the Homebrew cask directly in this repository. There is one production channel; app updates use Homebrew. See [Release process](docs/releases.md).

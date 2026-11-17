@@ -1,14 +1,16 @@
-# Homebrew casks
+# Homebrew cask
 
-This repository is the public Homebrew tap `maxmeis/hypermug`. Install the signed Stable app with:
+This repository is also the public Homebrew tap. Install Production with:
 
 ```sh
 brew tap maxmeis/hypermug https://github.com/maxmeis/hypermug
-brew install maxmeis/hypermug/hypermug
+brew install --cask maxmeis/hypermug/hypermug
 ```
 
-Homebrew follows the tap's default branch; there is no branch argument to `brew tap`. Each compiled release prepares an internal metadata branch, runs required CI, and publishes its verified cask automatically without a release pull request. `Casks/hypermug.rb` is Stable; `Casks/hypermug@canary.rb` is the opt-in early channel. Use `brew install maxmeis/hypermug/hypermug@canary` instead of the default Stable command when you want Canary. There is no placeholder cask or invented checksum.
+Update using `brew upgrade --cask maxmeis/hypermug/hypermug`, then quit and reopen the app. The app does not update itself, so the cask does not declare `auto_updates true`.
 
-Stable and Canary share an app identity, so uninstall one before installing the other. Only Stable (`hypermug`) and Canary (`hypermug@canary`) are offered. The obsolete Nightly cask is removed; historical releases remain immutable. Neither channel requires the archived external `maxmeis/homebrew-formulae` tap: external publication is disabled by default and only runs when an owner explicitly sets `PUBLISH_EXTERNAL_TAP=true` for a writable destination.
+`Casks/hypermug.rb` points to a versioned, signed and notarized `HyperMug.app` ZIP in this repository's GitHub Releases. Its SHA-256 is calculated from the final archive. A macOS application belongs in `Casks/`; `Formula/` is used for source-built tools. No separate `homebrew-*` repository is needed.
 
-The tap remains at the repository root, with app packages in `Casks/` as required by [Homebrew’s tap layout](https://docs.brew.sh/How-to-Create-and-Maintain-a-Tap#casks). `Formula/` is for formula packages; this signed macOS `.app` is a cask. Homebrew detects it in the fully qualified `brew install` command above, so `--cask` is optional. To inspect or fetch before installing, trust just the chosen package with `brew trust --cask maxmeis/hypermug/hypermug` (or the `hypermug@canary` token for Canary).
+The Production release workflow commits the verified cask directly to `main` after publishing the release. It uses a repository-scoped SSH deploy key when protected-main writes require one, with `GITHUB_TOKEN` as the default for branches that allow it. It needs the direct-push permission described in the [release process](../docs/releases.md#repository-configuration). Cask-only commits do not produce another release. The previous Canary cask is retired; historical releases are preserved.
+
+**HyperMug Dev** is built locally with `make dev` and has its own app identity, configuration and permissions. It is not distributed by this tap.

@@ -1,178 +1,84 @@
 #!/usr/bin/env python3
-"""Validate release inputs and render immutable release metadata."""
+"""Version and Homebrew metadata for the single production release channel."""
 import argparse
 import hashlib
 import re
 from pathlib import Path
-from urllib.parse import quote
-from xml.sax.saxutils import escape
 
-SEMVER = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
-CANARY = re.compile(r"^0\.0\.0-canary\.([1-9][0-9]*)$")
-REPO = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+SEMVER = re.compile(r"^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
 SHA = re.compile(r"^[0-9a-f]{40}$")
+REPOSITORY = "maxmeis/hypermug"
 
 
-def bundle_identity(channel, version):
-    """Return Apple-compatible marketing/build versions for a release tag."""
-    if channel == "stable" and SEMVER.fullmatch(version):
-        return version, version
-    if channel == "canary" and (match := CANARY.fullmatch(version)):
-        serial = match.group(1)
-        return f"0.0.{serial}", serial
-    raise ValueError("invalid release version")
+def next_version(tags, source_sha, run_number):
+    """Reserve v0.3.N for workflow run N, regardless of queue order.
+
+    The migration starts after the already-published v0.3.0 release. GitHub
+    keeps run_number stable across attempts, so retries retain one identity.
+    """
+    if not SHA.fullmatch(source_sha):
+        raise ValueError("invalid source SHA")
+    if not isinstance(run_number, int) or run_number < 1:
+        raise ValueError("run number must be a positive integer")
+    version = f"0.3.{run_number}"
+    target = "v" + version
+    for tag, sha in tags:
+        if tag == target:
+            if sha != source_sha:
+                raise ValueError(f"{target} already belongs to another source commit")
+            return version, True
+    return version, False
 
 
-def validate(channel, version, actor, triggering_actor, ref, sha, source_repo, releases_repo, tap_repo):
-    if channel not in ("stable", "canary") or not all(REPO.fullmatch(r) for r in (source_repo, releases_repo, tap_repo)):
-        raise ValueError("valid release channel and repositories required")
-    if not SHA.fullmatch(sha):
-        raise ValueError("release requires a full commit SHA")
-    if channel == "stable":
-        if ref != f"refs/tags/v{version}" or not SEMVER.fullmatch(version):
-            raise ValueError("stable release requires a version tag and X.Y.Z")
-        if actor != "maxmeis" or triggering_actor != "maxmeis":
-            raise ValueError("production requires both actor and triggering_actor maxmeis")
-    elif source_repo != "maxmeis/hypermug" or ref != "refs/heads/main" or not CANARY.fullmatch(version):
-        raise ValueError("canary release requires this repository's main and 0.0.0-canary.N")
-
-
-def asset_url(repo, tag, name):
-    return f"https://github.com/{repo}/releases/download/{quote(tag)}/{quote(name)}"
-
-
-def appcast(channel, version, build_number, url, signature, size):
-    if not re.fullmatch(r"[0-9]+(?:\.[0-9]+){0,2}", str(build_number)) or not re.fullmatch(r"[A-Za-z0-9+/=]+", signature):
-        raise ValueError("invalid build number or EdDSA signature")
-    short_version, _ = bundle_identity(channel, version)
-    e = lambda s: escape(str(s), {'"': '&quot;', "'": '&apos;'})
-    return f'''<?xml version="1.0" encoding="utf-8"?>
-<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
-<channel><title>HyperMug {e(channel)} updates</title><item>
-<title>HyperMug {e(version)}</title>
-<sparkle:version>{e(build_number)}</sparkle:version>
-<sparkle:shortVersionString>{e(short_version)}</sparkle:shortVersionString>
-<enclosure url="{e(url)}" sparkle:edSignature="{e(signature)}" length="{size}" type="application/zip" />
-</item></channel></rss>
-'''
-
-
-def cask(channel, version, url, digest):
-    if not re.fullmatch(r"[0-9a-f]{64}", digest):
-        raise ValueError("invalid SHA256")
-    token = "hypermug@canary" if channel == "canary" else "hypermug"
-    cask_version, _ = bundle_identity(channel, version)
-    conflicts = ('  conflicts_with cask: "hypermug"\n  conflicts_with cask: "hypermug@nightly"\n'
-                 if channel == "canary" else
-                 '  conflicts_with cask: "hypermug@canary"\n  conflicts_with cask: "hypermug@nightly"\n')
-    return f'''cask "{token}" do
-  version "{cask_version}"
+def render_cask(version, digest, repository=REPOSITORY):
+    if not SEMVER.fullmatch("v" + version) or not re.fullmatch(r"[0-9a-f]{64}", digest):
+        raise ValueError("invalid version or archive digest")
+    if repository != REPOSITORY:
+        raise ValueError("release must use this repository")
+    return f'''cask "hypermug" do
+  version "{version}"
   sha256 "{digest}"
 
-  url "{url}"
+  url "https://github.com/{repository}/releases/download/v{version}/HyperMug-{version}.zip"
   name "HyperMug"
   desc "Caps Lock remapping, caffeine, and mouse controls for macOS"
-  homepage "https://github.com/maxmeis/hypermug"
+  homepage "https://github.com/{repository}"
 
   livecheck do
-    skip "GitHub release assets are published by production automation"
+    skip "Cask versions follow the published production artifacts"
   end
 
-  auto_updates true
   depends_on macos: ">= :sonoma"
   depends_on arch: :arm64
-{conflicts.rstrip()}
+  conflicts_with cask: "hypermug@canary"
+  conflicts_with cask: "hypermug@nightly"
   app "HyperMug.app"
 end
 '''
 
 
-
-def stable_order(candidate, existing, retry=False):
-    """Reject a stable downgrade, including one hidden by an incomplete publication."""
-    if not SEMVER.fullmatch(candidate):
-        raise ValueError("invalid stable version")
-    current = tuple(map(int, candidate.split(".")))
-    for tag in existing:
-        version = tag.removeprefix("v")
-        if not SEMVER.fullmatch(version):
-            continue
-        prior = tuple(map(int, version.split(".")))
-        if current < prior or (current == prior and not retry):
-            raise ValueError(f"stable version {candidate} is not newer than {version}")
-
-
-def canary_superseded(candidate, existing):
-    match = CANARY.fullmatch(candidate)
-    if not match:
-        raise ValueError("invalid canary version")
-    serial = int(match.group(1))
-    return any(int(found.group(1)) > serial for tag in existing
-               if (found := CANARY.fullmatch(tag.removeprefix("v"))))
-
-
-def release_order(channel, candidate, existing, retry=False):
-    if channel == "stable":
-        stable_order(candidate, existing, retry)
-    elif channel == "canary":
-        if canary_superseded(candidate, existing):
-            raise ValueError("newer canary release already exists")
-        if not retry and "v" + candidate in existing:
-            raise ValueError("canary version already exists")
-    else:
-        raise ValueError("invalid release channel")
-
-
-def publication_decision(channel, version, build_number, current_version, current_build):
-    """Return advance, resume, or archive for a published channel pointer."""
-    if not current_version:
-        return "advance"
-    if channel == "canary":
-        new_match, old_match = CANARY.fullmatch(version), CANARY.fullmatch(current_version)
-        if not new_match or not old_match:
-            raise ValueError("invalid canary feed version")
-        new, old = int(new_match.group(1)), int(old_match.group(1))
-        if new < old or (new > old and int(build_number) <= int(current_build)):
-            return "archive"
-        if new == old:
-            if build_number != current_build:
-                raise ValueError("same canary version has different build number")
-            return "resume"
-        return "advance"
-    new = tuple(map(int, version.split(".")))
-    old = tuple(map(int, current_version.split(".")))
-    if new < old:
-        return "archive"
-    if new == old:
-        return "resume"
-    return "advance"
-
 def main():
-    p = argparse.ArgumentParser()
-    p.add_argument("command", choices=("validate", "render"))
-    for name in ("channel", "version", "actor", "triggering-actor", "ref", "sha", "source-repo", "releases-repo", "tap-repo"):
-        p.add_argument("--" + name, required=True)
-    p.add_argument("--build-number")
-    p.add_argument("--zip")
-    p.add_argument("--signature")
-    p.add_argument("--output")
-    a = p.parse_args()
-    validate(a.channel, a.version, a.actor, a.triggering_actor, a.ref, a.sha, a.source_repo, a.releases_repo, a.tap_repo)
-    if a.command == "validate":
-        return
-    if not all((a.build_number, a.zip, a.signature, a.output)):
-        p.error("render requires --build-number, --zip, --signature, --output")
-    if a.build_number != bundle_identity(a.channel, a.version)[1]:
-        p.error("build number does not match the release version")
-    archive = Path(a.zip)
-    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
-    url = asset_url(a.releases_repo, "v" + a.version, archive.name)
-    out = Path(a.output)
-    out.mkdir(parents=True, exist_ok=True)
-    (out / f"appcast-{a.channel}.xml").write_text(appcast(a.channel, a.version, a.build_number, url, a.signature, archive.stat().st_size))
-    token = "hypermug@canary" if a.channel == "canary" else "hypermug"
-    (out / f"{token}.rb").write_text(cask(a.channel, a.version, url, digest))
-    (out / "sha256.txt").write_text(digest + "\n")
+    parser = argparse.ArgumentParser()
+    sub = parser.add_subparsers(dest="command", required=True)
+    version = sub.add_parser("version")
+    version.add_argument("--tags", type=Path, required=True)
+    version.add_argument("--source-sha", required=True)
+    version.add_argument("--run-number", type=int, required=True)
+    cask = sub.add_parser("cask")
+    cask.add_argument("--version", required=True)
+    cask.add_argument("--zip", type=Path, required=True)
+    cask.add_argument("--output", type=Path, required=True)
+    args = parser.parse_args()
+    if args.command == "version":
+        tags = []
+        for line in args.tags.read_text().splitlines():
+            tag, sha = line.split(" ", 1)
+            tags.append((tag, sha))
+        print(next_version(tags, args.source_sha, args.run_number)[0])
+    else:
+        digest = hashlib.sha256(args.zip.read_bytes()).hexdigest()
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(render_cask(args.version, digest))
 
 
 if __name__ == "__main__":

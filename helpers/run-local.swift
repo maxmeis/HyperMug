@@ -39,18 +39,17 @@ if !manager.fileExists(atPath: devConfig.path), !manager.fileExists(atPath: devL
     if var config = source {
         config["$schema"] = .string(appURL.appendingPathComponent("Contents/Resources/hypermug-dev.schema.json").absoluteString)
         config["launchAtLogin"] = .boolean(false)
-        config["autoUpdate"] = .boolean(false)
+        config.removeValue(forKey: "autoUpdate")
         try renderConfigTOML(config).write(to: devConfig, options: .atomic)
         print("Created separate Dev settings: \(devConfig.path)")
     }
 }
 
-// Graceful termination releases event taps and device capture before Dev starts.
-let ids = ["com.maxmeis.hypermug", "com.maxmeis.hypermug.dev"]
-let running = ids.flatMap { NSRunningApplication.runningApplications(withBundleIdentifier: $0) }
+// Restart only Dev. Production and Dev have separate identities and settings.
+let running = NSRunningApplication.runningApplications(withBundleIdentifier: "com.maxmeis.hypermug.dev")
 for app in running {
     guard app.terminate() else {
-        fputs("Could not stop \(app.localizedName ?? "HyperMug"). Quit it before starting Dev.\n", stderr)
+        fputs("Could not stop \(app.localizedName ?? "HyperMug Dev"). Quit it before starting Dev.\n", stderr)
         exit(1)
     }
 }
@@ -59,7 +58,7 @@ while running.contains(where: { !$0.isTerminated }), Date() < deadline {
     RunLoop.current.run(until: Date().addingTimeInterval(0.1))
 }
 guard running.allSatisfy({ $0.isTerminated }) else {
-    fputs("HyperMug has not stopped. Dev was not started.\n", stderr)
+    fputs("HyperMug Dev has not stopped. Dev was not started.\n", stderr)
     exit(1)
 }
 

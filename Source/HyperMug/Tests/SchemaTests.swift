@@ -124,7 +124,8 @@ private func schemaStructureTests() {
     for sample in [AppConfig(), .newFileDefaults, mapped, fullyMapped, swapped, swipes, swappedSwipes, helper] {
         validate(schema, encoded(sample), "")
     }
-    expectEqual(Set(propertyPaths(schema, "")).subtracting(seen), [], "schema properties without an encoded counterpart")
+    expectEqual(Set(propertyPaths(schema, "")).subtracting(seen), ["autoUpdate"],
+                "only the retired compatibility field is absent from new files")
 
     // Required keys: exactly as decided, and every one is in the encoded default.
     let rootRequired = Set(schema["required"] as? [String] ?? [])
@@ -142,13 +143,8 @@ private func schemaStructureTests() {
     expect((node(["mouse", "verticalWheel"])["description"] as? String)?.contains("Natural Scrolling") == true,
            "schema explains that wheel bindings use the physical direction")
     expect(!rootRequired.contains("trackpad"), "trackpad is optional for old configs")
-    expect(!rootRequired.contains("autoUpdate"), "autoUpdate is optional for old configs")
-    expectEqual(node(["autoUpdate"])["type"] as? String, "boolean", "autoUpdate schema type")
-    expectEqual((encoded(AppConfig()) as? JSON)?["autoUpdate"] as? Bool, true, "new defaults encode autoUpdate")
-    expectEqual((encoded(AppConfig(autoUpdate: false)) as? JSON)?["autoUpdate"] as? Bool, false,
-                "disabled autoUpdate encodes as false")
-    expectEqual(try? decodeConfig(Data("{\"capsLock\":\"meh\"}".utf8)).get().config.autoUpdate, true,
-                "legacy config without autoUpdate keeps automatic checks enabled")
+    expectEqual(node(["autoUpdate"])["deprecated"] as? Bool, true, "retired setting remains accepted")
+    expect((encoded(AppConfig()) as? JSON)?["autoUpdate"] == nil, "new files omit retired setting")
     expect((node(["trackpad"])["description"] as? String)?.contains("System Settings") == true,
            "schema explains one-time native gesture setup")
     expectEqual(Set((node(["trackpad"])["properties"] as? JSON ?? [:]).keys), ["threeFingerSwipe", "fourFingerSwipe"], "trackpad groups")
