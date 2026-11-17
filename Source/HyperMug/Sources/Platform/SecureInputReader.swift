@@ -24,7 +24,7 @@ enum SecureInputReader {
         let app = NSRunningApplication(processIdentifier: pid)
         let ownerUID = processOwnerUID(pid: pid)
         return ProcessFacts(
-            pid: pid,
+            pid: pid, exists: processExists(pid: pid),
             localizedName: app?.localizedName,
             processName: kernelProcessName(pid: pid),
             bundleID: app?.bundleIdentifier,
@@ -71,6 +71,13 @@ enum SecureInputReader {
         var buffer = [CChar](repeating: 0, count: 256)
         guard proc_name(pid, &buffer, UInt32(buffer.count)) > 0 else { return nil }
         return String(cString: buffer)
+    }
+
+    /// A stale IOConsoleUsers PID must not be presented as a process that HyperMug can terminate.
+    private static func processExists(pid: Int32) -> Bool {
+        guard pid > 0 else { return false }
+        if kill(pid, 0) == 0 { return true }
+        return errno == EPERM
     }
 
     private static func kernelProcessPath(pid: Int32) -> String? {

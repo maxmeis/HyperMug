@@ -126,12 +126,18 @@ private func secureInputResolveInfo() {
     let sessions = [session(uid: 7, console: false, pid: 1), session(pid: 4)]
     let info = secureInputInfo(sessions: sessions, currentUID: me) { pid in
         resolved.append(pid)
-        return ProcessFacts(pid: pid, localizedName: "Terminal", ownerUID: me, hasApp: true)
+        return ProcessFacts(pid: pid, exists: true, localizedName: "Terminal", ownerUID: me, hasApp: true)
     }
     expectEqual(resolved, [4], "facts are read once, for the chosen PID")
     expectEqual(info.holder.pid, 4)
     expectEqual(info.holder.name, "Terminal")
     expectEqual(info.sessions, sessions)
+
+    let stale = secureInputInfo(sessions: [session(pid: 44)], currentUID: me) { pid in
+        ProcessFacts(pid: pid, exists: false)
+    }
+    expectEqual(stale.holder, unknownSecureInputHolder, "a stale IORegistry PID is not a holder")
+    expectEqual(stale.sessions, [session(pid: 44)], "raw session diagnostics keep the stale PID")
 
     var called = false
     let sessionsWithoutPID = [session(pid: nil)]

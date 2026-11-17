@@ -22,6 +22,8 @@ public struct SecureInputSession: Equatable {
 /// Raw facts about one process, as read by Platform. Strings may be empty; `makeHolder` normalizes them.
 public struct ProcessFacts: Equatable {
     public var pid: Int32
+    /// True when the PID still names a live process. IOConsoleUsers can retain a stale Secure Input PID.
+    public var exists: Bool
     public var localizedName: String?
     /// Kernel process name (`proc_name`).
     public var processName: String?
@@ -37,11 +39,12 @@ public struct ProcessFacts: Equatable {
     public var hasApp: Bool
 
     public init(
-        pid: Int32, localizedName: String? = nil, processName: String? = nil, bundleID: String? = nil,
+        pid: Int32, exists: Bool = false, localizedName: String? = nil, processName: String? = nil, bundleID: String? = nil,
         bundlePath: String? = nil, executablePath: String? = nil, kernelPath: String? = nil,
         ownerName: String? = nil, ownerUID: UInt32? = nil, isFrontmost: Bool = false, hasApp: Bool = false
     ) {
         self.pid = pid
+        self.exists = exists
         self.localizedName = localizedName
         self.processName = processName
         self.bundleID = bundleID
@@ -153,7 +156,9 @@ public func secureInputInfo(
     guard let pid = chooseHolderPID(sessions, currentUID: currentUID) else {
         return SecureInputInfo(holder: unknownSecureInputHolder, sessions: sessions)
     }
-    return SecureInputInfo(holder: makeHolder(resolve(pid)), sessions: sessions)
+    let facts = resolve(pid)
+    guard facts.exists else { return SecureInputInfo(holder: unknownSecureInputHolder, sessions: sessions) }
+    return SecureInputInfo(holder: makeHolder(facts), sessions: sessions)
 }
 
 // MARK: - Protection
