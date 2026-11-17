@@ -74,8 +74,10 @@ public func doctorConfigCheck(error: String?, unknownKeys: [String] = [], notice
     if !unknownKeys.isEmpty {
         return DoctorCheck("Configuration", "These settings are ignored: \(unknownKeys.joined(separator: ", ")). Check the setting names.", .warning, .config)
     }
-    if case .legacyIgnored? = notice { return DoctorCheck("Configuration", "Your settings loaded successfully.\(note)", .warning, .config) }
-    return DoctorCheck("Configuration", "Your settings loaded successfully.\(note)", .passed, .config)
+    switch notice {
+    case .legacyIgnored?, .migrationFailed?: return DoctorCheck("Configuration", "Your settings loaded successfully.\(note)", .warning, .config)
+    default: return DoctorCheck("Configuration", "Your settings loaded successfully.\(note)", .passed, .config)
+    }
 }
 
 public func doctorActionLabel(_ action: ButtonAction?) -> String {

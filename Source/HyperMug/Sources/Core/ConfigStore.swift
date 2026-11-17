@@ -33,6 +33,8 @@ public enum ConfigNotice: Equatable {
     case migrated(from: String, to: String, backup: String)
     /// The legacy JSON file is invalid, so it was not converted and is still the active document.
     case migrationBlocked(from: String, to: String)
+    /// The legacy JSON file is valid but has a value TOML cannot hold; it is still the active document.
+    case migrationFailed(from: String, to: String, reason: String)
     /// Both files exist: the TOML file is used and the JSON file has no effect.
     case legacyIgnored(legacy: String, active: String)
 
@@ -42,6 +44,8 @@ public enum ConfigNotice: Equatable {
             return "Migrated \(from) to \(to). The original is kept as \(backup)."
         case .migrationBlocked(let from, let to):
             return "\(from) was not migrated to \(to) because it is invalid. Fix it and \(AppIdentity.appName) migrates it automatically."
+        case .migrationFailed(let from, let to, let reason):
+            return "\(from) is valid but was not migrated to \(to) (\(reason)). Change that value and \(AppIdentity.appName) migrates it automatically; \(from) stays active until then."
         case .legacyIgnored(let legacy, let active):
             return "\(legacy) is ignored because \(active) exists. Move or delete \(legacy)."
         }
@@ -126,6 +130,8 @@ public final class ConfigStore {
     private let env: ConfigStoreEnvironment
     private var started = false
     private var migrationPending = false
+    /// Legacy JSON to canonical TOML; replaceable in tests to reach the conversion-failure path.
+    var convertLegacyJSON: (Data, URL?) -> Result<Data, ConfigError> = migratedConfigTOML
     /// Bytes of the file at the last load or write; identical bytes never reload.
     private var lastBytes: Data?
     private var lastStamp: FileStamp?
@@ -288,12 +294,19 @@ public final class ConfigStore {
         if isBlankConfigData(json) {
             converted = encodeConfigTOML(.newFileDefaults, schemaURL: env.schemaURL, includeEmptyKeys: true)
         } else {
-            guard case .success = validateConfigDocument(json) else {
-                announce(.migrationBlocked(from: legacyName, to: name))
+            switch convertLegacyJSON(json, env.schemaURL) {
+            case .success(let toml):
+                converted = toml
+            case .failure(let error):
+                // Nothing is written: the JSON stays active and reports or recovers as before.
+                if case .success = validateConfigDocument(json) {
+                    env.log(.error, "cannot migrate \(legacyName): \(error.reason)")
+                    announce(.migrationFailed(from: legacyName, to: name, reason: error.reason))
+                } else {
+                    announce(.migrationBlocked(from: legacyName, to: name))
+                }
                 return
             }
-            let toml = try! tomlConfigData(fromJSON: json)
-            converted = env.schemaURL.map { try! tomlConfigDataLinkingSchema(toml, schemaURL: $0) } ?? toml
         }
         do {
             try env.writeData(converted, url.resolvingSymlinksInPath())

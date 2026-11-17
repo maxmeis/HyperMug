@@ -101,6 +101,33 @@ func tomlTests() {
     jsonConversionTests()
     schemaLinkTests()
     verticalWheelTests()
+    legacyConversionTests()
+}
+
+// MARK: - Migration conversion
+
+private func legacyConversionTests() {
+    // Valid JSON converts, linked to the bundled schema, and validates to the same result.
+    let converted = try? migratedConfigTOML(fromJSON: Data(issue39JSON.utf8), schemaURL: schemaURL).get()
+    expectEqual(converted, try? tomlConfigDataLinkingSchema(tomlConfigData(fromJSON: Data(issue39JSON.utf8)), schemaURL: schemaURL))
+    expectEqual(converted.flatMap { try? validateConfigTOML($0).get() }, try? validateConfigDocument(Data(issue39JSON.utf8)).get())
+    expectEqual(try? migratedConfigTOML(fromJSON: Data("{}".utf8), schemaURL: nil).get(), Data("\n".utf8))
+    // Values TOML cannot hold fail without crashing: null, and arrays that mix types.
+    let cases: [(String, URL?, String)] = [
+        (#"{"mouse":{"buttons":{"thumb":null}}}"#, schemaURL, "cannot convert to TOML: mouse.buttons.thumb: null has no TOML equivalent"),
+        (#"{"helpers":{"a":null}}"#, nil, "cannot convert to TOML: helpers.a: null has no TOML equivalent"),
+        (#"{"mouse":{"buttons":{"back":{"shortcut":["cmd",1]}}}}"#, schemaURL,
+         "cannot convert to TOML: invalid TOML at line 1, column 39: arrays cannot mix value types (string and integer)"),
+        (#"{"mouse":{"buttons":{"back":{"shortcut":["cmd",1]}}}}"#, nil, "mouse.buttons.back.shortcut[1]: expected string"),
+        ("[]", nil, "cannot convert to TOML: config must be a JSON object"),
+        ("{", nil, "cannot convert to TOML: config must be a JSON object"),
+    ]
+    for (json, url, reason) in cases {
+        expectEqual(migratedConfigTOML(fromJSON: Data(json.utf8), schemaURL: url).failureReason, reason, json)
+    }
+    // Convertible but invalid JSON reports the normal validation error.
+    expectEqual(migratedConfigTOML(fromJSON: Data(#"{"capsLock":"other"}"#.utf8), schemaURL: nil).failureReason,
+                validateConfigDocument(Data(#"{"capsLock":"other"}"#.utf8)).failureReason)
 }
 
 // MARK: - Examples

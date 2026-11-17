@@ -108,6 +108,7 @@ Earlier versions stored settings in `~/.config/hypermug.json`. HyperMug migrates
 1. If `~/.config/hypermug.toml` exists, it is the only configuration. A `hypermug.json` beside it is ignored and left alone; Doctor shows a warning until you move or delete it.
 2. If only `hypermug.json` exists, HyperMug validates it with the same rules as before. A valid file is written as an equivalent `hypermug.toml` (atomically, with the bundled schema linked), and the JSON is renamed to `hypermug.json.migrated-backup`. It is never deleted; an existing backup gets a numbered name such as `hypermug.json.migrated-backup-2`. The activity log and Doctor show the migration.
 3. If `hypermug.json` is invalid, nothing is migrated. HyperMug reports the error exactly as before, keeps the last valid settings, and the editor opens the JSON for repair. Once the JSON is valid, saved in HyperMug or elsewhere, it migrates right away.
+4. If a valid JSON file holds a value TOML cannot express, nothing is migrated either. The JSON stays active, and Doctor and the activity log name the value; change it and the file migrates. A TOML file is only written when it validates to exactly the same settings as the JSON.
 
 The migrated file is written in canonical form: keys sorted, single-key tables as dotted keys. JSON has no comments, so nothing is lost. If `hypermug.json` was a symlink into a dotfiles repository, the symlink itself is renamed; its target is unchanged, and `hypermug.toml` is a regular file you can move into your dotfiles and link again.
 

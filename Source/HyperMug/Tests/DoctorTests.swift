@@ -41,6 +41,7 @@ func doctorTests() {
     expectEqual(migrated.state, .passed)
     expect(migrated.detail.contains("Migrated a.json to a.toml"))
     expectEqual(doctorConfigCheck(error: nil, notice: .legacyIgnored(legacy: "a.json", active: "a.toml")).state, .warning)
+    expectEqual(doctorConfigCheck(error: nil, notice: .migrationFailed(from: "a.json", to: "a.toml", reason: "x")).state, .warning)
     let blockedMigration = doctorConfigCheck(error: "bad", notice: .migrationBlocked(from: "a.json", to: "a.toml"))
     expectEqual(blockedMigration.state, .blocked)
     expect(blockedMigration.detail.hasPrefix("bad a.json was not migrated"))

@@ -959,6 +959,49 @@ private func legacyMigrationTests() {
         expectEqual(h.store.config.mouse.verticalWheel.up, .helper("p"))
         expectEqual(try? validateConfigTOML(Data(h.fileText!.utf8)).get(), try? validateConfigDocument(Data(json.utf8)).get())
     }
+    // A legacy null (rejected by the schema, unrepresentable in TOML): no crash, no TOML, the JSON stays active.
+    do {
+        let (h, legacy) = migrationHarness()
+        let json = #"{"capsLock":"hyper","mouse":{"buttons":{"thumb":null}}}"#
+        try! Data(json.utf8).write(to: legacy)
+        h.store.start()
+        expect(!exists(h.url), "no partial TOML file")
+        expectEqual(readText(legacy), json, "the JSON is untouched")
+        expectEqual(h.store.documentURL, legacy)
+        expectEqual(h.store.error?.reason, validateConfigDocument(Data(json.utf8)).failureReason)
+        expectEqual(h.store.notice, .migrationBlocked(from: "hypermug.json", to: "hypermug.toml"))
+        try! Data(#"{"capsLock":"hyper","mouse":{"buttons":{"thumb":{}}}}"#.utf8).write(to: legacy)
+        h.watch(legacy.path).last?.onEvent(false)
+        h.runScheduled()
+        expect(exists(h.url) && !exists(legacy), "the repaired file migrates")
+        expectEqual(h.store.config, hyperConfig)
+        expect(h.store.error == nil)
+    }
+    // A valid JSON file that cannot be converted keeps working as JSON, says why, and migrates once convertible.
+    do {
+        let (h, legacy) = migrationHarness()
+        try! Data(hyperJSON.utf8).write(to: legacy)
+        h.store.convertLegacyJSON = { _, _ in .failure(ConfigError(reason: "cannot convert to TOML: helpers.x: null has no TOML equivalent")) }
+        h.store.start()
+        expect(!exists(h.url), "nothing is written")
+        expect(exists(legacy))
+        expectEqual(h.store.config, hyperConfig, "the valid JSON settings are active")
+        expect(h.store.error == nil && h.errors.isEmpty)
+        expectEqual(h.store.documentURL, legacy)
+        expectEqual(h.store.documentFormat, .json)
+        let failed = ConfigNotice.migrationFailed(from: "hypermug.json", to: "hypermug.toml",
+                                                  reason: "cannot convert to TOML: helpers.x: null has no TOML equivalent")
+        expectEqual(h.store.notice, failed)
+        expect(failed.message.hasPrefix("hypermug.json is valid but was not migrated to hypermug.toml (cannot convert to TOML: helpers.x"))
+        expect(h.logged(.error, containing: "cannot migrate hypermug.json: cannot convert to TOML: helpers.x") >= 1, "the reason and key path are logged")
+        h.store.convertLegacyJSON = migratedConfigTOML
+        try! Data((hyperJSON + "\n").utf8).write(to: legacy)
+        h.watch(legacy.path).last?.onEvent(false)
+        h.runScheduled()
+        expect(exists(h.url) && !exists(legacy), "migrates once convertible")
+        expectEqual(h.store.config, hyperConfig)
+        expectEqual(h.store.notice, .migrated(from: "hypermug.json", to: "hypermug.toml", backup: "hypermug.json.migrated-backup"))
+    }
     // An unreadable legacy path is reported and not migrated.
     do {
         let (h, legacy) = migrationHarness()
