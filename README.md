@@ -4,14 +4,14 @@ HyperMug is a macOS menu bar utility that combines a Hyperkey, Caffeine, trackpa
 
 ## Install
 
-Stable currently has no compiled app or cask. Canary has signed, notarized app releases. Install Canary with:
+Requires macOS 14 Sonoma or later on Apple Silicon. Install the signed, notarized **Stable** app with:
 
 ```sh
 brew tap maxmeis/hypermug https://github.com/maxmeis/hypermug
-brew install maxmeis/hypermug/hypermug@canary
+brew install maxmeis/hypermug/hypermug
 ```
 
-Stable Homebrew installation requires a future compiled Stable release and successful automatic cask publication. See [Installation](docs/installation.md) for channel choice, updates, permissions, and first-run setup. For a source build, see [Development](docs/development.md).
+For early builds, install `maxmeis/hypermug/hypermug@canary` instead. Stable and Canary stay on separate update feeds; uninstall one before switching to the other. See [Installation](docs/installation.md) for channel choice, updates, permissions, and first-run setup. For a source build, see [Development](docs/development.md).
 
 ## Features
 

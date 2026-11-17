@@ -2,18 +2,20 @@
 
 ## Homebrew
 
-Stable currently has no compiled app or `Casks/hypermug.rb`; use [Development](development.md) to build it locally. Canary has signed, notarized app releases. Install Canary with:
+Requires macOS 14 Sonoma or later on Apple Silicon. Stable is the normal signed, notarized app. Install it with:
 
 ```sh
 brew tap maxmeis/hypermug https://github.com/maxmeis/hypermug
-brew install maxmeis/hypermug/hypermug@canary
+brew install maxmeis/hypermug/hypermug
 ```
 
-The fully qualified `brew install maxmeis/hypermug/hypermug@canary` command detects and trusts only this cask. The optional `--cask` flag gives the same app installation; this app belongs in the root `Casks/` directory, not `Formula/`. To inspect or fetch it before installing on Homebrew versions with [tap trust](https://docs.brew.sh/Tap-Trust), first run `brew trust --cask maxmeis/hypermug/hypermug@canary`; `brew info` and `brew fetch` do not grant that trust automatically. Trusting the whole tap is unnecessary.
+For early builds, use `brew install maxmeis/hypermug/hypermug@canary` instead. Both channels provide signed, notarized apps.
 
-Stable Homebrew installation requires a future compiled Stable release and successful automatic cask publication. The channels use separate signed Sparkle feeds and keys. Stable installations follow Stable; Canary installations follow Canary. They share the same bundle identity and config file, so uninstall the current channel before installing the other. Only Stable and Canary are offered. Users of the retired Nightly/beta packages can uninstall their old cask, then install Canary; historical releases are preserved.
+The fully qualified `brew install maxmeis/hypermug/hypermug` command detects and trusts only this cask. The optional `--cask` flag gives the same app installation; this app belongs in the root `Casks/` directory, not `Formula/`. To inspect or fetch it before installing on Homebrew versions with [tap trust](https://docs.brew.sh/Tap-Trust), first run `brew trust --cask maxmeis/hypermug/hypermug` (or use the Canary token for that channel); `brew info` and `brew fetch` do not grant that trust automatically. Trusting the whole tap is unnecessary.
 
-Homebrew installs the signed application. Set `"autoUpdate": false` in `~/.config/hypermug.json` to disable scheduled checks; **Check for Updates…** remains available in the menu. Homebrew casks declare `auto_updates true`, so ordinary upgrades leave updates to Sparkle. Once a Stable cask is available, explicitly upgrade it with Homebrew using:
+The channels use separate signed Sparkle feeds and keys. Stable installations follow Stable; Canary installations follow Canary. They share the same bundle identity and config file, so uninstall the current channel before installing the other. Only Stable and Canary are offered. Users of the retired Nightly/beta packages can uninstall their old cask, then install Canary; historical releases are preserved.
+
+Homebrew installs the signed application. Set `"autoUpdate": false` in `~/.config/hypermug.json` to disable scheduled checks; **Check for Updates…** remains available in the menu. Homebrew casks declare `auto_updates true`, so ordinary upgrades leave updates to Sparkle. Explicitly upgrade Stable with Homebrew using:
 
 ```sh
 brew upgrade --cask --greedy maxmeis/hypermug/hypermug
