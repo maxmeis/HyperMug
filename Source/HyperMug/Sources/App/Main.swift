@@ -44,6 +44,7 @@ private final class HyperMugRuntime {
         caps.onKeyboardRemoved = { [engine] in engine.capsKeyboardRemoved() }
         thumb.onPress = { [engine] in engine.thumbPressed() }
         ports.onTrackpadSwipe = { [engine] swipe in engine.trackpadSwiped(swipe) }
+        ports.onCapsLatchCheck = { [engine] attempt in engine.capsLatchCheckDue(attempt: attempt) }
         engine.onStateChange = { [statusItem] in statusItem.refresh() }
         store.onChange = { [weak store, engine, updateChecker, notifications] config in
             engine.apply(config)

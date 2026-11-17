@@ -3,6 +3,12 @@ import CoreGraphics
 
 public enum LoginItemStatus: Equatable { case notRegistered, enabled, requiresApproval, notFound }
 
+/// Delay between a Caps Lock event and the read-back that verifies the system latch is off. macOS updates the lock
+/// state asynchronously to the HID values and tap events HyperMug sees, so a single clear can race a toggle.
+public let capsLatchCheckDelayMs = 100
+/// Follow-up checks after a check that still found the latch on; the 2 s sync takes over after that.
+public let capsLatchCheckLimit = 5
+
 /// Everything the engine needs from the OS. Implemented by `SystemPorts` (Platform); faked in tests.
 public protocol EnginePorts: AnyObject {
     func accessibilityTrusted() -> Bool
@@ -25,7 +31,11 @@ public protocol EnginePorts: AnyObject {
     func shutdownTrackpad()
     func run(_ action: ButtonAction)
     func postEscape()
-    func clearCapsLock()
+    /// Turns the system Caps Lock latch off. `force` sets it off without trusting the lock-state read-back.
+    /// Returns true when the latch was (or could not be confirmed not to be) on, so a clear was issued.
+    func clearCapsLock(force: Bool) -> Bool
+    /// Calls `Engine.capsLatchCheckDue(attempt:)` on the main thread after the delay. Each call is independent.
+    func scheduleCapsLatchCheck(afterMilliseconds: Int, attempt: Int)
     func log(_ level: LogLevel, _ message: String)
     func debugLog(_ line: String)
 }
@@ -96,10 +106,10 @@ public final class Engine {
         }
 
         // Caps Lock is only watched while its effect (flags in the tap) can be applied; closed otherwise.
-        let capsWanted = settings.capsMode.isModifier && installedMask != nil && trusted
+        let capsWanted = capsLatchSuppressed
         if !capsWanted { tapState.resetCaps() }
         ports.setCapsKeyboardMonitoring(capsWanted)
-        if capsWanted { ports.clearCapsLock() }
+        if capsWanted && ports.clearCapsLock(force: false) { scheduleCapsLatchCheck(attempt: 1) }
         ports.configureTrackpad(trackpadConfig, enabled: !stopped && trusted && ports.inputMonitoringAccess() == .granted && trackpadConfig.hasMappings)
 
         onStateChange?()
@@ -133,8 +143,19 @@ public final class Engine {
         return decision
     }
 
+    /// Every physical transition also clears the latch: the HID monitor sees presses the tap may not (tap disabled,
+    /// Secure Input), and the system toggle can land after this callback, so a check follows either way.
     public func capsKeyChanged(down: Bool, nowNanos: UInt64) {
         perform(tapState.capsKey(down: down, nowNanos: nowNanos))
+        guard capsLatchSuppressed else { return }
+        _ = ports.clearCapsLock(force: false)
+        scheduleCapsLatchCheck(attempt: 1)
+    }
+
+    /// A scheduled verification. Keeps checking while it still finds the latch on, up to `capsLatchCheckLimit`.
+    public func capsLatchCheckDue(attempt: Int) {
+        guard capsLatchSuppressed, ports.clearCapsLock(force: false), attempt < capsLatchCheckLimit else { return }
+        scheduleCapsLatchCheck(attempt: attempt + 1)
     }
 
     public func capsKeyboardRemoved() {
@@ -159,11 +180,20 @@ public final class Engine {
             switch effect {
             case .run(let action): ports.run(action)
             case .postEscape: ports.postEscape()
-            case .clearCapsLock: ports.clearCapsLock()
+            case .clearCapsLock:
+                _ = ports.clearCapsLock(force: true)
+                scheduleCapsLatchCheck(attempt: 1)
             case .debugLog(let line): ports.debugLog(line)
             case .log(let level, let message): ports.log(level, message)
             }
         }
+    }
+
+    /// Native Caps Lock must stay off: Meh/Hyper is on and the tap that applies it is installed.
+    private var capsLatchSuppressed: Bool { settings.capsMode.isModifier && installedMask != nil }
+
+    private func scheduleCapsLatchCheck(attempt: Int) {
+        ports.scheduleCapsLatchCheck(afterMilliseconds: capsLatchCheckDelayMs, attempt: attempt)
     }
 
     private func note(_ message: String) {

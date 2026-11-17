@@ -142,6 +142,8 @@ public struct TapDecision: Equatable {
 public enum TapEffect: Equatable {
     case run(ButtonAction)
     case postEscape
+    /// Force the system Caps Lock latch off and verify it shortly after. Emitted whenever a latch was observed or
+    /// may have happened unobserved; the read-back of the lock state is not trusted on its own.
     case clearCapsLock
     case debugLog(String)
     case log(LogLevel, String)
@@ -167,7 +169,9 @@ public struct TapState: Equatable {
             let reason = e.type == .tapDisabledByTimeout ? "timeout" : "userInput"
             let line = "tap disabled reason=\(reason) capsHeld=\(capsHeld)"
             resetCaps()
-            return (TapDecision(reenableTap: true), [.log(.info, line), .debugLog(line)])
+            // While the tap was off, Caps Lock flagsChanged events reached the system unfiltered and may have latched it.
+            let clear: [TapEffect] = settings.capsMode.isModifier ? [.clearCapsLock] : []
+            return (TapDecision(reenableTap: true), [.log(.info, line), .debugLog(line)] + clear)
         }
 
         // Events HyperMug posted itself (mapped shortcuts, Esc) must not hit any logic below.
