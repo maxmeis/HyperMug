@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-automation_root="$PWD"
 source_root="${RELEASE_SOURCE_DIR:-$PWD}"
 [[ -d "$source_root" ]] || { echo "Release source checkout missing" >&2; exit 1; }
 source_root="$(cd "$source_root" && pwd)"
@@ -38,13 +37,13 @@ embedded_sparkle_key="$(plutil -extract SUPublicEDKey raw -o - "$bundle_plist")"
 bash "$RELEASE_BOT_SIGNING_SCRIPT" sign-app "$app"
 bash "$RELEASE_BOT_SIGNING_SCRIPT" notarize-app "$app"
 mkdir -p build/release
-archive="build/release/HyperMug-${VERSION}.zip"
-ditto -c -k --keepParent "$app" "$archive"
+release_archive="build/release/HyperMug-${VERSION}.zip"
+ditto -c -k --keepParent "$app" "$release_archive"
 # Sparkle's sign_update accepts a private EdDSA key file via --ed-key-file.
 printf '%s' "$SPARKLE_EDDSA_PRIVATE_KEY" > "$work/eddsa.key"
 SPARKLE_ROOT="$(cd "$source_root" && source helpers/sparkle.sh && printf '%s' "$SPARKLE_ROOT")"
-signature="$("${SPARKLE_ROOT:?}/bin/sign_update" "$archive" --ed-key-file "$work/eddsa.key")"
+signature="$("${SPARKLE_ROOT:?}/bin/sign_update" "$release_archive" --ed-key-file "$work/eddsa.key")"
 signature="$(printf '%s' "$signature" | sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p')"
 [[ -n "$signature" ]] || { echo 'Sparkle signature missing' >&2; exit 1; }
-SPARKLE_PUBLIC_ED_KEY="$embedded_sparkle_key" swift helpers/verify-update.swift "$archive" "$signature"
-python3 helpers/release_metadata.py render "${args[@]}" --build-number "$BUILD_NUMBER" --zip "$archive" --signature "$signature" --output build/release
+SPARKLE_PUBLIC_ED_KEY="$embedded_sparkle_key" swift helpers/verify-update.swift "$release_archive" "$signature"
+python3 helpers/release_metadata.py render "${args[@]}" --build-number "$BUILD_NUMBER" --zip "$release_archive" --signature "$signature" --output build/release
