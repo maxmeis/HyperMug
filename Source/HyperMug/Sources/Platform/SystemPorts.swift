@@ -15,6 +15,8 @@ final class SystemPorts: EnginePorts {
     private var caffeineAssertion: IOPMAssertionID = 0
 
     var onTrackpadSwipe: ((TrackpadSwipe) -> Void)?
+    /// Set by the composition root: `engine.capsLatchCheckDue(attempt:)`.
+    var onCapsLatchCheck: ((Int) -> Void)?
 
     init(log: @escaping LogSink, tap: EventTapHost, caps: CapsKeyMonitor, thumb: ThumbHID, trackpad: TrackpadCapture) {
         self.sink = log
@@ -55,7 +57,12 @@ final class SystemPorts: EnginePorts {
 
     func run(_ action: ButtonAction) { ActionRunner.run(action) }
     func postEscape() { ActionRunner.postEscape() }
-    func clearCapsLock() { CapsLockLatch.clear() }
+    func clearCapsLock(force: Bool) -> Bool { CapsLockLatch.clear(force: force) }
+    func scheduleCapsLatchCheck(afterMilliseconds: Int, attempt: Int) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(afterMilliseconds)) { [weak self] in
+            self?.onCapsLatchCheck?(attempt)
+        }
+    }
     func log(_ level: LogLevel, _ message: String) { sink(level, message) }
     func debugLog(_ line: String) { DebugLog.write(line) }
 

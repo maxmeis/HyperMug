@@ -132,10 +132,14 @@ private func tapDisabledTests() {
         let (decision, effects) = state.handle(TapEvent(type: type), settings: settings(caps: .meh))
         expectEqual(decision, TapDecision(pass: true, reenableTap: true))
         let line = "tap disabled reason=\(reason) capsHeld=true"
-        expectEqual(effects, [.log(.info, line), .debugLog(line)])
+        // Caps toggles that happened while the tap was off went unfiltered, so the latch is cleared unconditionally.
+        expectEqual(effects, [.log(.info, line), .debugLog(line), .clearCapsLock])
         expect(!state.capsHeld, "a disabled tap ends the Caps hold (\(reason))")
         // The key-up that was lost with the tap must not produce Esc later.
         expectEqual(state.capsKey(down: false, nowNanos: 10 * ms), [])
+        // Default mode leaves the native latch alone.
+        let idle = "tap disabled reason=\(reason) capsHeld=false"
+        expectEqual(state.handle(TapEvent(type: type), settings: settings(back: back)).1, [.log(.info, idle), .debugLog(idle)])
     }
 }
 

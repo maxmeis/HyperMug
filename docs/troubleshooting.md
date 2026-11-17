@@ -53,4 +53,4 @@ Doctor opens the Overview page of the shared HyperMug window. It summarizes perm
 
 Activity shows detected swipes, shell action IDs and failure statuses; successful actions send no failure notice. It supports filtering and pause. Each launch keeps the last session as `previous.log` beside `debug.log`. Dev logs use `~/Library/Logs/HyperMug Dev/`. Typed keys and command contents are not written to these files.
 
-In Meh/Hyper mode, HyperMug clears the macOS Caps Lock latch and strips Caps Lock flags from key events. Shift keeps its normal function. Default mode leaves Caps Lock unchanged.
+In Meh/Hyper mode, HyperMug clears the macOS Caps Lock latch after every Caps Lock press and whenever a key event shows it latched, then verifies it stayed off. It also strips Caps Lock flags from key events. Shift keeps its normal function. Default mode leaves Caps Lock unchanged.
