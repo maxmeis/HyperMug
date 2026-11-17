@@ -21,10 +21,9 @@ private final class HyperMugRuntime {
         DebugLog.reset()   // before anything that writes a debug line
         LegacyCapsRemap.removeIfPresent(log: makeLogSink(category: "legacy-caps"))
 
-        let configURL = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".config")
-            .appendingPathComponent(AppIdentity.configFileName)
-        store = ConfigStore(url: configURL,
+        let configDirectory = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config")
+        store = ConfigStore(url: configDirectory.appendingPathComponent(AppIdentity.configFileName), format: .toml,
+                            legacyURL: configDirectory.appendingPathComponent(AppIdentity.legacyConfigFileName),
                             environment: makeConfigStoreEnvironment(log: makeLogSink(category: "config")))
         tap = EventTapHost(log: makeLogSink(category: "tap"))
         caps = CapsKeyMonitor(log: makeLogSink(category: "caps"))
@@ -52,6 +51,7 @@ private final class HyperMugRuntime {
             ActionRunner.configure(timeout: config.shellTimeoutSeconds)
             if store?.error == nil && Bundle.main.url(forResource: AppIdentity.schemaFileName, withExtension: nil) != nil { notifications.configurationRecovered() }
         }
+        store.onNotice = { notice in DebugLog.write(notice.message) }
         store.onError = { [notifications, statusItem] error in
             DebugLog.write("Invalid configuration: \(error.reason)")
             notifications.report(.configuration)

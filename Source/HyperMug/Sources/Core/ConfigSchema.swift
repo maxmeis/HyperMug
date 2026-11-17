@@ -65,7 +65,7 @@ private func buttonSchema(_ description: String) -> String {
 """#
 }
 
-/// JSON Schema (draft-07) for `~/.config/hypermug.json`; the single source of truth, compiled into the binary.
+/// JSON Schema (draft-07) for `~/.config/hypermug.toml` (and the legacy JSON file): the single source of truth, compiled into the binary.
 /// The tests check it against `encodeConfig` and the model.
 public let configSchemaJSON: String = #"""
 {

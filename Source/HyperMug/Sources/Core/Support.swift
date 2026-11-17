@@ -17,13 +17,15 @@ public enum AppIdentity {
     public static let isDevelopment = true
     public static let appName = "HyperMug Dev"
     public static let bundleID = "com.maxmeis.hypermug.dev"
-    public static let configFileName = "hypermug-dev.json"
+    public static let configFileName = "hypermug-dev.toml"
+    public static let legacyConfigFileName = "hypermug-dev.json"
     public static let schemaFileName = "hypermug-dev.schema.json"
     #else
     public static let isDevelopment = false
     public static let appName = "HyperMug"
     public static let bundleID = "com.maxmeis.hypermug"
-    public static let configFileName = "hypermug.json"            // in ~/.config
+    public static let configFileName = "hypermug.toml"            // in ~/.config
+    public static let legacyConfigFileName = "hypermug.json"      // migrated to configFileName once
     public static let schemaFileName = "hypermug.schema.json"
     #endif
     public static let logSubsystem = bundleID

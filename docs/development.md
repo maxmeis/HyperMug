@@ -16,7 +16,7 @@ make check     # run all checks
 
 Run `make help` for the command list. Build products use the root `build/` directory. Set `BUILD_ROOT=/path/to/disposable-output` to build isolated bundles without replacing your running Dev app. The builder generates the variant’s schema into `Contents/Resources` before signing. `make clean` removes generated files.
 
-Local builds use **HyperMug Dev** (`com.maxmeis.hypermug.dev`). Dev uses `~/.config/hypermug-dev.json` and `~/Library/Logs/HyperMug Dev/`. Production keeps its own name, bundle ID, permissions, settings, and logs. The local launcher copies production settings once, disables login launch and updates in that copy, and stops both app variants before launching Dev. If AeroSpace is available, it brings Doctor to the current workspace.
+Local builds use **HyperMug Dev** (`com.maxmeis.hypermug.dev`). Dev uses `~/.config/hypermug-dev.toml` (and migrates a legacy `hypermug-dev.json` itself) and `~/Library/Logs/HyperMug Dev/`. Production keeps its own name, bundle ID, permissions, settings, and logs. The local launcher copies production settings once (from `hypermug.toml`, or converted from a not yet migrated `hypermug.json`, which it only reads), disables login launch and updates in that copy, and stops both app variants before launching Dev. If AeroSpace is available, it brings Doctor to the current workspace.
 
 Run `make signing` to create `HyperMug Local Signing` in the login keychain. This needs no administrator access. The first build can ask you to allow codesign to use the key. Choose Always Allow. Builds stop if the signing identity is missing. Disposable CI builds can use `SIGN_ID=- ALLOW_ADHOC_SIGNING=1 make build`. These builds can lose permission grants when their signature changes.
 
@@ -31,9 +31,9 @@ The layer rules use `make check-layers`:
 - `Source/HyperMug/Sources/App`: native UI and composition root.
 - `Source/HyperMug/Tests`: Core tests.
 
-`make test-runtime` runs actual subprocess isolation/exit/timeout/cleanup checks and fake native-notification delivery and in-app JSON-editor model adapters, without requesting macOS notification permissions or launching HyperMug.
+`make test-runtime` runs actual subprocess isolation/exit/timeout/cleanup checks and fake native-notification delivery and in-app configuration-editor model adapters, without requesting macOS notification permissions or launching HyperMug.
 
-`make test-window` opens an isolated native window fixture on a logged-in Mac. It tests window reuse, resizing, raw JSON editing, Undo/Redo, Command-S, invalid saves and discard confirmation with a temporary file and no input engine or permission requests. It is intentionally excluded from headless CI. Optional `HYPERMUG_TEST_CAPTURE_DIRECTORY=/tmp/hypermug-ui-evidence make test-window` captures only the fixture window, using existing Screen Recording permission; it never requests that permission.
+`make test-window` opens an isolated native window fixture on a logged-in Mac. It tests window reuse, resizing, raw TOML editing, Undo/Redo, Command-S, invalid saves and discard confirmation with a temporary file and no input engine or permission requests. It is intentionally excluded from headless CI. Optional `HYPERMUG_TEST_CAPTURE_DIRECTORY=/tmp/hypermug-ui-evidence make test-window` captures only the fixture window, using existing Screen Recording permission; it never requests that permission.
 
 `make test` requires 100% executable-line coverage. `make compile-check` type-checks the app. `make test-release` checks release metadata and publication with temporary repositories. `make check-automation` and `make check-website` check repository automation and website assets. CI and Git hooks use these Makefile targets.
 

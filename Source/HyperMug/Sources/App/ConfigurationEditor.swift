@@ -9,7 +9,8 @@ final class ConfigurationEditorModel: ObservableObject {
     @Published private(set) var messageIsError = false
     var onChange: (() -> Void)?
     private let store: ConfigStore
-    var url: URL { store.url }
+    var url: URL { store.documentURL }
+    var formatName: String { store.documentFormat.rawValue }
 
     init(store: ConfigStore) { self.store = store }
 
@@ -40,14 +41,10 @@ final class ConfigurationEditorModel: ObservableObject {
     }
 
     func validate() {
-        guard !isBlankConfigData(Data(draft.text.utf8)) else {
-            failed(ConfigError(reason: "Configuration cannot be empty. Use {} for default settings."))
-            return
-        }
-        switch validateConfigDocument(Data(draft.text.utf8)) {
+        switch store.validateDocument(Data(draft.text.utf8)) {
         case .success:
             messageIsError = false
-            message = "Valid JSON, schema and action references. Save to apply."
+            message = "Valid \(formatName), schema and action references. Save to apply."
         case .failure(let error): failed(error)
         }
     }
@@ -78,7 +75,7 @@ final class ConfigurationEditorModel: ObservableObject {
     private func showDiskValidation() {
         message = nil
         messageIsError = false
-        if case .failure(let error) = validateConfigDocument(Data(draft.text.utf8)) { failed(error) }
+        if case .failure(let error) = store.documentFormat.validate(Data(draft.text.utf8)) { failed(error) }
     }
 }
 
@@ -92,7 +89,7 @@ struct ConfigurationEditorView: View {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Configuration").font(.title2.bold())
-                        Text("One JSON file for every binding and preference.")
+                        Text("One \(model.formatName) file for every binding and preference.")
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
@@ -109,7 +106,7 @@ struct ConfigurationEditorView: View {
                 }
             }.padding(20)
             Divider()
-            JSONSourceEditor(text: Binding(get: { model.draft.text }, set: model.edit), editable: model.draft.isLoaded)
+            SourceEditor(text: Binding(get: { model.draft.text }, set: model.edit), editable: model.draft.isLoaded)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             Divider()
             VStack(alignment: .leading, spacing: 12) {
@@ -143,12 +140,12 @@ struct ConfigurationEditorView: View {
 }
 
 /// AppKit supplies selection, undo, find, keyboard editing and accessibility for the raw file.
-private struct JSONSourceEditor: NSViewRepresentable {
+private struct SourceEditor: NSViewRepresentable {
     @Binding var text: String
     let editable: Bool
 
     func makeNSView(context: Context) -> NSScrollView {
-        let scroll = JSONScrollView(frame: NSRect(x: 0, y: 0, width: 600, height: 300))
+        let scroll = SourceScrollView(frame: NSRect(x: 0, y: 0, width: 600, height: 300))
         let view = NSTextView(frame: scroll.bounds)
         scroll.documentView = view
         view.minSize = .zero
@@ -174,7 +171,7 @@ private struct JSONSourceEditor: NSViewRepresentable {
         view.autoresizingMask = [.width]
         view.textContainer?.widthTracksTextView = true
         view.textContainer?.containerSize = NSSize(width: scroll.contentSize.width, height: .greatestFiniteMagnitude)
-        view.setAccessibilityLabel("JSON configuration editor")
+        view.setAccessibilityLabel("Configuration editor")
         view.delegate = context.coordinator
         context.coordinator.watchUndo(in: view)
         scroll.hasVerticalScroller = true
@@ -228,7 +225,7 @@ private struct JSONSourceEditor: NSViewRepresentable {
     }
 }
 
-private final class JSONScrollView: NSScrollView {
+private final class SourceScrollView: NSScrollView {
     override var intrinsicContentSize: NSSize { NSSize(width: NSView.noIntrinsicMetric, height: NSView.noIntrinsicMetric) }
     override var fittingSize: NSSize { .zero }
 }

@@ -5,7 +5,7 @@ import HyperMugCore
 /// The side effects behind the privileges alert's buttons.
 enum PrivilegeActions {
     private static let log = makeLogSink(category: "Privileges")
-    /// Composition root protects unsaved JSON before a relaunch helper is started. Main thread only.
+    /// Composition root protects an unsaved configuration draft before a relaunch helper is started. Main thread only.
     static var confirmRelaunch: ((_ completion: @escaping (Bool) -> Void) -> Void)?
 
     /// Shows the system Accessibility prompt and opens the pane.
