@@ -19,7 +19,7 @@ private func accepts(_ tokens: [String]) -> Bool {
 
 func schemaTests() {
     schemaStructureTests()
-    installSchemaFileTests()
+    schemaReferenceTests()
 }
 
 private func schemaStructureTests() {
@@ -66,6 +66,7 @@ private func schemaStructureTests() {
             if let oneOf = node["oneOf"] as? [JSON] {
                 let matching = oneOf.filter { branch in
                     guard Set(branch["required"] as? [String] ?? []).isSubset(of: keys) else { return false }
+                    if let maximum = branch["maxProperties"] as? Int, object.count > maximum { return false }
                     for (name, rule) in (branch["properties"] as? [String: JSON]) ?? [:] {
                         if let s = object[name] as? String, let minLength = rule["minLength"] as? Int, s.count < minLength { return false }
                     }
@@ -79,17 +80,19 @@ private func schemaStructureTests() {
         } else if let array = value as? [Any] {
             expectEqual(node["type"] as? String, "array", "schema \(label) is an array")
             expect(array.count >= (node["minItems"] as? Int ?? 0), "schema \(label) minItems")
-            let allowed = Set((node["items"] as? JSON)?["enum"] as? [String] ?? [])
+            let pattern = (node["items"] as? JSON)?["pattern"] as? String ?? "(?!)"
             for token in array {
-                expect((token as? String).map(allowed.contains) ?? false, "schema \(label) enum lacks \(token)")
+                expect((token as? String)?.range(of: pattern, options: .regularExpression) != nil, "schema token matches native parser")
             }
         } else if value is String {
             expectEqual(node["type"] as? String, "string", "schema \(label) is a string")
+        } else if let number = value as? NSNumber, String(cString: number.objCType) != "c" {
+            expectEqual(node["type"] as? String, "number", "schema \(label) is numeric")
         } else {
             expectEqual(node["type"] as? String, "boolean", "schema \(label) is a boolean")
         }
     }
-    func encoded(_ config: AppConfig) -> Any { jsonObject(String(decoding: encodeConfig(config), as: UTF8.self)) }
+    func encoded(_ config: AppConfig) -> Any { jsonObject(String(decoding: encodeConfig(config, schemaURL: URL(fileURLWithPath: "/Applications/HyperMug.app/Contents/Resources/hypermug.schema.json")), as: UTF8.self)) }
 
     let mapped = AppConfig(mouse: MouseConfig(buttons: ButtonMap(back: shortcut(["cmd", "["]), thumb: .shell("echo hi"))))
     let fullyMapped = AppConfig(
@@ -122,10 +125,10 @@ private func schemaStructureTests() {
 
     // Required keys: exactly as decided, and every one is in the encoded default.
     let rootRequired = Set(schema["required"] as? [String] ?? [])
-    expectEqual(rootRequired, ["$schema", "caffeineOnLaunch", "capsLock", "launchAtLogin", "mouse"], "root required keys")
+    expectEqual(rootRequired, [], "sparse existing files use native defaults")
     expect(rootRequired.isSubset(of: Set((encoded(AppConfig()) as? JSON ?? [:]).keys)), "encoded default has every required root key")
-    expectEqual(Set(node(["mouse"])["required"] as? [String] ?? []), ["invertScroll"], "mouse required keys")
-    expectEqual(Set(node(["mouse", "invertScroll"])["required"] as? [String] ?? []), ["vertical", "horizontal"], "invertScroll required keys")
+    expectEqual(Set(node(["mouse"])["required"] as? [String] ?? []), [], "mouse keys are optional")
+    expectEqual(Set(node(["mouse", "invertScroll"])["required"] as? [String] ?? []), [], "scroll keys are optional")
     expect(node(["mouse", "buttons"])["required"] == nil, "buttons has no required keys")
     expect(((schema["properties"] as? JSON) ?? [:])["caffeine"] == nil, "the schema does not know the removed caffeine key")
     expectEqual(Set(node(["capsLock"])["enum"] as? [String] ?? []), Set(CapsMode.allCases.map { $0.rawValue }), "capsLock enum == CapsMode cases")
@@ -159,14 +162,14 @@ private func schemaStructureTests() {
         expectEqual(Set((b["properties"] as? JSON ?? [:]).keys), ["shell", "shortcut", "helper"], "\(button) properties")
         expectEqual(child(b, "shell")["type"] as? String, "string", "\(button).shell is a string")
         let branches = b["oneOf"] as? [JSON] ?? []
-        expectEqual(branches.count, 3, "\(button) is exactly-one-of via oneOf")
+        expectEqual(branches.count, 4, "\(button) accepts an empty slot or exactly one action")
+        expect(branches.contains { $0["maxProperties"] as? Int == 0 }, "empty slot branch is present")
         let shellBranch = branches.first { ($0["required"] as? [String]) == ["shell"] }
         let shellRule = (shellBranch?["properties"] as? JSON)?["shell"] as? JSON
         expectEqual(shellRule?["minLength"] as? Int, 1, "\(button).shell must be non-empty")
         expect(branches.contains { ($0["required"] as? [String]) == ["shortcut"] }, "\(button) oneOf has a shortcut branch")
         let sc = child(b, "shortcut")
         expect(sc["type"] as? String == "array" && sc["minItems"] as? Int == 1, "\(button).shortcut is a non-empty array")
-        expectEqual((sc["items"] as? JSON)?["enum"] as? [String], shortcutTokenNames, "\(button) token enum == parser token table")
     }
 
     // The enum and the parser agree in both directions, and the parser is case-insensitive for every token.
@@ -184,37 +187,21 @@ private func schemaStructureTests() {
     }
 }
 
-private func installSchemaFileTests() {
-    let dir = makeTempDir()
-    var logs: [(LogLevel, String)] = []
-    let sink: LogSink = { logs.append(($0, $1)) }
-    let target = dir.appendingPathComponent("conf").appendingPathComponent("hypermug.schema.json")
-    func modified() -> Date? { (try? FileManager.default.attributesOfItem(atPath: target.path))?[.modificationDate] as? Date }
-
-    // Absent: the directory and the file are created.
-    installSchemaFile(dir: target.deletingLastPathComponent(), log: sink)
-    expectEqual(try? Data(contentsOf: target), Data(configSchemaJSON.utf8), "schema written when absent")
-    expectEqual(logs.map { $0.0 }, [.info], "one info line for the write")
-    expect(logs.first?.1.contains("hypermug.schema.json") ?? false, "the log names the file")
-
-    // Equal content: no rewrite.
-    let old = Date(timeIntervalSince1970: 1_000_000)
-    try? FileManager.default.setAttributes([.modificationDate: old], ofItemAtPath: target.path)
-    installSchemaFile(dir: target.deletingLastPathComponent(), log: sink)
-    expectEqual(modified(), old, "equal content leaves the file alone")
-    expectEqual(logs.count, 1, "nothing logged for an up-to-date file")
-
-    // Different content: replaced.
-    try? Data("stale".utf8).write(to: target)
-    installSchemaFile(dir: target.deletingLastPathComponent(), log: sink)
-    expectEqual(try? Data(contentsOf: target), Data(configSchemaJSON.utf8), "stale schema is rewritten")
-    expectEqual(logs.count, 2, "rewrite is logged")
-
-    // Failure is logged, never fatal: the "directory" is a regular file.
-    let notADir = dir.appendingPathComponent("plain")
-    try? Data("x".utf8).write(to: notADir)
-    installSchemaFile(dir: notADir, log: sink)
-    expectEqual(logs.last?.0, .error, "failure is an error line")
-    expect(logs.last?.1.contains("cannot write") ?? false, "failure says what went wrong")
-    expectEqual(try? Data(contentsOf: notADir), Data("x".utf8), "the obstacle is untouched")
+private func schemaReferenceTests() {
+    let schema = URL(fileURLWithPath: "/Applications/HyperMug Dev.app/Contents/Resources/hypermug-dev.schema.json")
+    let input = Data(#"{"$schema":"./old.schema.json","helpers":{" spaced ":"echo secret"},"custom":{"keep":1}}"#.utf8)
+    let linked = try! configDataLinkingSchema(input, schemaURL: schema)
+    let object = jsonObject(String(decoding: linked, as: UTF8.self))
+    expectEqual(object["$schema"] as? String, schema.absoluteString, "resource URL is escaped correctly")
+    expectEqual(object["helpers"] as? [String: String], [" spaced ": "echo secret"], "helper names and commands survive metadata migration")
+    expectEqual((object["custom"] as? [String: Int])?["keep"], 1, "unknown user data is not discarded")
+    expectEqual(try? configDataLinkingSchema(linked, schemaURL: schema), linked, "same reference preserves exact bytes")
+    expectEqual(jsonObject(String(decoding: encodeConfig(.newFileDefaults, schemaURL: schema), as: UTF8.self))["$schema"] as? String,
+                schema.absoluteString, "new files link directly into the bundle")
+    expect(jsonObject(String(decoding: encodeConfig(.newFileDefaults), as: UTF8.self))["$schema"] == nil,
+           "model encoding does not invent an adjacent schema")
+    for text in ["{", "[]", #"{"$schema":false}"#] {
+        do { _ = try configDataLinkingSchema(Data(text.utf8), schemaURL: schema); expect(false, "invalid metadata must throw") }
+        catch { expect(true, "invalid input remains the caller's responsibility") }
+    }
 }

@@ -15,6 +15,7 @@ private final class Token: Cancellable {
 /// OS side of `ConfigStore`: a main-queue timer and `open(O_EVTONLY)` + `DispatchSource` file watchers.
 func makeConfigStoreEnvironment(log: @escaping LogSink) -> ConfigStoreEnvironment {
     ConfigStoreEnvironment(
+        schemaURL: Bundle.main.url(forResource: AppIdentity.schemaFileName, withExtension: nil),
         log: log,
         schedule: { delay, work in
             let item = DispatchWorkItem(block: work)

@@ -307,7 +307,6 @@ private func encodeTests() {
     // Default write shape (R7): no caffeine key, no buttons key, no empty entries, exactly this text.
     let expectedDefault = """
     {
-      "$schema" : "./hypermug.schema.json",
       "autoUpdate" : true,
       "caffeineOnLaunch" : true,
       "capsLock" : "meh",
@@ -317,7 +316,8 @@ private func encodeTests() {
           "horizontal" : false,
           "vertical" : false
         }
-      }
+      },
+      "shellTimeoutSeconds" : 10
     }
 
     """
@@ -325,7 +325,7 @@ private func encodeTests() {
     let next = "/opt/homebrew/bin/aerospace workspace --no-stdin --wrap-around next"
     let prev = "/opt/homebrew/bin/aerospace workspace --no-stdin --wrap-around prev"
     let expectedNewFile: [String: Any] = [
-        "$schema": "./\(AppIdentity.schemaFileName)",
+        "shellTimeoutSeconds": 10,
         "autoUpdate": true, "caffeineOnLaunch": true, "capsLock": "meh", "launchAtLogin": true,
         "mouse": ["invertScroll": ["horizontal": false, "vertical": false],
                   "buttons": ["back": ["shell": next], "forward": ["shell": prev]]],
@@ -362,6 +362,6 @@ private func encodeTests() {
     expect(allText.contains("/tmp/x\""), "slashes are not escaped")
     expect(allText.contains("\"CMD\""), "shortcut tokens are written back as written")
     expect(allText.hasSuffix("}\n"), "encoded config ends with a newline")
-    expect(allText.hasPrefix("{\n  \"$schema\" : \"./hypermug.schema.json\",\n"), "$schema is the first key")
+    expect(!allText.contains("$schema"), "plain model encoding has no filesystem reference")
     expectEqual(text(all), allText, "encoding is deterministic")
 }

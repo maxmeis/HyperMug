@@ -62,6 +62,7 @@ jobs:
           make test-release
           make check-layers
           make test
+          make test-runtime
           make compile-check
           make check-automation
           make check-website

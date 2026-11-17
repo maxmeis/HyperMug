@@ -48,6 +48,7 @@ export SIGN_KEYCHAIN="$keychain" REQUIRE_SIGNING=1 APP_VERSION="$app_version" RE
 export APPCAST_URL="https://raw.githubusercontent.com/${RELEASES_REPOSITORY}/updates/appcast-${CHANNEL}.xml"
 export SPARKLE_PUBLIC_ED_KEY="${SPARKLE_PUBLIC_ED_KEY:?}"
 make build
+python3 helpers/check-bundle-schema.py build/HyperMug.app
 bundle_plist=build/HyperMug.app/Contents/Info.plist
 [[ "$(plutil -extract CFBundleShortVersionString raw -o - "$bundle_plist")" == "$app_version" ]] || { echo 'Built marketing version mismatch' >&2; exit 1; }
 [[ "$(plutil -extract CFBundleVersion raw -o - "$bundle_plist")" == "$BUILD_NUMBER" ]] || { echo 'Built build version mismatch' >&2; exit 1; }

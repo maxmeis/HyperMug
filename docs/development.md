@@ -14,7 +14,7 @@ make restart   # restart the existing Dev build
 make check     # run all checks
 ```
 
-Run `make help` for the command list. Build products use the root `build/` directory. `make clean` removes generated files.
+Run `make help` for the command list. Build products use the root `build/` directory. Set `BUILD_ROOT=/path/to/disposable-output` to build isolated bundles without replacing your running Dev app. The builder generates the variant’s schema into `Contents/Resources` before signing. `make clean` removes generated files.
 
 Local builds use **HyperMug Dev** (`com.maxmeis.hypermug.dev`). Dev uses `~/.config/hypermug-dev.json` and `~/Library/Logs/HyperMug Dev/`. Production keeps its own name, bundle ID, permissions, settings, and logs. The local launcher copies production settings once, disables login launch and updates in that copy, and stops both app variants before launching Dev. If AeroSpace is available, it brings Doctor to the current workspace.
 
@@ -31,6 +31,10 @@ The layer rules use `make check-layers`:
 - `Source/HyperMug/Sources/App`: native UI and composition root.
 - `Source/HyperMug/Tests`: Core tests.
 
+`make test-runtime` runs actual subprocess isolation/exit/timeout/cleanup checks and fake native-notification delivery and in-app JSON-editor model adapters, without requesting macOS notification permissions or launching HyperMug.
+
+`make test-window` opens an isolated native window fixture on a logged-in Mac. It tests window reuse, resizing, raw JSON editing, Undo/Redo, Command-S, invalid saves and discard confirmation with a temporary file and no input engine or permission requests. It is intentionally excluded from headless CI. Optional `HYPERMUG_TEST_CAPTURE_DIRECTORY=/tmp/hypermug-ui-evidence make test-window` captures only the fixture window, using existing Screen Recording permission; it never requests that permission.
+
 `make test` requires 100% executable-line coverage. `make compile-check` type-checks the app. `make test-release` checks release metadata and publication with temporary repositories. `make check-automation` and `make check-website` check repository automation and website assets. CI and Git hooks use these Makefile targets.
 
 Run `make ci-tools` to install the locked Node tooling. Run `make hooks` to install Git hooks again if npm scripts were disabled. Commits follow [Conventional Commits](../CONTRIBUTING.md#commit-messages).
@@ -40,3 +44,5 @@ Run `make ci-tools` to install the locked Node tooling. Run `make hooks` to inst
 Plan work through GitHub issues with one of three types: **Feature**, **Bug**, or **Misc**. Use the matching `feature`, `bug`, or `misc` label and the corresponding issue form when available. Only issues authored by the verified repository owner, `maxmeis`, enter the actionable backlog and can authorize automated work. Outside issues and comments are welcome as public discussion and reports, but they do not automatically authorize triage work or implementation. No automatic triage or implementation is promised for external reports.
 
 Public pull requests are welcome. For substantial changes, first check whether an owner-authored issue describes the work; if it does not, discuss it in an issue and let the owner decide whether to create backlog work. See [Contributing](../CONTRIBUTING.md).
+
+The [file configuration/macOS/Swift audit](audits/file-config-macos-swift.md) records the requested skills, scope, findings and validation limits.

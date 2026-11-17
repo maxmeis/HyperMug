@@ -31,11 +31,14 @@ private final class Harness {
     var changes: [AppConfig] = []
     var errors: [ConfigError] = []
     private(set) var store: ConfigStore!
+    var beforeRead: ((URL) -> Void)?
+    var failWrite = false
 
-    init(configURL: URL? = nil) {
+    init(configURL: URL? = nil, schemaURL: URL? = nil, customIO: Bool = false) {
         configDir = root.appendingPathComponent("cfg")
         url = configURL ?? configDir.appendingPathComponent("hypermug.json")
-        let env = ConfigStoreEnvironment(
+        var env = ConfigStoreEnvironment(
+            schemaURL: schemaURL,
             log: { [unowned self] level, message in
                 logs.append((level, message))
                 onLog?(level, message)
@@ -51,6 +54,16 @@ private final class Harness {
                 watches.append(Watch(path: path, onEvent: onEvent, token: token))
                 return token
             })
+        if customIO {
+            env.readData = { [unowned self] url in
+                beforeRead?(url)
+                return try Data(contentsOf: url)
+            }
+            env.writeData = { [unowned self] data, url in
+                if failWrite { throw NSError(domain: "FixtureWrite", code: 1) }
+                try data.write(to: url, options: .atomic)
+            }
+        }
         store = ConfigStore(url: url, environment: env)
         store.onChange = { [unowned self] in changes.append($0) }
         store.onError = { [unowned self] in errors.append($0) }
@@ -105,6 +118,9 @@ func configStoreTests() {
     blankFileTests()
     pollFallbackTests()
     watcherLifecycleTests()
+    bundledSchemaStoreTests()
+    schemaMigrationRaceTests()
+    documentSaveTests()
 }
 
 // MARK: - start
@@ -114,9 +130,9 @@ private func startTests() {
     do {
         let h = Harness()
         h.store.start()
-        expectEqual(h.fileText, String(decoding: encodeConfig(.newFileDefaults), as: UTF8.self), "default config written")
-        expectEqual(try? Data(contentsOf: h.configDir.appendingPathComponent(AppIdentity.schemaFileName)),
-                    Data(configSchemaJSON.utf8), "schema installed next to it")
+        expectEqual(h.fileText, String(decoding: encodeConfig(.newFileDefaults, includeEmptyKeys: true), as: UTF8.self), "default config written")
+        expect(!FileManager.default.fileExists(atPath: h.configDir.appendingPathComponent(AppIdentity.schemaFileName).path),
+               "no schema is written beside the config")
         expectEqual(h.changes, [.newFileDefaults], "onChange runs exactly once")
         expectEqual(h.store.config, .newFileDefaults, "config is the new-file default")
         expect(h.store.error == nil && h.errors.isEmpty, "no error")
@@ -166,7 +182,7 @@ private func startTests() {
         try? Data("x".utf8).write(to: h.url.deletingLastPathComponent().deletingLastPathComponent())
         h.store.start()
         expect(h.logged(.error, containing: "cannot create") == 1, "directory failure logged")
-        expect(h.logged(.error, containing: "cannot write") >= 1, "the failed default write is logged too")
+        expectEqual(h.errors.count, 1, "unreadable config path is reported without a sidecar write")
         expectEqual(h.changes, [AppConfig()], "start still reports the defaults")
     }
 
@@ -200,7 +216,7 @@ private func createIfAbsentTests() {
         expectEqual(h.store.config, hyperConfig, "config survives the deletion")
         let watchesBefore = h.fileWatches.count
         h.store.createIfAbsent()
-        expectEqual(h.fileText, String(decoding: encodeConfig(hyperConfig), as: UTF8.self), "recreated from the in-memory config")
+        expectEqual(h.fileText, String(decoding: encodeConfig(hyperConfig, includeEmptyKeys: true), as: UTF8.self), "recreated from the in-memory config")
         expectEqual(h.fileWatches.count, watchesBefore + 1, "the recreated file is watched")
         expectEqual(h.changes, [hyperConfig], "recreating does not report a change")
         // Our own write must not look like an external edit.
@@ -227,7 +243,7 @@ private func createIfAbsentTests() {
         h.store.start()
         try? FileManager.default.removeItem(at: h.configDir)
         h.store.createIfAbsent()
-        expectEqual(h.fileText, String(decoding: encodeConfig(.newFileDefaults), as: UTF8.self), "directory and file recreated")
+        expectEqual(h.fileText, String(decoding: encodeConfig(.newFileDefaults, includeEmptyKeys: true), as: UTF8.self), "directory and file recreated")
     }
 }
 
@@ -260,9 +276,8 @@ private func reloadTests() {
         h.store.start()
         h.externalEdit("{ \"capsLock\" : \"hyper\" , \"unknown\": 1 }")
         expectEqual(h.changes, [hyperConfig], "equal config: no onChange")
-        expect(h.store.error == nil, "still valid")
-        expectEqual(h.logged(.info, containing: "unknown config key \"unknown\" ignored"), 1, "unknown keys are logged as info")
-        expectEqual(h.store.unknownKeys, ["unknown"])
+        expect(h.store.error != nil, "unknown fields are schema errors")
+        expectEqual(h.store.config, hyperConfig, "unknown fields cannot replace the last valid config")
         h.externalEdit(hyperJSON)
         expectEqual(h.store.unknownKeys, [])
     }
@@ -325,12 +340,12 @@ private func invalidFileTests() {
     // Different bytes, same reason: logged again, but not alerted again.
     h.externalEdit("{ ")
     expectEqual(h.errors.count, 1, "the same reason is not alerted twice")
-    expectEqual(h.logged(.error, containing: "invalid config"), 2, "but it is logged")
+    expectEqual(h.logged(.error, containing: "invalid config"), 1, "duplicate reasons do not flood the log")
     expectEqual(h.fileText, "{ ", "still untouched")
 
     // A different reason alerts again.
     h.externalEdit("[]")
-    expectEqual(h.errors.map { $0.reason }.last, "config must be a JSON object", "new reason shown")
+    expectEqual(h.errors.map { $0.reason }.last, "config: expected object", "new reason shown")
     expectEqual(h.errors.count, 2, "a different reason alerts")
     expectEqual(h.store.error, h.errors.last, "store.error tracks the latest reason")
 
@@ -345,7 +360,7 @@ private func invalidFileTests() {
 
     // A semantic error inside an otherwise valid document.
     h.externalEdit("{\"capsLock\":\"upper\"}")
-    expect(h.store.error?.reason.hasPrefix("capsLock must be") ?? false, "validation errors are reported")
+    expect(h.store.error?.reason.hasPrefix("capsLock") ?? false, "validation errors are reported")
     expectEqual(h.errors.count, 4, "alerted")
 }
 
@@ -357,7 +372,7 @@ private func blankFileTests() {
         let h = Harness()
         h.put("")
         h.store.start()
-        expectEqual(h.fileText, String(decoding: encodeConfig(.newFileDefaults), as: UTF8.self), "blank file initialized")
+        expectEqual(h.fileText, String(decoding: encodeConfig(.newFileDefaults, includeEmptyKeys: true), as: UTF8.self), "blank file initialized")
         expectEqual(h.store.config, .newFileDefaults, "defaults adopted")
         expectEqual(h.changes, [.newFileDefaults], "one onChange")
         expect(h.errors.isEmpty && h.store.error == nil, "blank is not an error")
@@ -369,7 +384,7 @@ private func blankFileTests() {
         h.put(hyperJSON)
         h.store.start()
         h.externalEdit(" \n")
-        expectEqual(h.fileText, String(decoding: encodeConfig(.newFileDefaults), as: UTF8.self), "truncated file initialized")
+        expectEqual(h.fileText, String(decoding: encodeConfig(.newFileDefaults, includeEmptyKeys: true), as: UTF8.self), "truncated file initialized")
         expectEqual(h.changes, [hyperConfig, .newFileDefaults], "defaults reported")
         // Our own initialization does not loop.
         h.fileWatches.last?.onEvent(false)
@@ -434,7 +449,7 @@ private func blankFileTests() {
         try? FileManager.default.createSymbolicLink(at: h.url, withDestinationURL: target)
         h.store.start()
         expectEqual(try? FileManager.default.destinationOfSymbolicLink(atPath: h.url.path), target.path, "still a symlink")
-        expectEqual(try? Data(contentsOf: target), encodeConfig(.newFileDefaults), "written through to the target")
+        expectEqual(try? Data(contentsOf: target), encodeConfig(.newFileDefaults, includeEmptyKeys: true), "written through to the target")
         try? Data("{\"capsLock\":\"hyper\",\"launchAtLogin\":false}".utf8).write(to: target)
         h.store.pollFallback()
         expectEqual(h.store.config, hyperConfig, "an edit of the symlink target is noticed by the poll")
@@ -582,5 +597,143 @@ private func watcherLifecycleTests() {
         h.runScheduled()
         expectEqual(h.store.config, hyperConfig, "the file is picked up when it comes back")
         expectEqual(h.fileWatches.count, 2, "and watched again")
+    }
+}
+
+private func bundledSchemaStoreTests() {
+    let schema = URL(fileURLWithPath: "/Applications/HyperMug.app/Contents/Resources/hypermug.schema.json")
+    do {
+        let h = Harness(schemaURL: schema)
+        h.store.start()
+        let object = try? JSONSerialization.jsonObject(with: Data(h.fileText!.utf8)) as? [String: Any]
+        expectEqual(object?["$schema"] as? String, schema.absoluteString, "new config references bundled schema")
+        expectEqual(h.store.config, .newFileDefaults)
+    }
+    do {
+        let h = Harness(schemaURL: schema)
+        h.put(#"{"$schema":"./hypermug.schema.json","capsLock":"hyper"}"#)
+        h.store.start()
+        expectEqual(h.store.config, hyperConfig, "migration preserves settings")
+        expect(h.fileText!.contains(schema.absoluteString), "legacy sidecar link migrated")
+        let stable = h.fileText
+        h.store.pollFallback()
+        expectEqual(h.fileText, stable, "poll is byte-idempotent")
+        expect(h.errors.isEmpty, "migration is not an error")
+    }
+    do {
+        let h = Harness(schemaURL: schema)
+        h.put("{")
+        h.store.start()
+        expectEqual(h.fileText, "{", "invalid JSON is never rewritten")
+        expectEqual(h.errors.count, 1)
+    }
+    do {
+        let h = Harness(schemaURL: schema)
+        h.put(#"{"capsLock":"hyper","future":{"keep":1}}"#)
+        h.store.start()
+        expect(h.store.error != nil, "unknown fields cause native config error")
+        expect(h.fileText!.contains("future"), "migration does not delete unsupported settings")
+        expectEqual(h.store.config, AppConfig(), "failed validation keeps last valid settings")
+    }
+}
+
+private func schemaMigrationRaceTests() {
+    let schema = URL(fileURLWithPath: "/Applications/HyperMug.app/Contents/Resources/hypermug.schema.json")
+    do {
+        let h = Harness(schemaURL: schema, customIO: true)
+        h.put(#"{"capsLock":"meh"}"#)
+        var reads = 0
+        h.beforeRead = { _ in
+            reads += 1
+            if reads == 3 { h.put(#"{"capsLock":"hyper"}"#) }
+        }
+        h.store.start()
+        h.runScheduled()
+        expectEqual(h.store.config, hyperConfig, "a concurrent editor save wins schema migration")
+        expect(h.fileText!.contains("hyper"), "old settings never overwrite the concurrent edit")
+    }
+    do {
+        let h = Harness(schemaURL: schema, customIO: true)
+        h.put(hyperJSON)
+        h.failWrite = true
+        h.store.start()
+        expectEqual(h.fileText, hyperJSON, "failed schema migration leaves bytes intact")
+        expect(h.store.error?.reason.contains("bundled schema reference") == true, "metadata write failure is actionable")
+        expectEqual(h.errors.count, 1)
+        expectEqual(h.store.config, AppConfig(), "write failure retains previous valid config")
+        h.failWrite = false
+        h.externalEdit(hyperJSON + "\n")
+        expectEqual(h.store.config, hyperConfig)
+        expect(h.store.error == nil, "repair recovers normally")
+    }
+    do {
+        let h = Harness(schemaURL: schema)
+        h.prepareDir()
+        let target = h.root.appendingPathComponent("dotfiles.json")
+        try! Data(hyperJSON.utf8).write(to: target)
+        try! FileManager.default.createSymbolicLink(at: h.url, withDestinationURL: target)
+        h.store.start()
+        expectEqual(try? FileManager.default.destinationOfSymbolicLink(atPath: h.url.path), target.path, "schema migration preserves dotfiles symlink")
+        expectEqual(h.store.config, hyperConfig)
+        expect((try? String(contentsOf: target, encoding: .utf8))?.contains(schema.absoluteString) == true)
+    }
+}
+
+
+private func documentSaveTests() {
+    do {
+        let h = Harness(customIO: true)
+        h.put(hyperJSON)
+        h.store.start()
+        let before = try! h.store.readDocument()
+        let edit = Data(#"{"capsLock":"default"}"#.utf8)
+        try! h.store.saveDocument(edit, replacing: before)
+        expectEqual(h.store.config.capsLock, .default, "the editor saves through the running store")
+        expectEqual(try! h.store.readDocument(), edit, "raw formatting survives without schema migration")
+        expectEqual(h.changes.count, 2, "save applies once")
+        for invalid in ["", "{", #"{"capsLock":"typo"}"#] {
+            do { try h.store.saveDocument(Data(invalid.utf8), replacing: edit); expect(false) }
+            catch { expectEqual(try! h.store.readDocument(), edit, "invalid drafts never replace disk") }
+        }
+        h.put(hyperJSON + "\n")
+        do { try h.store.saveDocument(edit, replacing: edit); expect(false) }
+        catch { expectEqual(h.fileText, hyperJSON + "\n", "external edits win a stale Save") }
+        h.failWrite = true
+        do { try h.store.saveDocument(edit, replacing: try h.store.readDocument()); expect(false) }
+        catch { expectEqual(h.store.config.capsLock, .default, "write failure cannot apply a draft") }
+        h.failWrite = false
+        try! FileManager.default.removeItem(at: h.url)
+        expectEqual(try! h.store.readDocument(), nil)
+        try! h.store.saveDocument(edit, replacing: nil)
+        expectEqual(try! h.store.readDocument(), edit, "an explicitly absent baseline can be recreated")
+    }
+    do {
+        let schema = URL(fileURLWithPath: "/Applications/HyperMug.app/Contents/Resources/hypermug.schema.json")
+        let h = Harness(schemaURL: schema)
+        h.prepareDir()
+        let target = h.root.appendingPathComponent("editor-dotfiles.json")
+        try! Data(hyperJSON.utf8).write(to: target)
+        try! FileManager.default.createSymbolicLink(at: h.url, withDestinationURL: target)
+        h.store.start()
+        let baseline = try! h.store.readDocument()
+        try! h.store.saveDocument(Data(#"{"capsLock":"default"}"#.utf8), replacing: baseline)
+        expectEqual(try? FileManager.default.destinationOfSymbolicLink(atPath: h.url.path), target.path)
+        let saved = try! JSONSerialization.jsonObject(with: Data(contentsOf: target)) as! [String: Any]
+        expectEqual(saved["$schema"] as? String, schema.absoluteString, "editor writes the real bundle reference")
+    }
+    do {
+        let h = Harness()
+        h.put("{")
+        h.store.start()
+        try! FileManager.default.removeItem(at: h.url)
+        h.store.pollFallback()
+        h.externalEdit("{")
+        expectEqual(h.errors.count, 2, "recreating an invalid file reports a new error after absence cleared it")
+    }
+    do {
+        let directory = makeTempDir()
+        let h = Harness(configURL: directory)
+        do { _ = try h.store.readDocument(); expect(false) }
+        catch { expect(true, "unreadable disk cannot be mistaken for an absent file") }
     }
 }

@@ -3,20 +3,21 @@ import HyperMugCore
 
 /// Menu bar icon. Clicking opens the native menu; its Stay Awake checkbox toggles Caffeine for the
 /// running session (never written to the config). All click decisions live in Core `StatusLogic`.
+@MainActor
 final class StatusItemController: NSObject {
     private let store: ConfigStore
     private let engine: Engine
     private let statusItem: NSStatusItem
     private let menu = NSMenu()
     private var stayAwakeItem: NSMenuItem!
-    private lazy var settingsWindow = SettingsWindowController(url: store.url)
+    private var configErrorItem: NSMenuItem!
     private var tracker = SecureInputTracker()
     private var secureItem: NSMenuItem?
     private var secureSeparator: NSMenuItem?
     private var secureTimer: Timer?
     private var doctorObserver: NSObjectProtocol?
     private let trackpad: TrackpadCapture
-    private lazy var doctor = DoctorWindowController(store: store, capture: trackpad)
+    private lazy var appWindow = HyperMugWindowController(store: store, capture: trackpad)
     /// Details window; each refresh re-polls so "seen since" stays owned by this controller.
     private lazy var secureWindow = SecureInputWindowController { [weak self] in
         self?.pollSecureInput()
@@ -29,8 +30,8 @@ final class StatusItemController: NSObject {
         self.trackpad = trackpad
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         super.init()
-        doctorObserver = NotificationCenter.default.addObserver(forName: .showHyperMugDoctor, object: nil, queue: .main) { [weak self] _ in self?.showDoctor() }
-        ApplicationMenu.install(settingsTarget: self, settingsAction: #selector(openSettings), doctorAction: #selector(showDoctor))
+        doctorObserver = NotificationCenter.default.addObserver(forName: .showHyperMugDoctor, object: nil, queue: .main) { [weak self] _ in MainActor.assumeIsolated { self?.showDoctor() } }
+        ApplicationMenu.install(settingsTarget: self, settingsAction: #selector(openSettings), doctorAction: #selector(showDoctor), saveAction: #selector(saveConfiguration))
 
         let settings = NSMenuItem(title: MenuText.settings, action: #selector(openSettings), keyEquivalent: ",")
         settings.keyEquivalentModifierMask = [.command]
@@ -45,6 +46,11 @@ final class StatusItemController: NSObject {
         updateChecker.configureMenuItem(updates)
 
         menu.autoenablesItems = false
+        let errorItem = NSMenuItem(title: "Configuration Error…", action: #selector(openSettings), keyEquivalent: "")
+        errorItem.target = self
+        errorItem.isHidden = true
+        configErrorItem = errorItem
+        menu.addItem(errorItem)
         menu.addItem(stayAwake)
         menu.addItem(.separator())
         menu.addItem(settings)
@@ -58,7 +64,7 @@ final class StatusItemController: NSObject {
             button.action = #selector(clicked)
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
-        let timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in self?.pollSecureInput() }
+        let timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.pollSecureInput() } }
         RunLoop.main.add(timer, forMode: .common)
         secureTimer = timer
         pollSecureInput()
@@ -66,6 +72,7 @@ final class StatusItemController: NSObject {
     }
 
     func refresh() {
+        configErrorItem.isHidden = store.error == nil
         stayAwakeItem.state = engine.caffeineOn ? .on : .off
         let icon = statusIcon(caffeineOn: engine.caffeineOn, secureHolderName: tracker.info?.holder.name)
         let image = NSImage(systemSymbolName: icon.symbol, accessibilityDescription: icon.label)
@@ -85,7 +92,7 @@ final class StatusItemController: NSObject {
         case .showMenu:
             // Re-read Secure Input so the first item is current when the menu opens.
             pollSecureInput()
-            // A menu attached only for this click keeps left-click free for the Caffeine toggle.
+            // Attach the same native menu for left, right and Control clicks.
             statusItem.menu = menu
             statusItem.button?.performClick(nil)
             statusItem.menu = nil
@@ -129,11 +136,15 @@ final class StatusItemController: NSObject {
     }
 
     @objc private func openSettings() {
-        store.createIfAbsent()
-        settingsWindow.present()
+        showConfiguration()
     }
 
-    @objc func showDoctor() { doctor.show() }
+    func showConfiguration() { appWindow.show(configuration: true) }
+    @objc func showDoctor() { appWindow.show(configuration: false) }
+    func showWindow() { appWindow.show() }
+    @objc private func saveConfiguration() { appWindow.saveConfiguration() }
+    var hasUnsavedConfiguration: Bool { appWindow.hasUnsavedChanges }
+    func confirmDiscard(_ reply: @escaping (Bool) -> Void) { appWindow.confirmDiscard(reply) }
 
     @objc private func quit() {
         NSApp.terminate(nil)

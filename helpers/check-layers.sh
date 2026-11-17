@@ -6,6 +6,7 @@
 #   Sources/Platform  thin OS adapters. May import Core. Must not use App.
 #   Sources/App       AppKit UI and composition root. May use Platform and Core.
 #   Tests             test Core only.
+#   PlatformTests     explicit OS/notification adapter integration checks, compiled by test-runtime.sh.
 #
 # Usage: helpers/check-layers.sh [repo-root]   (defaults to the parent of this script)
 set -euo pipefail
@@ -83,13 +84,13 @@ done < <(swift_files Tests)
 
 # ---- 2. Core imports -------------------------------------------------------------------------
 while IFS= read -r f; do
-  check_imports "$f" "Foundation CoreGraphics Dispatch" ""
+  check_imports "$f" "Foundation CoreFoundation CoreGraphics Dispatch" ""
 done < <(swift_files Sources/Core)
 
 # ---- 3. Core forbidden API -------------------------------------------------------------------
 # Foundation re-exports Darwin, so the import check alone is not enough. Every hit is a side effect
 # that has to come in through injection. FileManager and Data.write/contentsOf stay allowed: the config
-# store and schema install are Core and are tested in temp dirs.
+# store and schema-reference migration are Core and are tested in temp dirs.
 FORBIDDEN=(
   # processes
   '\bProcess\(' '\bposix_spawn' '\bkill(pg)?\(' '\bwaitpid\(' '\bsystem\(' '\bpopen\(' '\bexec[lv]p?\('
@@ -122,7 +123,7 @@ done < <(swift_files Sources/Core)
 # App identifiers: every top-level (column 0) non-private declaration in Sources/App, plus a fixed
 # safety net. `extension`s are skipped (extending a Core or Platform type from App is legal).
 DECL_RE='^((public|internal|open|final)[[:space:]]+|@[A-Za-z_]+[[:space:]]+)*(class|struct|enum|protocol|typealias|func|let|var)[[:space:]]+[A-Za-z_][A-Za-z0-9_]*'
-APP_NAMES=" AppDelegate HyperMugMain StatusItemController SecureInputWindowController ConfigErrorAlert PrivilegesPresenter presentUpdateAlert "
+APP_NAMES=" AppDelegate HyperMugMain StatusItemController SecureInputWindowController IssueNotifications PrivilegesPresenter presentUpdateAlert "
 while IFS= read -r f; do
   while IFS= read -r line; do
     name="$(printf '%s\n' "$line" | sed -E 's/^((public|internal|open|final)[[:space:]]+|@[A-Za-z_]+[[:space:]]+)*(class|struct|enum|protocol|typealias|func|let|var)[[:space:]]+([A-Za-z_][A-Za-z0-9_]*).*/\4/')"
@@ -145,6 +146,24 @@ done < <(swift_files Sources/Platform)
 while IFS= read -r f; do
   check_imports "$f" "Foundation CoreGraphics Carbon HyperMugCore" "HyperMugCore"
 done < <(swift_files Tests)
+
+# Each adapter check has its own entrypoint and an explicit compilation target.
+while IFS= read -r f; do
+  case "$f" in
+    PlatformTests/ShellExecutorTests.swift|PlatformTests/IssueNotificationTests.swift|PlatformTests/ConfigurationEditorTests.swift) ;;
+    *) violation "$f" 1 "adapter check needs an explicit test-runtime.sh compilation target" ;;
+  esac
+  check_imports "$f" "Foundation Darwin UserNotifications HyperMugCore" "HyperMugCore"
+done < <(swift_files PlatformTests)
+
+# Optional interactive tests are isolated from both the Core gate and headless CI.
+while IFS= read -r f; do
+  case "$f" in
+    WindowTests/main.swift) ;;
+    *) violation "$f" 1 "window check needs an explicit test-window.sh compilation target" ;;
+  esac
+  check_imports "$f" "AppKit HyperMugCore ScreenCaptureKit" "HyperMugCore"
+done < <(swift_files WindowTests)
 
 # ---- 6. No selftest remnants -----------------------------------------------------------------
 if [ -d Sources ]; then

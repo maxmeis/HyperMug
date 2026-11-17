@@ -8,18 +8,19 @@ sparkle_prepare
 
 RELEASE="${REQUIRE_SIGNING:-0}"
 VARIANT="${APP_VARIANT:-dev}"
+BUILD_ROOT="${BUILD_ROOT:-build}"
 if [ "$RELEASE" = 1 ]; then VARIANT=production; fi
 case "$VARIANT" in
   dev)
-    APP="build/HyperMug Dev.app"
-    CORE=build/core-dev
+    APP="$BUILD_ROOT/HyperMug Dev.app"
+    CORE="$BUILD_ROOT/core-dev"
     APP_NAME="HyperMug Dev"
     BUNDLE_ID=com.maxmeis.hypermug.dev
     SWIFT_BASE_FLAGS+=(-D HYPERMUG_DEV)
     ;;
   production)
-    APP=build/HyperMug.app
-    CORE=build/core
+    APP="$BUILD_ROOT/HyperMug.app"
+    CORE="$BUILD_ROOT/core"
     APP_NAME=HyperMug
     BUNDLE_ID=com.maxmeis.hypermug
     ;;
@@ -28,7 +29,7 @@ esac
 VERSION="${APP_VERSION:-0.1.0}"
 NUMBER="${BUILD_NUMBER:-1}"
 CHANNEL_META="${RELEASE_CHANNEL:-local}"
-REPOSITORY="${RELEASES_REPOSITORY:-maxmeis/HyperMug}"
+REPOSITORY="${RELEASES_REPOSITORY:-maxmeis/hypermug}"
 FEED="${APPCAST_URL:-https://raw.githubusercontent.com/${REPOSITORY}/updates/appcast-stable.xml}"
 KEY="${SPARKLE_PUBLIC_ED_KEY:-}"
 if [ "$VARIANT" = dev ]; then KEY=""; CHANNEL_META=local; fi
@@ -60,6 +61,10 @@ rm -rf "$APP" "$CORE"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Frameworks" "$APP/Contents/Resources"
 cp Source/Branding/HyperMug.icns "$APP/Contents/Resources/HyperMug.icns"
 compile_core_module "$CORE"
+# Generate the editor schema from the exact same model/variant as the app, before signing.
+swiftc -O -parse-as-library "${SWIFT_BASE_FLAGS[@]}" -I "$CORE" \
+  helpers/schema-main.swift "$CORE/HyperMugCore.o" -o "$CORE/render-schema"
+"$CORE/render-schema" "$APP/Contents/Resources"
 swiftc -O -parse-as-library "${SWIFT_BASE_FLAGS[@]}" -module-name HyperMug \
   -I "$CORE" -F "$SPARKLE_FRAMEWORK_DIR" Source/HyperMug/Sources/Platform/*.swift Source/HyperMug/Sources/App/*.swift "$CORE/HyperMugCore.o" \
   -o "$APP/Contents/MacOS/HyperMug" -framework IOKit -framework Carbon -framework Sparkle \
@@ -97,4 +102,4 @@ done
 codesign "${SIGN_OPTIONS[@]}" "$FRAMEWORK"
 codesign "${SIGN_OPTIONS[@]}" --identifier "$BUNDLE_ID" "$APP"
 codesign --verify --deep --strict --verbose=2 "$APP"
-echo "Built: $(pwd)/$APP"
+echo "Built: $APP"

@@ -2,8 +2,9 @@ import AppKit
 import HyperMugCore
 
 /// Standard menus keep keyboard commands available while a HyperMug window is active.
+@MainActor
 enum ApplicationMenu {
-    static func install(settingsTarget: AnyObject, settingsAction: Selector, doctorAction: Selector) {
+    static func install(settingsTarget: AnyObject, settingsAction: Selector, doctorAction: Selector, saveAction: Selector) {
         let main = NSMenu()
         let app = NSMenu(title: AppIdentity.appName)
         app.addItem(withTitle: "About \(AppIdentity.appName)", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
@@ -19,12 +20,18 @@ enum ApplicationMenu {
         app.addItem(withTitle: "Quit \(AppIdentity.appName)", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         add(app, to: main)
 
+        let file = NSMenu(title: "File")
+        let save = file.addItem(withTitle: "Save Configuration", action: saveAction, keyEquivalent: "s")
+        save.target = settingsTarget
+        add(file, to: main)
         let edit = NSMenu(title: "Edit")
-        for (title, action, key) in [("Undo", "undo:", "z"), ("Cut", "cut:", "x"),
+        for (title, action, key) in [("Undo", "undo:", "z"), ("Redo", "redo:", "Z"), ("Cut", "cut:", "x"),
                                      ("Copy", "copy:", "c"), ("Paste", "paste:", "v"),
                                      ("Select All", "selectAll:", "a")] {
             edit.addItem(withTitle: title, action: Selector(action), keyEquivalent: key)
         }
+        let find = edit.addItem(withTitle: "Find…", action: #selector(NSTextView.performTextFinderAction(_:)), keyEquivalent: "f")
+        find.tag = NSTextFinder.Action.showFindInterface.rawValue
         add(edit, to: main)
         let window = NSMenu(title: "Window")
         window.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
