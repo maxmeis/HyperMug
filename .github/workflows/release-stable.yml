@@ -64,6 +64,14 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ needs.authorize.outputs.source_sha }}
+      - name: Check out trusted current release automation
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          path: .release-automation
+          persist-credentials: false
+      - name: Verify trusted automation commit
+        run: test "$(git -C .release-automation rev-parse HEAD)" = "$GITHUB_SHA"
       - name: Verify authorized source
         env:
           AUTHORIZED_SHA: ${{ needs.authorize.outputs.source_sha }}
@@ -71,7 +79,16 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: package.json
+      - name: Check out shared signing implementation
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: maxmeis/release-bot
+          ref: ac8269adb164a9e768bf637169229f9bd0bb4d0e
+          path: .release-bot-signing
+          persist-credentials: false
       - name: Test
+        env:
+          RELEASE_BOT_SIGNING_SCRIPT: ${{ github.workspace }}/.release-bot-signing/macos/signing.sh
         run: |
           make test-release
           make check-layers
@@ -80,6 +97,10 @@ jobs:
           make compile-check
           make check-automation
           make check-website
+      - name: Test trusted release automation
+        env:
+          RELEASE_BOT_SIGNING_SCRIPT: ${{ github.workspace }}/.release-bot-signing/macos/signing.sh
+        run: make -C .release-automation test-release
       - name: Ensure version tag points to tested source
         env:
           GH_TOKEN: ${{ github.token }}
@@ -92,14 +113,6 @@ jobs:
             gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$tag" -f sha="$object" >/dev/null
           fi
           test "$(gh api "repos/$GITHUB_REPOSITORY/commits/$tag" --jq .sha)" = "$AUTHORIZED_SHA"
-      - name: Check out shared signing implementation
-        if: inputs.build_app
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          repository: maxmeis/release-bot
-          ref: d55c4615e92b116f6899a61992acc9b979fb13b5
-          path: .release-bot-signing
-          persist-credentials: false
       - name: Build and notarize
         if: inputs.build_app
         env:
@@ -112,13 +125,12 @@ jobs:
           DEVELOPER_ID_P12_BASE64: ${{ secrets.DEVELOPER_ID_P12_BASE64 }}
           DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
           SIGN_ID: ${{ vars.SIGN_ID }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
           APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
           APP_STORE_CONNECT_KEY_ID: ${{ vars.APP_STORE_CONNECT_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ vars.APP_STORE_CONNECT_ISSUER_ID }}
           RELEASE_BOT_SIGNING_SCRIPT: ${{ github.workspace }}/.release-bot-signing/macos/signing.sh
+          RELEASE_SOURCE_DIR: ${{ github.workspace }}
           SPARKLE_EDDSA_PRIVATE_KEY: ${{ secrets.SPARKLE_EDDSA_PRIVATE_KEY }}
           SPARKLE_PUBLIC_ED_KEY: ${{ vars.SPARKLE_PUBLIC_ED_KEY }}
         run: |
@@ -126,10 +138,10 @@ jobs:
           GITHUB_REF="refs/tags/v$VERSION"
           BUILD_NUMBER="$VERSION"
           export VERSION BUILD_NUMBER GITHUB_REF GITHUB_SHA
-          bash "$RELEASE_BOT_SIGNING_SCRIPT" run -- bash helpers/release.sh
+          bash "$RELEASE_BOT_SIGNING_SCRIPT" run -- bash .release-automation/helpers/release.sh
       - name: Mint verified release publisher token
         id: publisher
-        uses: maxmeis/release-bot/actions/publisher-token@d55c4615e92b116f6899a61992acc9b979fb13b5 # pinned release-bot commit
+        uses: maxmeis/release-bot/actions/publisher-token@ac8269adb164a9e768bf637169229f9bd0bb4d0e # pinned release-bot commit
         with:
           app-id: ${{ vars.RELEASE_BOT_APP_ID }}
           private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
@@ -154,4 +166,4 @@ jobs:
           GITHUB_REF="refs/tags/v$VERSION"
           BUILD_NUMBER="$VERSION"
           export VERSION BUILD_NUMBER GITHUB_REF GITHUB_SHA
-          make publish
+          make -C .release-automation publish

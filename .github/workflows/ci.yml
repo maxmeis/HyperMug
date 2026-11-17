@@ -60,7 +60,16 @@ jobs:
       - name: Layer rules
         run: make check-layers
 
+      - name: Check out pinned shared release tools for integration tests
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: maxmeis/release-bot
+          ref: ac8269adb164a9e768bf637169229f9bd0bb4d0e
+          path: .release-bot-signing
+          persist-credentials: false
       - name: Release metadata and workflow checks
+        env:
+          RELEASE_BOT_SIGNING_SCRIPT: ${{ github.workspace }}/.release-bot-signing/macos/signing.sh
         run: |
           make test-ci
           make test-release

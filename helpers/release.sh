@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
+automation_root="$PWD"
+source_root="${RELEASE_SOURCE_DIR:-$PWD}"
+[[ -d "$source_root" ]] || { echo "Release source checkout missing" >&2; exit 1; }
+source_root="$(cd "$source_root" && pwd)"
+app="$source_root/build/HyperMug.app"
 : "${CHANNEL:?}" "${VERSION:?}" "${BUILD_NUMBER:?}" "${SOURCE_REPOSITORY:?}" "${RELEASES_REPOSITORY:?}" "${TAP_REPOSITORY:?}" "${GITHUB_ACTOR:?}" "${GITHUB_TRIGGERING_ACTOR:?}" "${GITHUB_REF:?}" "${GITHUB_SHA:?}"
 args=(--channel "$CHANNEL" --version "$VERSION" --actor "$GITHUB_ACTOR" --triggering-actor "$GITHUB_TRIGGERING_ACTOR" --ref "$GITHUB_REF" --sha "$GITHUB_SHA" --source-repo "$SOURCE_REPOSITORY" --releases-repo "$RELEASES_REPOSITORY" --tap-repo "$TAP_REPOSITORY")
 python3 helpers/release_metadata.py validate "${args[@]}"
@@ -22,20 +27,20 @@ read -r app_version expected_build <<< "$identity"
 export REQUIRE_SIGNING=1 APP_VERSION="$app_version" RELEASE_CHANNEL="$CHANNEL"
 export APPCAST_URL="https://raw.githubusercontent.com/${RELEASES_REPOSITORY}/updates/appcast-${CHANNEL}.xml"
 export SPARKLE_PUBLIC_ED_KEY="${SPARKLE_PUBLIC_ED_KEY:?}"
-make build
-python3 helpers/check-bundle-schema.py build/HyperMug.app
-bundle_plist=build/HyperMug.app/Contents/Info.plist
+make -C "$source_root" build
+python3 helpers/check-bundle-schema.py "$app"
+bundle_plist="$app"/Contents/Info.plist
 [[ "$(plutil -extract CFBundleShortVersionString raw -o - "$bundle_plist")" == "$app_version" ]] || { echo 'Built marketing version mismatch' >&2; exit 1; }
 [[ "$(plutil -extract CFBundleVersion raw -o - "$bundle_plist")" == "$BUILD_NUMBER" ]] || { echo 'Built build version mismatch' >&2; exit 1; }
 [[ "$(plutil -extract HyperMugReleaseChannel raw -o - "$bundle_plist")" == "$CHANNEL" ]] || { echo 'Built channel mismatch' >&2; exit 1; }
-bash "$RELEASE_BOT_SIGNING_SCRIPT" sign-app build/HyperMug.app
-bash "$RELEASE_BOT_SIGNING_SCRIPT" notarize-app build/HyperMug.app
+bash "$RELEASE_BOT_SIGNING_SCRIPT" sign-app "$app"
+bash "$RELEASE_BOT_SIGNING_SCRIPT" notarize-app "$app"
 mkdir -p build/release
 archive="build/release/HyperMug-${VERSION}.zip"
-ditto -c -k --keepParent build/HyperMug.app "$archive"
+ditto -c -k --keepParent "$app" "$archive"
 # Sparkle's sign_update accepts a private EdDSA key file via --ed-key-file.
 printf '%s' "$SPARKLE_EDDSA_PRIVATE_KEY" > "$work/eddsa.key"
-source helpers/sparkle.sh
+SPARKLE_ROOT="$(cd "$source_root" && source helpers/sparkle.sh && printf '%s' "$SPARKLE_ROOT")"
 signature="$("${SPARKLE_ROOT:?}/bin/sign_update" "$archive" --ed-key-file "$work/eddsa.key")"
 signature="$(printf '%s' "$signature" | sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p')"
 [[ -n "$signature" ]] || { echo 'Sparkle signature missing' >&2; exit 1; }

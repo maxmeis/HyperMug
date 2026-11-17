@@ -2,6 +2,7 @@
 """Publish only verified, CI-passing release cask metadata without a release PR."""
 import argparse
 import hashlib
+import os
 import json
 import re
 import subprocess
@@ -63,9 +64,17 @@ def finalize(repository, releases_repository, run_id, work):
         raise ValueError("unexpected publication repository")
     if not re.fullmatch(r"[1-9][0-9]*", str(run_id)):
         raise ValueError("a CI workflow run ID is required")
-    publisher = api("user")
-    if publisher.get("login") != "maxmeisreleasebot[bot]" or publisher.get("id") != 357859028:
-        raise ValueError("publication requires the verified release-bot App identity")
+    if (os.environ.get("PUBLISHER_REPOSITORY") != repository
+            or os.environ.get("PUBLISHER_APP_SLUG") != "maxmeisreleasebot"
+            or os.environ.get("PUBLISHER_BOT_USER_ID") != "357859028"
+            or not re.fullmatch(r"[1-9][0-9]*", os.environ.get("PUBLISHER_INSTALLATION_ID", ""))):
+        raise ValueError("verified release-bot action output is required")
+    scope = api("installation/repositories?per_page=100&page=1")
+    repositories = scope.get("repositories")
+    if (scope.get("total_count") != 1 or not isinstance(repositories, list)
+            or len(repositories) != 1 or not isinstance(repositories[0], dict)
+            or repositories[0].get("full_name", "").lower() != repository.lower()):
+        raise ValueError("publisher token must access exactly this repository")
     work.mkdir(parents=True, exist_ok=True)
     ci = api(f"repos/{repository}/actions/runs/{run_id}")
     branch = ci.get("head_branch", "")
