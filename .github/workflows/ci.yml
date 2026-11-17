@@ -110,8 +110,10 @@ jobs:
         run: |
           from="$BEFORE"
           # New branch (all-zero sha) or a force-push over a commit this clone does not have:
-          # lint everything since the default branch instead.
-          if echo "$from" | grep -qE '^0+$' || ! git cat-file -e "${from}^{commit}" 2>/dev/null; then
+          # lint everything since the default branch instead. A release-casks/* candidate is
+          # rebuilt on the current default branch, so its previous tip can predate commits that
+          # are already on the default branch; lint only the commits it adds on top of it.
+          if [ "$GITHUB_REF_NAME" != "$DEFAULT_BRANCH" ] || echo "$from" | grep -qE '^0+$' || ! git cat-file -e "${from}^{commit}" 2>/dev/null; then
             from="$(git merge-base "origin/$DEFAULT_BRANCH" "$AFTER" 2>/dev/null || true)"
           fi
           if [ -z "$from" ] || [ "$(git rev-list --count "$from..$AFTER")" = 0 ]; then
