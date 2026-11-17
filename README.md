@@ -18,7 +18,7 @@ For early builds, install `maxmeis/hypermug/hypermug@canary` instead. Stable and
 - **Caps Lock as Meh or Hyper:** hold for ⌃⌥⌘ or ⌃⌥⇧⌘; tap for Escape.
 - **Stay Awake:** open the mug menu with a left or right click and use its checked **Stay Awake** item for this session; the next launch uses your saved preference.
 - **Trackpad swipes:** bind three- and four-finger swipes to shortcuts, shell commands, or shared named helpers.
-- **Mouse remapping:** map back/forward buttons and the MX Master 3S thumb button to the same actions, and invert wheel scrolling.
+- **Mouse remapping:** map back/forward buttons, the MX Master 3S thumb button and vertical wheel steps to the same actions, and invert wheel scrolling.
 - **Secure Input status:** see when macOS blocks keyboard monitoring and which app holds Secure Input.
 - **One native window:** **Settings…** (⌘,) opens the JSON editor alongside overview, permissions, conflicts and activity. Validate and save in HyperMug; the JSON file stays the single source of settings. Native notifications report invalid configuration and failed shell actions.
 

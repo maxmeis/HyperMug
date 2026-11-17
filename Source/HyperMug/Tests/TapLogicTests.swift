@@ -13,13 +13,14 @@ private let meh: CGEventFlags = [.maskControl, .maskAlternate, .maskCommand]
 private let hyper: CGEventFlags = [.maskControl, .maskAlternate, .maskCommand, .maskShift]
 
 private func settings(caps: CapsMode = .default, back: ButtonAction? = nil, forward: ButtonAction? = nil,
-                      vertical: Bool = false, horizontal: Bool = false) -> TapSettings {
+                      vertical: Bool = false, horizontal: Bool = false, wheel: WheelMap = WheelMap()) -> TapSettings {
     var s = TapSettings()
     s.capsMode = caps
     s.back = back
     s.forward = forward
     s.invertVertical = vertical
     s.invertHorizontal = horizontal
+    s.wheel = wheel
     return s
 }
 
@@ -50,6 +51,8 @@ func tapLogicTests() {
     capsKeyEventTests()
     capsStateTests()
     effectiveMaskTests()
+    wheelStepTests()
+    wheelBindingTests()
 }
 
 // MARK: - Pure functions
@@ -87,6 +90,8 @@ private func settingsMaskTests() {
     expectEqual(settings(vertical: true).mask, scrollBit)
     expectEqual(settings(horizontal: true).mask, scrollBit)
     expect(settings(horizontal: true).needsTap, "scroll inversion needs the tap")
+    expectEqual(settings(wheel: WheelMap(up: back)).mask, scrollBit)
+    expectEqual(settings(wheel: WheelMap(down: forward)).mask, scrollBit)
     expectEqual(settings(caps: .meh, back: back, forward: forward, vertical: true, horizontal: true).mask,
                 keyBits | mouseBits | scrollBit)
 
@@ -105,6 +110,8 @@ private func settingsMaskTests() {
     config.mouse.buttons.back = back
     config.mouse.invertScroll = InvertScroll(vertical: false, horizontal: true)
     expectEqual(TapSettings(config: config), settings(caps: .hyper, back: back, forward: forward, horizontal: true))
+    config.mouse.verticalWheel = WheelMap(up: back)
+    expectEqual(TapSettings(config: config).wheel, WheelMap(up: back), "wheel bindings reach the tap")
 }
 
 private func capsFlagsTests() {
@@ -390,4 +397,129 @@ private func effectiveMaskTests() {
     state.clearSwallowed()
     expectEqual(state.effectiveMask(TapSettings()), 0)
     expectEqual(state.handle(mouse(.otherMouseUp, button: 3), settings: settings(back: back)).0, TapDecision())
+}
+
+// MARK: - Vertical wheel bindings
+
+private let wheelUp = ButtonAction.helper("previousWindow")
+private let wheelDown = ButtonAction.shell("next-window")
+
+/// A mouse-wheel notch (line delta) or a high-resolution continuous chunk (point delta), as seen by the tap.
+private func notch(_ lines: Int64, at time: UInt64, inverted: Bool = false, phase: Int64 = 0, momentum: Int64 = 0) -> TapEvent {
+    TapEvent(type: .scrollWheel, scrollPhase: phase, momentumPhase: momentum,
+             vertical: ScrollAxis(line: lines, fixed: Double(lines), point: lines * 10),
+             invertedFromDevice: inverted, nowNanos: time)
+}
+
+private func smooth(_ points: Int64, at time: UInt64, phase: Int64 = 0, momentum: Int64 = 0) -> TapEvent {
+    TapEvent(type: .scrollWheel, scrollPhase: phase, momentumPhase: momentum,
+             vertical: ScrollAxis(line: points > 0 ? 1 : -1, fixed: Double(points) / 10, point: points),
+             continuous: true, nowNanos: time)
+}
+
+private func wheelStepTests() {
+    let gap = WheelSteps.rollGapNanos, interval = WheelSteps.minIntervalNanos, threshold = WheelSteps.continuousStepPoints
+    // Notches: one step each, spaced at least the minimum interval.
+    var steps = WheelSteps()
+    expect(steps.step(.down, continuousPoints: nil, nowNanos: 1_000 * ms), "first notch fires")
+    expect(!steps.step(.down, continuousPoints: nil, nowNanos: 1_000 * ms + interval - 1), "too soon after a step")
+    expect(steps.step(.down, continuousPoints: nil, nowNanos: 1_000 * ms + interval), "interval boundary fires")
+
+    // Free spin: a continuous stream fires at most maxStepsPerRoll actions until a quiet gap.
+    steps = WheelSteps()
+    var fired = 0
+    for i in 0..<200 where steps.step(.down, continuousPoints: nil, nowNanos: UInt64(i) * 10 * ms) { fired += 1 }
+    expectEqual(fired, WheelSteps.maxStepsPerRoll, "a 2 s free-spin flick is limited")
+    expect(!steps.step(.down, continuousPoints: nil, nowNanos: 1_990 * ms + gap), "gap boundary still continues the roll")
+    expect(steps.step(.down, continuousPoints: nil, nowNanos: 1_990 * ms + 2 * gap + 1), "a quiet gap starts a new roll")
+
+    // Continuous travel accumulates to the threshold; leftovers of a limited step are discarded.
+    steps = WheelSteps()
+    expect(!steps.step(.up, continuousPoints: threshold / 2, nowNanos: 1_000 * ms), "half a step")
+    expect(!steps.step(.up, continuousPoints: threshold / 2 - 0.5, nowNanos: 1_010 * ms), "still below the threshold")
+    expect(steps.step(.up, continuousPoints: 0.5, nowNanos: 1_020 * ms), "threshold reached")
+    expect(!steps.step(.up, continuousPoints: threshold, nowNanos: 1_030 * ms), "the rest of the same notch is rate-limited")
+    expect(!steps.step(.up, continuousPoints: threshold / 2, nowNanos: 1_020 * ms + interval), "limited travel was discarded")
+    expect(steps.step(.up, continuousPoints: threshold / 2, nowNanos: 1_020 * ms + interval + 1), "fresh travel fires again")
+
+    // Old travel does not carry over a quiet gap; a reversal starts a new roll.
+    steps = WheelSteps()
+    expect(!steps.step(.up, continuousPoints: threshold - 1, nowNanos: 1_000 * ms), "almost a step")
+    expect(!steps.step(.up, continuousPoints: 1, nowNanos: 1_000 * ms + gap + 1), "stale travel is dropped")
+    steps = WheelSteps()
+    expect(!steps.step(.up, continuousPoints: threshold - 1, nowNanos: 1_000 * ms), "almost a step up")
+    expect(!steps.step(.down, continuousPoints: 1, nowNanos: 1_010 * ms), "reversal drops travel")
+    for i in 0..<WheelSteps.maxStepsPerRoll {
+        expect(steps.step(.up, continuousPoints: nil, nowNanos: 2_000 * ms + UInt64(i) * interval), "roll step \(i)")
+    }
+    expect(steps.step(.down, continuousPoints: nil, nowNanos: 2_000 * ms + 3 * interval), "a reversal resets the roll cap")
+    steps.reset()
+    expect(steps.step(.down, continuousPoints: nil, nowNanos: 2_000 * ms + 4 * interval), "reset ends the roll")
+    // A clock that goes backwards counts as no elapsed time.
+    expect(!steps.step(.down, continuousPoints: nil, nowNanos: 0), "earlier timestamp is too soon")
+}
+
+private func wheelBindingTests() {
+    let both = settings(wheel: WheelMap(up: wheelUp, down: wheelDown))
+    var state = TapState()
+
+    // Mapped notches are consumed and run their action; physical down is a negative delta.
+    var result = state.handle(notch(1, at: 1_000 * ms), settings: both)
+    expectEqual(result.0, TapDecision(pass: false))
+    expectEqual(result.1, [.run(wheelUp)])
+    result = state.handle(notch(-3, at: 2_000 * ms), settings: both)
+    expectEqual(result.1, [.run(wheelDown)], "an accelerated notch is one step")
+    // Rate-limited events are still consumed, so the window does not scroll in between.
+    result = state.handle(notch(-1, at: 2_010 * ms), settings: both)
+    expectEqual(result.0, TapDecision(pass: false))
+    expectEqual(result.1, [])
+
+    // Natural Scrolling: bindings use the physical direction.
+    result = state.handle(notch(-1, at: 3_000 * ms, inverted: true), settings: both)
+    expectEqual(result.1, [.run(wheelUp)], "inverted negative delta is physical up")
+
+    // Unmapped direction: untouched pass-through, or the configured inversion.
+    let onlyDown = settings(wheel: WheelMap(down: wheelDown))
+    expectNoop(state.handle(notch(1, at: 4_000 * ms), settings: onlyDown))
+    let invertedDown = settings(vertical: true, wheel: WheelMap(down: wheelDown))
+    result = state.handle(notch(1, at: 4_100 * ms), settings: invertedDown)
+    expectEqual(result.0, TapDecision(vertical: ScrollAxis(line: -1, fixed: -1, point: -10)), "unmapped up is still inverted")
+    // Physical down is bound regardless of invertScroll.vertical.
+    result = state.handle(notch(-1, at: 4_200 * ms), settings: invertedDown)
+    expectEqual(result.0, TapDecision(pass: false))
+    expectEqual(result.1, [.run(wheelDown)])
+    // An unmapped scroll ends the roll.
+    var roll = TapState()
+    for i in 0..<UInt64(WheelSteps.maxStepsPerRoll) { _ = roll.handle(notch(-1, at: (5_000 + i * 200) * ms), settings: onlyDown) }
+    expectEqual(roll.handle(notch(-1, at: 5_600 * ms), settings: onlyDown).1, [], "roll cap reached")
+    _ = roll.handle(notch(1, at: 5_700 * ms), settings: onlyDown)
+    expectEqual(roll.handle(notch(-1, at: 5_800 * ms), settings: onlyDown).1, [.run(wheelDown)], "unmapped scroll reset the roll")
+
+    // Horizontal-only movement and empty events are not wheel steps.
+    expectNoop(state.handle(TapEvent(type: .scrollWheel, horizontal: ScrollAxis(line: 1, fixed: 1, point: 10)), settings: both))
+    // A line event with only a fixed-point delta still has a direction.
+    let subLine = TapEvent(type: .scrollWheel, vertical: ScrollAxis(line: 0, fixed: -0.5, point: 0), nowNanos: 9_000 * ms)
+    expectEqual(state.handle(subLine, settings: both).1, [.run(wheelDown)])
+
+    // High-resolution wheel: point travel accumulates to one step.
+    var hires = TapState()
+    result = hires.handle(smooth(8, at: 1_000 * ms), settings: both)
+    expectEqual(result.0, TapDecision(pass: false), "partial travel is consumed")
+    expectEqual(result.1, [])
+    _ = hires.handle(smooth(8, at: 1_008 * ms), settings: both)
+    expectEqual(hires.handle(smooth(8, at: 1_016 * ms), settings: both).1, [.run(wheelUp)], "threshold crossed")
+    expectEqual(hires.handle(smooth(-25, at: 1_400 * ms), settings: both).1, [.run(wheelDown)], "downward travel")
+    let fixedOnly = TapEvent(type: .scrollWheel, vertical: ScrollAxis(line: 0, fixed: -30, point: 0), continuous: true, nowNanos: 2_000 * ms)
+    expectEqual(hires.handle(fixedOnly, settings: both).1, [.run(wheelDown)], "continuous fixed-point fallback")
+
+    // Trackpad and Magic Mouse scrolling (scroll or momentum phase) is never bound.
+    for (phase, momentum) in [(Int64(1), Int64(0)), (2, 0), (4, 0), (0, 1), (0, 2), (0, 3)] {
+        expectNoop(state.handle(smooth(40, at: 10_000 * ms, phase: phase, momentum: momentum), settings: both))
+        expectNoop(state.handle(notch(1, at: 10_000 * ms, phase: phase, momentum: momentum), settings: both))
+    }
+    // Without wheel bindings nothing changes; synthetic events are untouched.
+    expectNoop(state.handle(notch(1, at: 11_000 * ms), settings: settings()))
+    var synthetic = notch(1, at: 12_000 * ms)
+    synthetic.userData = kSyntheticEventTag
+    expectNoop(state.handle(synthetic, settings: both))
 }

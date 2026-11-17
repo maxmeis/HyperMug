@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import CoreGraphics
 import HyperMugCore
 
@@ -64,6 +64,7 @@ final class EventTapHost {
             // These notifications carry no usable event; don't read fields from it.
             decision = handler(TapEvent(type: type))
         } else {
+            let isScroll = type == .scrollWheel
             decision = handler(TapEvent(
                 type: type,
                 userData: event.getIntegerValueField(.eventSourceUserData),
@@ -79,7 +80,11 @@ final class EventTapHost {
                 horizontal: ScrollAxis(
                     line: event.getIntegerValueField(.scrollWheelEventDeltaAxis2),
                     fixed: event.getDoubleValueField(.scrollWheelEventFixedPtDeltaAxis2),
-                    point: event.getIntegerValueField(.scrollWheelEventPointDeltaAxis2))
+                    point: event.getIntegerValueField(.scrollWheelEventPointDeltaAxis2)),
+                continuous: isScroll && event.getIntegerValueField(.scrollWheelEventIsContinuous) != 0,
+                // Natural Scrolling has no public CGEventField; NSEvent exposes it for scroll events.
+                invertedFromDevice: isScroll && NSEvent(cgEvent: event)?.isDirectionInvertedFromDevice == true,
+                nowNanos: DispatchTime.now().uptimeNanoseconds
             ))
         }
 
