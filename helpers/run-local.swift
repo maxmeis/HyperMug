@@ -39,7 +39,7 @@ if !manager.fileExists(atPath: devConfig.path), !manager.fileExists(atPath: devL
     if var config = source {
         config["$schema"] = .string(appURL.appendingPathComponent("Contents/Resources/hypermug-dev.schema.json").absoluteString)
         config["launchAtLogin"] = .boolean(false)
-        config.removeValue(forKey: "autoUpdate")
+        config["autoUpdate"] = .boolean(false)
         try renderConfigTOML(config).write(to: devConfig, options: .atomic)
         print("Created separate Dev settings: \(devConfig.path)")
     }

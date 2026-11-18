@@ -7,7 +7,7 @@ brew tap maxmeis/hypermug https://github.com/maxmeis/hypermug
 brew install --cask maxmeis/hypermug/hypermug
 ```
 
-Update using `brew upgrade --cask maxmeis/hypermug/hypermug`, then quit and reopen the app. The app does not update itself, so the cask does not declare `auto_updates true`.
+The app updates itself through its daily in-app check, so the cask declares `auto_updates true`. To update through Homebrew instead, run `brew upgrade --cask maxmeis/hypermug/hypermug`, then quit and reopen the app.
 
 `Casks/hypermug.rb` points to a versioned, signed and notarized `HyperMug.app` ZIP in this repository's GitHub Releases. Its SHA-256 is calculated from the final archive. A macOS application belongs in `Casks/`; `Formula/` is used for source-built tools. No separate `homebrew-*` repository is needed.
 

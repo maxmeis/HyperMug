@@ -94,8 +94,7 @@ public let configSchemaJSON: String = #"""
     },
     "autoUpdate": {
       "type": "boolean",
-      "deprecated": true,
-      "description": "Retired setting, ignored. Update the production app with brew upgrade."
+      "description": "Check for updates automatically with Sparkle. Defaults to true when omitted."
     },
     "shellTimeoutSeconds": {
       "type": "number",

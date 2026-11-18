@@ -41,6 +41,7 @@ public func secureMenuTitle(holderName: String?) -> String? {
 public enum MenuText {
     public static let settings = "Settings…"
     public static let privileges = "Check Privileges…"
+    public static let updates = "Check for Updates…"
     public static let quit = "Quit \(AppIdentity.appName)"
 }
 

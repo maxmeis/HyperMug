@@ -24,7 +24,7 @@ final class StatusItemController: NSObject {
         return (self?.tracker.info, self?.tracker.since)
     }
 
-    init(store: ConfigStore, engine: Engine, trackpad: TrackpadCapture) {
+    init(store: ConfigStore, engine: Engine, updateChecker: UpdateChecker, trackpad: TrackpadCapture) {
         self.store = store
         self.engine = engine
         self.trackpad = trackpad
@@ -39,9 +39,11 @@ final class StatusItemController: NSObject {
         stayAwake.target = self
         stayAwakeItem = stayAwake
         let doctor = NSMenuItem(title: "Doctor…", action: #selector(showDoctor), keyEquivalent: "")
+        let updates = NSMenuItem(title: MenuText.updates, action: nil, keyEquivalent: "")
         let quit = NSMenuItem(title: MenuText.quit, action: #selector(quit), keyEquivalent: "q")
         quit.keyEquivalentModifierMask = [.command]
         for item in [settings, doctor, quit] { item.target = self }
+        updateChecker.configureMenuItem(updates)
 
         menu.autoenablesItems = false
         let errorItem = NSMenuItem(title: "Configuration Error…", action: #selector(openSettings), keyEquivalent: "")
@@ -53,6 +55,7 @@ final class StatusItemController: NSObject {
         menu.addItem(.separator())
         menu.addItem(settings)
         menu.addItem(doctor)
+        menu.addItem(updates)
         menu.addItem(.separator())
         menu.addItem(quit)
 

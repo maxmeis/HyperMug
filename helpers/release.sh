@@ -40,6 +40,7 @@ codesign -dv --verbose=4 "$app" 2> "$work/signature.txt"
 grep -Fqx "TeamIdentifier=$APPLE_TEAM_ID" "$work/signature.txt" || { echo 'Signed app has unexpected Apple Team ID' >&2; exit 1; }
 grep -Eq 'flags=.*\(runtime\)' "$work/signature.txt" || { echo 'Signed app lacks hardened runtime' >&2; exit 1; }
 grep -Eq '^Timestamp=' "$work/signature.txt" || { echo 'Signed app lacks secure timestamp' >&2; exit 1; }
+./helpers/verify_sparkle_bundle.sh "$app" "$APPLE_TEAM_ID"
 mkdir -p build/release
 submission="$work/for-notary.zip"
 ditto -c -k --sequesterRsrc --keepParent "$app" "$submission"

@@ -5,6 +5,7 @@
 # switch AeroSpace workspaces, four-finger swipes switch windows.
 # Requires AeroSpace at /opt/homebrew/bin/aerospace.
 
+autoUpdate = true
 caffeineOnLaunch = true
 capsLock = "meh"
 launchAtLogin = false
