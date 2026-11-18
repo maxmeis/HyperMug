@@ -16,7 +16,7 @@ Run `make help` for other commands. Set `BUILD_ROOT=/path/to/disposable-output` 
 
 Local **HyperMug Dev** uses bundle ID `com.maxmeis.hypermug.dev`, `~/.config/hypermug-dev.toml`, and `~/Library/Logs/HyperMug Dev/`. Production keeps its own name, bundle ID, settings, permissions and logs. Both apps are independently installable. The local launcher copies Production settings only on the first run, disables local login launch, and restarts only Dev. Avoid enabling conflicting input mappings in two running instances.
 
-Ad-hoc signatures can require Accessibility or Input Monitoring grants again after rebuilding. They do not require a local signing identity or Apple credentials. Production signing and notarization run only in release CI; Production app updates use Homebrew, and local updates use `make dev`.
+Ad-hoc signatures can require Accessibility or Input Monitoring grants again after rebuilding. They do not require a local signing identity or Apple credentials. Production signing and notarization run only in release CI; Dev builds have no update feed and never check for updates; rebuild with `make dev`.
 
 ## Architecture and checks
 

@@ -99,10 +99,11 @@ jobs:
           APP_STORE_CONNECT_KEY_ID: ${{ vars.APP_STORE_CONNECT_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ vars.APP_STORE_CONNECT_ISSUER_ID }}
         run: ./helpers/release.sh
-      - name: Publish release and Homebrew cask
+      - name: Publish release, Sparkle appcast, and Homebrew cask
         env:
           VERSION: ${{ steps.version.outputs.value }}
           APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
           GH_TOKEN: ${{ github.token }}
           HOMEBREW_SSH_PRIVATE_KEY: ${{ secrets.HOMEBREW_SSH_PRIVATE_KEY }}
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
         run: ./helpers/publish_release.sh

@@ -1,15 +1,38 @@
 """Production version selection and artifact metadata regression tests."""
+import base64
 import hashlib
+import plistlib
 import subprocess
 import sys
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
-from release_metadata import next_version, render_cask
+from xml.etree import ElementTree
+import ed25519
+from release_metadata import FEED_URL, SPARKLE, feed_decision, next_version, render_appcast, render_cask
 
 ROOT = Path(__file__).resolve().parents[1]
 SHA = 'a' * 40
 OTHER = 'b' * 40
+SEED = bytes(range(32))
+
+
+def release_zip(path, version='1.2.3', build=None, seed=SEED, feed=FEED_URL):
+    """A ZIP shaped like the notarized release: HyperMug.app with its Info.plist."""
+    info = {'CFBundleShortVersionString': version, 'CFBundleVersion': build or version,
+            'LSMinimumSystemVersion': '14.0',
+            'SUPublicEDKey': base64.b64encode(ed25519.public_key(seed)).decode()}
+    if feed:
+        info['SUFeedURL'] = feed
+    with zipfile.ZipFile(path, 'w') as archive:
+        archive.writestr('HyperMug.app/Contents/Info.plist', plistlib.dumps(info))
+        archive.writestr('HyperMug.app/Contents/MacOS/HyperMug', b'binary')
+    return path
+
+
+def sparkle_signature(path, seed=SEED):
+    return base64.b64encode(ed25519.sign(seed, Path(path).read_bytes())).decode()
 
 
 class ReleasePipelineTests(unittest.TestCase):
@@ -30,7 +53,7 @@ class ReleasePipelineTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             next_version([], SHA, 0)
 
-    def test_cask_uses_exact_archive_digest_and_no_in_app_update_claim(self):
+    def test_cask_uses_exact_archive_digest_and_declares_in_app_updates(self):
         with tempfile.TemporaryDirectory() as folder:
             archive = Path(folder) / 'HyperMug-1.2.3.zip'
             archive.write_bytes(b'final notarized app archive')
@@ -42,13 +65,90 @@ class ReleasePipelineTests(unittest.TestCase):
             digest = hashlib.sha256(archive.read_bytes()).hexdigest()
             self.assertEqual(cask.read_text(), render_cask('1.2.3', digest))
             self.assertIn(f'sha256 "{digest}"', cask.read_text())
-            self.assertNotIn('auto_updates', cask.read_text())
+            self.assertIn('  auto_updates true\n', cask.read_text())
             self.assertIn('conflicts_with cask: "hypermug@canary"', cask.read_text())
 
     def test_malformed_version_cannot_enter_cask_or_release(self):
         for bad in ('1.2', '01.2.3', '1.2.3-rc.1', '1.2.3;echo bad'):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
                 render_cask(bad, 'a' * 64)
+
+    def test_appcast_describes_the_exact_signed_archive(self):
+        with tempfile.TemporaryDirectory() as folder:
+            archive = release_zip(Path(folder) / 'HyperMug-1.2.3.zip', build='1.2.3')
+            signature = sparkle_signature(archive)
+            output = Path(folder) / 'appcast.xml'
+            result = subprocess.run([sys.executable, str(ROOT / 'helpers/release_metadata.py'), 'appcast',
+                '--version', '1.2.3', '--zip', str(archive), '--signature', signature, '--output', str(output)],
+                capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            item = ElementTree.fromstring(output.read_text()).find('./channel/item')
+            self.assertEqual(item.findtext(f'{{{SPARKLE}}}version'), '1.2.3')
+            self.assertEqual(item.findtext(f'{{{SPARKLE}}}shortVersionString'), '1.2.3')
+            self.assertEqual(item.findtext(f'{{{SPARKLE}}}minimumSystemVersion'), '14.0')
+            enclosure = item.find('enclosure')
+            self.assertEqual(enclosure.get('url'),
+                             'https://github.com/maxmeis/hypermug/releases/download/v1.2.3/HyperMug-1.2.3.zip')
+            self.assertEqual(enclosure.get('length'), str(archive.stat().st_size))
+            self.assertEqual(enclosure.get(f'{{{SPARKLE}}}edSignature'), signature)
+
+    def test_appcast_uses_bundle_version_for_sparkle_ordering(self):
+        with tempfile.TemporaryDirectory() as folder:
+            archive = release_zip(Path(folder) / 'a.zip', build='42')
+            feed = render_appcast('1.2.3', archive, sparkle_signature(archive))
+            self.assertIn('<sparkle:version>42</sparkle:version>', feed)
+            self.assertIn('<sparkle:shortVersionString>1.2.3</sparkle:shortVersionString>', feed)
+
+    def test_appcast_rejects_signatures_the_installed_app_cannot_verify(self):
+        with tempfile.TemporaryDirectory() as folder:
+            archive = release_zip(Path(folder) / 'a.zip')
+            cases = {
+                'other key': sparkle_signature(archive, bytes(32)),
+                'other bytes': base64.b64encode(ed25519.sign(SEED, b'other archive')).decode(),
+                'not base64': 'not a signature!',
+            }
+            for name, signature in cases.items():
+                with self.subTest(name), self.assertRaises(ValueError):
+                    render_appcast('1.2.3', archive, signature)
+
+    def test_appcast_rejects_archives_that_are_not_this_production_release(self):
+        with tempfile.TemporaryDirectory() as folder:
+            wrong_version = release_zip(Path(folder) / 'v.zip', version='1.2.4')
+            no_feed = release_zip(Path(folder) / 'dev.zip', feed=None)
+            other_feed = release_zip(Path(folder) / 'other.zip', feed='https://example.invalid/appcast.xml')
+            for archive in (wrong_version, no_feed, other_feed):
+                with self.subTest(archive.name), self.assertRaises(ValueError):
+                    render_appcast('1.2.3', archive, sparkle_signature(archive))
+
+    def test_feed_only_moves_forward_and_reruns_are_noops(self):
+        with tempfile.TemporaryDirectory() as folder:
+            def feed(version, payload=b''):
+                archive = release_zip(Path(folder) / f'{version}.zip', version=version)
+                if payload:
+                    with zipfile.ZipFile(archive, 'a') as bundle:
+                        bundle.writestr('extra', payload)
+                return render_appcast(version, archive, sparkle_signature(archive))
+            old, new, newer = feed('0.3.0'), feed('0.3.9'), feed('0.3.10')
+            self.assertEqual(feed_decision(None, new), 'advance')
+            self.assertEqual(feed_decision(old, new), 'advance')
+            self.assertEqual(feed_decision(new, newer), 'advance', 'numeric, not lexical, ordering')
+            self.assertEqual(feed_decision(newer, new), 'newer')
+            self.assertEqual(feed_decision(new, new), 'current')
+            with self.assertRaises(ValueError):
+                feed_decision(new, feed('0.3.9', b'rebuilt bytes'))
+            with self.assertRaises(ValueError):
+                feed_decision('<rss><channel/></rss>', new)
+
+    def test_ed25519_matches_rfc8032_test_vector(self):
+        # RFC 8032 section 7.1, TEST 1.
+        seed = bytes.fromhex('9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60')
+        public = bytes.fromhex('d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a')
+        signature = bytes.fromhex('e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e06522490155'
+                                  '5fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b')
+        self.assertEqual(ed25519.public_key(seed), public)
+        self.assertEqual(ed25519.sign(seed, b''), signature)
+        self.assertTrue(ed25519.verify(public, b'', signature))
+        self.assertFalse(ed25519.verify(public, b'x', signature))
 
     def test_release_requires_credentials_before_build(self):
         env = {'VERSION': '1.2.3', 'GITHUB_SHA': SHA,
@@ -74,9 +174,12 @@ class SignedReleaseIntegrationTests(unittest.TestCase):
         self.project = Path(self.temp.name) / 'project'
         helpers = self.project / 'helpers'
         helpers.mkdir(parents=True)
-        for name in ('release.sh', 'release_metadata.py', 'notary_auth.sh'):
+        for name in ('release.sh', 'release_metadata.py', 'ed25519.py', 'notary_auth.sh'):
             shutil.copy2(ROOT / 'helpers' / name, helpers / name)
         (helpers / 'check-bundle-schema.py').write_text('pass\n')
+        sparkle = helpers / 'verify_sparkle_bundle.sh'
+        sparkle.write_text('#!/usr/bin/env bash\necho "verify_sparkle_bundle $*" >> "$MOCK_LOG"\n')
+        sparkle.chmod(0o755)
         subprocess.run(['git', 'init', '-q', str(self.project)], check=True)
         (self.project / 'README').write_text('fixture')
         subprocess.run(['git', '-C', str(self.project), 'add', 'README'], check=True)
@@ -135,6 +238,7 @@ fi
         result = self.run_release()
         self.assertEqual(result.returncode, 0, result.stderr)
         calls = self.log.read_text()
+        self.assertLess(calls.index('verify_sparkle_bundle build/HyperMug.app TEAM123'), calls.index('xcrun notarytool submit'))
         self.assertLess(calls.index('xcrun notarytool submit'), calls.index('xcrun stapler staple'))
         self.assertLess(calls.index('xcrun stapler validate'), calls.rindex('ditto -c'))
         self.assertIn('security delete-keychain', calls)

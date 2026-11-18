@@ -177,10 +177,10 @@ private func anyKeyTests() {
 
 private func decodeDefaultsTests() {
     expectConfig("{}", AppConfig())
-    expectEqual(AppConfig(), AppConfig(capsLock: .meh, caffeineOnLaunch: true, launchAtLogin: false, mouse: MouseConfig()),
+    expectEqual(AppConfig(), AppConfig(capsLock: .meh, caffeineOnLaunch: true, launchAtLogin: false, autoUpdate: true, mouse: MouseConfig()),
                 "documented defaults")
-    expectConfig("{\"autoUpdate\":true}", AppConfig())
-    expectConfig("{\"autoUpdate\":false}", AppConfig())
+    expectConfig("{\"autoUpdate\":true}", AppConfig(autoUpdate: true))
+    expectConfig("{\"autoUpdate\":false}", AppConfig(autoUpdate: false))
     expectConfig("{\"autoUpdate\":null}", AppConfig())
     expectConfig("{\"caffeineOnLaunch\":false}", AppConfig(caffeineOnLaunch: false))
     expectConfig("{\"caffeineOnLaunch\":null}", AppConfig())
@@ -341,6 +341,7 @@ private func encodeTests() {
     // Default write shape (R7): no caffeine key, no buttons key, no empty entries, exactly this text.
     let expectedDefault = """
     {
+      "autoUpdate" : true,
       "caffeineOnLaunch" : true,
       "capsLock" : "meh",
       "launchAtLogin" : false,
@@ -359,7 +360,7 @@ private func encodeTests() {
     let prev = "/opt/homebrew/bin/aerospace workspace --no-stdin --wrap-around prev"
     let expectedNewFile: [String: Any] = [
         "shellTimeoutSeconds": 10,
-        "caffeineOnLaunch": true, "capsLock": "meh", "launchAtLogin": true,
+        "autoUpdate": true, "caffeineOnLaunch": true, "capsLock": "meh", "launchAtLogin": true,
         "mouse": ["invertScroll": ["horizontal": false, "vertical": false],
                   "buttons": ["back": ["shell": next], "forward": ["shell": prev]]],
         "trackpad": ["threeFingerSwipe": ["left": ["shell": next], "right": ["shell": prev]],
@@ -369,7 +370,9 @@ private func encodeTests() {
                 expectedNewFile as NSDictionary, "new-file JSON matches requested behavior")
     expectConfig(text(.newFileDefaults), .newFileDefaults)
     expectConfig(text(AppConfig()), AppConfig())
-    expect(jsonObject(encodeConfig(AppConfig()))["autoUpdate"] == nil, "retired setting is omitted")
+    expectConfig(text(AppConfig(autoUpdate: false)), AppConfig(autoUpdate: false))
+    expectEqual(jsonObject(encodeConfig(AppConfig(autoUpdate: false)))["autoUpdate"] as? Bool, false,
+                "disabled automatic updates are encoded")
 
     // Only mapped buttons are written; a mapped button has only its one action key.
     let mapped = AppConfig(mouse: MouseConfig(buttons: ButtonMap(back: shortcut(["cmd", "["]), thumb: .shell("echo hi"))))

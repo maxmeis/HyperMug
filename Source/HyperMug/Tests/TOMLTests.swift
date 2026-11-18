@@ -398,7 +398,7 @@ private func serializerTests() {
     let defaults = encodeConfigTOML(.newFileDefaults, schemaURL: schemaURL, includeEmptyKeys: true)
     expectEqual(try? validateConfigTOML(defaults).get().config, .newFileDefaults)
     let defaultText = text(defaults)
-    expect(defaultText.hasPrefix("#:schema \(schemaURL.absoluteString)\n\"$schema\" = \"\(schemaURL.absoluteString)\"\n\ncaffeineOnLaunch = "), defaultText)
+    expect(defaultText.hasPrefix("#:schema \(schemaURL.absoluteString)\n\"$schema\" = \"\(schemaURL.absoluteString)\"\n\nautoUpdate = "), defaultText)
     expect(defaultText.contains("\nhelpers = {}\n") && defaultText.contains("\nthumb = {}\n") && defaultText.contains("\nshellTimeoutSeconds = 10\n")
            && defaultText.contains("\n[trackpad.threeFingerSwipe]\ndown = {}\n"), defaultText)
     for config in [AppConfig(), .newFileDefaults, AppConfig(shellTimeoutSeconds: 2.5),

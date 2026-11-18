@@ -11,13 +11,17 @@ brew install --cask maxmeis/hypermug/hypermug
 
 The tap is this repository. HyperMug is a macOS `.app`, so its package lives in `Casks/`, not `Formula/`. The fully qualified install command selects this cask. For pre-install inspection on Homebrew versions with [tap trust](https://docs.brew.sh/Tap-Trust), use `brew trust --cask maxmeis/hypermug/hypermug` before `brew info` or `brew fetch`.
 
-Update with Homebrew, then quit and reopen HyperMug:
+## Updates
+
+HyperMug Production checks for updates once a day and asks before installing one. Choose **Check for Updates…** in the menu to check now. Set `autoUpdate = false` in the [configuration](configuration.md) to stop the daily check; manual checks still work. Because the cask declares `auto_updates true`, a bare `brew upgrade` skips HyperMug; to update through Homebrew, name the cask as shown below.
+
+Releases after 0.3.1 are signed with a new update key. They are published in a new feed. HyperMug 0.3.0 reads the old feed, which stays at 0.3.0, so it reports no update; 0.3.1 has no updater. If you have 0.3.0 or 0.3.1, run this once; later updates arrive in the app:
 
 ```sh
 brew upgrade --cask maxmeis/hypermug/hypermug
 ```
 
-The app has no built-in updater. Existing Canary users should uninstall `maxmeis/hypermug/hypermug@canary` before installing Production; historical release assets remain available. Local **HyperMug Dev** is a separate app with its own settings and permissions and can be installed beside Production. Build it with `make dev`; see [Development](development.md).
+Quit and reopen HyperMug after a Homebrew upgrade. Existing Canary users should uninstall `maxmeis/hypermug/hypermug@canary` before installing Production; historical release assets remain available. Local **HyperMug Dev** is a separate app with its own settings and permissions and can be installed beside Production. Build it with `make dev`; see [Development](development.md).
 
 ## First run and permissions
 

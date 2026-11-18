@@ -11,6 +11,7 @@ cask "hypermug" do
     skip "Cask versions follow the published production artifacts"
   end
 
+  auto_updates true
   depends_on macos: ">= :sonoma"
   depends_on arch: :arm64
   conflicts_with cask: "hypermug@canary"
