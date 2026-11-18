@@ -1,8 +1,8 @@
 name: Dependabot auto-merge
 
-# Queues every Dependabot PR, including major bumps, for squash auto-merge. GitHub merges it only
-# after the main rulesets pass, so the required `ci` check still gates every update. The workflow
-# never checks out or runs PR code; pull_request (not pull_request_target) keeps it on the
+# Approves every Dependabot PR, including major bumps, and queues it for squash auto-merge. GitHub
+# merges it only after the main rulesets pass, so the required check still gates every update. The
+# workflow never checks out or runs PR code; pull_request (not pull_request_target) keeps it on the
 # Dependabot-scoped token.
 on: pull_request
 
@@ -18,13 +18,13 @@ jobs:
       pull-requests: write
     steps:
       # Fails unless the PR's commits are verified Dependabot commits, so anything pushed onto a
-      # Dependabot branch by someone else is never auto-merged.
+      # Dependabot branch by someone else is never approved or auto-merged.
       - name: Dependabot metadata
         id: metadata
         uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
         with:
           github-token: ${{ github.token }}
-      - name: Enable squash auto-merge
+      - name: Approve and enable squash auto-merge
         env:
           GH_TOKEN: ${{ github.token }}
           PR_URL: ${{ github.event.pull_request.html_url }}
@@ -32,4 +32,5 @@ jobs:
           UPDATE_TYPE: ${{ steps.metadata.outputs.update-type }}
         run: |
           echo "Auto-merging $DEPENDENCIES ($UPDATE_TYPE)"
+          gh pr review --approve --body "Verified Dependabot update; merges after required checks pass." "$PR_URL"
           gh pr merge --auto --squash "$PR_URL"
