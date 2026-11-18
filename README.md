@@ -26,7 +26,7 @@ HyperMug requires macOS Accessibility and Input Monitoring permissions for its i
 
 ## Configuration
 
-Settings are stored in `~/.config/hypermug.toml`. The file links to the JSON Schema inside the signed app bundle, so TOML editors such as Taplo or Even Better TOML can validate and complete it. An existing `~/.config/hypermug.json` is migrated automatically once and kept as a backup. See [Configuration](docs/configuration.md) for defaults, shared helpers, validation, [migration](docs/configuration.md#migrating-from-hypermugjson) and the default 10-second shell deadline.
+Settings are stored in `~/.config/hypermug.toml`, the only configuration format. The file links to a schema inside the signed app bundle, so TOML editors such as Taplo or Even Better TOML can validate and complete it. See [Configuration](docs/configuration.md) for defaults, shared helpers, validation and the default 10-second shell deadline.
 
 ```toml
 capsLock = "meh"

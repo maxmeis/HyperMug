@@ -90,10 +90,10 @@ right.helper = "previousWorkspace"
 
 ## Schema and editor support
 
-The JSON Schema is generated from the same Core model into the signed app’s `Contents/Resources/hypermug.schema.json` before signing. A TOML document has the same structure as JSON (tables are objects), so the one schema describes both. HyperMug writes the schema’s actual `file://` URL twice at the top of the file:
+The schema is generated from the same Core model into the signed app’s `Contents/Resources/hypermug.schema.json` before signing. It is a JSON Schema file only because that is the format TOML editors accept for validation; it is editor tooling, not a configuration format. HyperMug writes the schema’s actual `file://` URL twice at the top of the file:
 
 - `#:schema <url>` on the first line, the directive used by [Taplo](https://taplo.tamasfe.dev) and the **Even Better TOML** extension for VS Code, Zed and other editors.
-- `"$schema" = "<url>"`, a quoted key that stays valid TOML and matches the JSON convention.
+- `"$schema" = "<url>"`, a quoted key that stays valid TOML and that other schema-aware editors recognize.
 
 The URL includes URL escaping when the app path contains spaces. The example assumes `/Applications/HyperMug.app`; Homebrew or a custom app location can produce a different URL. Dev uses its own bundled `hypermug-dev.schema.json`. No schema sidecar is created beside your config.
 
@@ -101,16 +101,9 @@ Editors can use this local resource for validation and autocomplete. Runtime val
 
 HyperMug reads TOML 1.0 except for the features the configuration has no use for: dates and times, arrays of tables (`[[name]]`), arrays that mix value types, and `inf`/`nan` are rejected with a clear error. Errors name the line and column, for example `invalid TOML at line 3, column 9: duplicate key capsLock`.
 
-## Migrating from hypermug.json
+## Earlier JSON configuration
 
-Earlier versions stored settings in `~/.config/hypermug.json`. HyperMug migrates that file automatically and only once:
-
-1. If `~/.config/hypermug.toml` exists, it is the only configuration. A `hypermug.json` beside it is ignored and left alone; Doctor shows a warning until you move or delete it.
-2. If only `hypermug.json` exists, HyperMug validates it with the same rules as before. A valid file is written as an equivalent `hypermug.toml` (atomically, with the bundled schema linked), and the JSON is renamed to `hypermug.json.migrated-backup`. It is never deleted; an existing backup gets a numbered name such as `hypermug.json.migrated-backup-2`. The activity log and Doctor show the migration.
-3. If `hypermug.json` is invalid, nothing is migrated. HyperMug reports the error exactly as before, keeps the last valid settings, and the editor opens the JSON for repair. Once the JSON is valid, saved in HyperMug or elsewhere, it migrates right away.
-4. If a valid JSON file holds a value TOML cannot express, nothing is migrated either. The JSON stays active, and Doctor and the activity log name the value; change it and the file migrates. A TOML file is only written when it validates to exactly the same settings as the JSON.
-
-The migrated file is written in canonical form: keys sorted, single-key tables as dotted keys. JSON has no comments, so nothing is lost. If `hypermug.json` was a symlink into a dotfiles repository, the symlink itself is renamed; its target is unchanged, and `hypermug.toml` is a regular file you can move into your dotfiles and link again.
+TOML is the only configuration format. Earlier versions stored settings in `~/.config/hypermug.json`; HyperMug no longer reads that file. If it exists, HyperMug starts from the TOML defaults, leaves the JSON file untouched, and Doctor shows “hypermug.json is no longer supported; settings now live in hypermug.toml.” until you move or delete it. Copy any settings you want to keep into `hypermug.toml` by hand.
 
 ## Settings
 

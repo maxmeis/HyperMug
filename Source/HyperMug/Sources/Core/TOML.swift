@@ -1,13 +1,13 @@
 import Foundation
 import CoreFoundation
 
-// The configuration file is TOML. TOML parses to the same value tree as JSON (tables are objects), and the
-// tree goes through the JSON Schema check and model decoding unchanged, so both formats report identical
-// errors. The serializer is generic over the tree: a new model key needs no TOML-specific code.
+// The configuration file is TOML. It parses to a value tree that is checked against the bundled schema (a
+// JSON Schema, because that is what TOML editors read) and then decoded into the model. The serializer is
+// generic over the tree: a new model key needs no TOML-specific code.
 
 // MARK: - Value tree
 
-/// Format-neutral configuration values: what both TOML and JSON configuration documents parse to.
+/// Configuration values: what a TOML configuration document parses to.
 public indirect enum ConfigValue: Equatable {
     case string(String)
     case integer(Int64)
@@ -16,7 +16,7 @@ public indirect enum ConfigValue: Equatable {
     case array([ConfigValue])
     case table([String: ConfigValue])
 
-    /// Foundation object for `JSONSerialization`.
+    /// Foundation object tree, for the schema check and the model's Codable bridge.
     var jsonObject: Any {
         switch self {
         case .string(let s): return s
@@ -28,7 +28,7 @@ public indirect enum ConfigValue: Equatable {
         }
     }
 
-    /// `JSONSerialization` output. JSON `null` has no TOML form.
+    /// The model's Codable encoding. `null` has no TOML form.
     init(jsonObject: Any, path: String) throws {
         switch jsonObject {
         case let s as String: self = .string(s)
@@ -67,47 +67,17 @@ public func parseConfigTOML(_ data: Data) -> Result<[String: ConfigValue], Confi
     parseTOMLDocument(data).map(\.table)
 }
 
-/// TOML counterpart of `validateConfigDocument`: same schema rules, same model checks, same messages.
+/// Schema rules, then model checks. Errors name the setting.
 public func validateConfigTOML(_ data: Data) -> Result<DecodedConfig, ConfigError> {
-    parseConfigTOML(data).flatMap { table in
-        // The parser yields only JSON-representable values (it rejects inf and nan); fail closed regardless.
-        guard let json = try? JSONSerialization.data(withJSONObject: ConfigValue.table(table).jsonObject) else { return .failure(ConfigError(reason: "invalid TOML: the values cannot be checked")) }
-        return validateConfigDocument(json)
-    }
+    parseConfigTOML(data).flatMap(validateConfigTable)
 }
 
-/// `encodeConfig` written as canonical TOML. The input is the app's own model encoding (objects, arrays,
-/// strings, numbers and booleans, never `null`), so the conversion cannot fail.
+/// The model written as canonical TOML. The model's encoding holds tables, arrays, strings, numbers and
+/// booleans, never `null`, so this cannot fail.
 public func encodeConfigTOML(_ config: AppConfig, schemaURL: URL? = nil, includeEmptyKeys: Bool = false) -> Data {
-    try! tomlConfigData(fromJSON: encodeConfig(config, schemaURL: schemaURL, includeEmptyKeys: includeEmptyKeys))
-}
-
-/// Converts a JSON configuration document to canonical TOML with the same value tree.
-public func tomlConfigData(fromJSON data: Data) throws -> Data {
-    guard let object = try? JSONSerialization.jsonObject(with: data),
-          case .table(let table) = try ConfigValue(jsonObject: object, path: "") else {
-        throw ConfigError(reason: "config must be a JSON object")
-    }
+    let object = try! JSONSerialization.jsonObject(with: encodeConfig(config, schemaURL: schemaURL, includeEmptyKeys: includeEmptyKeys))
+    guard case .table(let table) = try! ConfigValue(jsonObject: object, path: "") else { preconditionFailure("the model encodes a table") }
     return renderConfigTOML(table)
-}
-
-/// The TOML file that replaces a legacy JSON document: only for a valid document that converts without
-/// loss, verified by validating the TOML to the same result. Never crashes on user data.
-func migratedConfigTOML(fromJSON json: Data, schemaURL: URL?) -> Result<Data, ConfigError> {
-    let toml: Data
-    do {
-        let converted = try tomlConfigData(fromJSON: json)
-        toml = try schemaURL.map { try tomlConfigDataLinkingSchema(converted, schemaURL: $0) } ?? converted
-    } catch {
-        return .failure(ConfigError(reason: "cannot convert to TOML: \((error as? ConfigError)?.reason ?? error.localizedDescription)"))
-    }
-    let fromJSON: DecodedConfig
-    switch validateConfigDocument(json) {
-    case .success(let decoded): fromJSON = decoded
-    case .failure(let error): return .failure(error)
-    }
-    guard (try? validateConfigTOML(toml).get()) == fromJSON else { return .failure(ConfigError(reason: "cannot convert to TOML: the converted settings differ from the JSON")) }
-    return .success(toml)
 }
 
 /// Canonical TOML: sorted keys, a `#:schema` directive for TOML editors, single-key tables as dotted keys
