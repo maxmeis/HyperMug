@@ -20,7 +20,7 @@ struct WindowChecks {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let url = directory.appendingPathComponent("hypermug-dev.toml")
         let env = ConfigStoreEnvironment(schemaURL: Bundle.main.url(forResource: AppIdentity.schemaFileName, withExtension: nil), log: { _,_ in }, schedule: { _,_ in Token() }, watch: { _,_ in nil })
-        let store = ConfigStore(url: url, format: .toml, environment: env)
+        let store = ConfigStore(url: url, environment: env)
         store.start()
         let controller = HyperMugWindowController(store: store, capture: TrackpadCapture(log: { _,_ in }))
         let target = CheckTarget(controller)

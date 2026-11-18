@@ -56,39 +56,36 @@ left.helper = "nextWorkspace"
 right.helper = "previousWorkspace"
 """#
 
-/// Issue #39 ("My config") exactly as posted in JSON.
-let issue39JSON = #"""
-{
-  "$schema": "file:///Applications/HyperMug.app/Contents/Resources/hypermug.schema.json",
-  "autoUpdate": true,
-  "caffeineOnLaunch": true,
-  "capsLock": "meh",
-  "helpers": {
-    "nextWindow": "/opt/homebrew/bin/aerospace focus --wrap-around dfs-next",
-    "nextWorkspace": "/opt/homebrew/bin/aerospace workspace --no-stdin --wrap-around next",
-    "previousWindow": "/opt/homebrew/bin/aerospace focus --wrap-around dfs-prev",
-    "previousWorkspace": "/opt/homebrew/bin/aerospace workspace --no-stdin --wrap-around prev"
-  },
-  "launchAtLogin": false,
-  "mouse": {
-    "buttons": {
-      "back": { "helper": "previousWorkspace" },
-      "forward": { "helper": "nextWorkspace" },
-      "thumb": {}
-    },
-    "invertScroll": { "horizontal": false, "vertical": false }
-  },
-  "trackpad": {
-    "fourFingerSwipe": {
-      "left": { "helper": "nextWindow" },
-      "right": { "helper": "previousWindow" }
-    },
-    "threeFingerSwipe": {
-      "left": { "helper": "nextWorkspace" },
-      "right": { "helper": "previousWorkspace" }
-    }
-  }
-}
+/// Issue #39 ("My config"), the owner's settings written by hand as TOML.
+let issue39TOML = #"""
+"$schema" = "file:///Applications/HyperMug.app/Contents/Resources/hypermug.schema.json"
+autoUpdate = true
+caffeineOnLaunch = true
+capsLock = "meh"
+launchAtLogin = false
+
+[helpers]
+nextWindow = "/opt/homebrew/bin/aerospace focus --wrap-around dfs-next"
+nextWorkspace = "/opt/homebrew/bin/aerospace workspace --no-stdin --wrap-around next"
+previousWindow = "/opt/homebrew/bin/aerospace focus --wrap-around dfs-prev"
+previousWorkspace = "/opt/homebrew/bin/aerospace workspace --no-stdin --wrap-around prev"
+
+[mouse.buttons]
+back = { helper = "previousWorkspace" }
+forward = { helper = "nextWorkspace" }
+thumb = {}
+
+[mouse.invertScroll]
+horizontal = false
+vertical = false
+
+[trackpad.fourFingerSwipe]
+left = { helper = "nextWindow" }
+right = { helper = "previousWindow" }
+
+[trackpad.threeFingerSwipe]
+left = { helper = "nextWorkspace" }
+right = { helper = "previousWorkspace" }
 """#
 
 func tomlTests() {
@@ -98,36 +95,9 @@ func tomlTests() {
     valueTests()
     errorPositionTests()
     serializerTests()
-    jsonConversionTests()
+    bridgeTests()
     schemaLinkTests()
     verticalWheelTests()
-    legacyConversionTests()
-}
-
-// MARK: - Migration conversion
-
-private func legacyConversionTests() {
-    // Valid JSON converts, linked to the bundled schema, and validates to the same result.
-    let converted = try? migratedConfigTOML(fromJSON: Data(issue39JSON.utf8), schemaURL: schemaURL).get()
-    expectEqual(converted, try? tomlConfigDataLinkingSchema(tomlConfigData(fromJSON: Data(issue39JSON.utf8)), schemaURL: schemaURL))
-    expectEqual(converted.flatMap { try? validateConfigTOML($0).get() }, try? validateConfigDocument(Data(issue39JSON.utf8)).get())
-    expectEqual(try? migratedConfigTOML(fromJSON: Data("{}".utf8), schemaURL: nil).get(), Data("\n".utf8))
-    // Values TOML cannot hold fail without crashing: null, and arrays that mix types.
-    let cases: [(String, URL?, String)] = [
-        (#"{"mouse":{"buttons":{"thumb":null}}}"#, schemaURL, "cannot convert to TOML: mouse.buttons.thumb: null has no TOML equivalent"),
-        (#"{"helpers":{"a":null}}"#, nil, "cannot convert to TOML: helpers.a: null has no TOML equivalent"),
-        (#"{"mouse":{"buttons":{"back":{"shortcut":["cmd",1]}}}}"#, schemaURL,
-         "cannot convert to TOML: invalid TOML at line 1, column 39: arrays cannot mix value types (string and integer)"),
-        (#"{"mouse":{"buttons":{"back":{"shortcut":["cmd",1]}}}}"#, nil, "mouse.buttons.back.shortcut[1]: expected string"),
-        ("[]", nil, "cannot convert to TOML: config must be a JSON object"),
-        ("{", nil, "cannot convert to TOML: config must be a JSON object"),
-    ]
-    for (json, url, reason) in cases {
-        expectEqual(migratedConfigTOML(fromJSON: Data(json.utf8), schemaURL: url).failureReason, reason, json)
-    }
-    // Convertible but invalid JSON reports the normal validation error.
-    expectEqual(migratedConfigTOML(fromJSON: Data(#"{"capsLock":"other"}"#.utf8), schemaURL: nil).failureReason,
-                validateConfigDocument(Data(#"{"capsLock":"other"}"#.utf8)).failureReason)
 }
 
 // MARK: - Examples
@@ -146,19 +116,18 @@ private func exampleTests() {
     expectEqual(decoded?.config.resolvedActions().trackpad.threeFingerSwipe.left, .shell(next))
     expectEqual(decoded?.unknownKeys, [])
 
-    // The issue's string shortcut gets the same error as the JSON string form.
+    // The issue's string shortcut names the setting and the expected type.
     let stringForm = issueExampleTOML.replacingOccurrences(of: #"["cmd", "shift", "4"]"#, with: #""cmd+shift+4""#)
-    let jsonStringForm = #"{"mouse":{"buttons":{"thumb":{"shortcut":"cmd+shift+4"}}}}"#
-    expectEqual(validateConfigTOML(Data(stringForm.utf8)).failureReason,
-                validateConfigDocument(Data(jsonStringForm.utf8)).failureReason, "string shortcuts report as in JSON")
+    expectEqual(validateConfigTOML(Data(stringForm.utf8)).failureReason, "mouse.buttons.thumb.shortcut: expected array",
+                "string shortcuts are rejected")
 
-    // Issue #39, from the docs example file, validates exactly like the JSON the owner posted.
+    // Issue #39, from the docs example file, is the configuration the owner posted.
     let docsExample = try? Data(contentsOf: URL(fileURLWithPath: "docs/examples/aerospace.toml"))
     expect(docsExample != nil, "docs/examples/aerospace.toml exists (tests run from the repository root)")
     let fromDocs = docsExample.flatMap { try? validateConfigTOML($0).get() }
-    let fromJSON = try? validateConfigDocument(Data(issue39JSON.utf8)).get()
-    expect(fromJSON != nil, "the #39 JSON is valid")
-    expectEqual(fromDocs, fromJSON, "the #39 TOML example is the owner's configuration")
+    let fromIssue = try? validateConfigTOML(Data(issue39TOML.utf8)).get()
+    expect(fromIssue != nil, "the #39 configuration is valid")
+    expectEqual(fromDocs, fromIssue, "the #39 TOML example is the owner's configuration")
     expectEqual(fromDocs?.config.mouse.buttons.thumb, nil, "the thumb slot is unassigned")
 
     // Empty and comment-only documents mean all defaults.
@@ -409,37 +378,17 @@ private func serializerTests() {
     }
 }
 
-// MARK: - JSON
+// MARK: - Model bridge
 
-private func jsonConversionTests() {
-    // Migration keeps the value tree, so the TOML validates exactly like the JSON did.
-    let samples = [issue39JSON, "{}", #"{"shellTimeoutSeconds": 2.5, "autoUpdate": false}"#,
-                   #"{"shellTimeoutSeconds": 10.0}"#, encodeConfig(.newFileDefaults, includeEmptyKeys: true).string,
-                   #"{"mouse":{"buttons":{"back":{"shortcut":["cmd","["]}}}}"#,
-                   // Invalid configurations convert too and fail with the same message.
-                   #"{"capsLock":"other"}"#, #"{"extra":true}"#, #"{"mouse":{"buttons":{"back":{"helper":"missing"}}}}"#]
-    for json in samples {
-        let toml = try? tomlConfigData(fromJSON: Data(json.utf8))
-        expect(toml != nil, "converts \(json)")
-        let fromJSON = validateConfigDocument(Data(json.utf8))
-        let fromTOML = toml.map(validateConfigTOML)
-        expectEqual(fromTOML.flatMap { try? $0.get() }, try? fromJSON.get(), "same config for \(json)")
-        expectEqual(fromTOML?.failureReason, fromJSON.failureReason, "same error for \(json)")
-        expectEqual(toml.flatMap { try? parseConfigTOML($0).get() }.map(renderConfigTOML), toml, "stable for \(json)")
-    }
-    expectEqual(parsed(text(try! tomlConfigData(fromJSON: Data(#"{"f":10.0,"i":10,"b":true}"#.utf8)))),
-                ["f": .float(10), "i": .integer(10), "b": .boolean(true)], "JSON number kinds are kept")
-    for json in ["[]", "{", "\"text\""] {
-        expectEqual((try? tomlConfigData(fromJSON: Data(json.utf8))) == nil, true, "rejects \(json)")
-    }
-    do {
-        _ = try tomlConfigData(fromJSON: Data(#"{"a":{"b":[1,null]}}"#.utf8))
-        expect(false, "null converted")
-    } catch {
-        expectEqual((error as? ConfigError)?.reason, "a.b[1]: null has no TOML equivalent")
-    }
-    expectEqual((try? ConfigValue(jsonObject: NSNull(), path: "")) == nil, true)
-    do { _ = try ConfigValue(jsonObject: NSNull(), path: "") } catch { expectEqual((error as? ConfigError)?.reason, "config: null has no TOML equivalent") }
+private func bridgeTests() {
+    // The model's encoding becomes the value tree; number kinds are kept, and null has no TOML form.
+    let object: [String: Any] = ["f": 10.0, "i": 10, "b": true, "a": ["x"]]
+    expectEqual(try? ConfigValue(jsonObject: object, path: ""),
+                .table(["f": .float(10), "i": .integer(10), "b": .boolean(true), "a": .array([.string("x")])]))
+    do { _ = try ConfigValue(jsonObject: ["a": ["b": [1, NSNull()]]], path: ""); expect(false, "null converted") }
+    catch { expectEqual((error as? ConfigError)?.reason, "a.b[1]: null has no TOML equivalent") }
+    do { _ = try ConfigValue(jsonObject: NSNull(), path: ""); expect(false, "null converted") }
+    catch { expectEqual((error as? ConfigError)?.reason, "config: null has no TOML equivalent") }
 }
 
 private extension Data {
@@ -489,12 +438,6 @@ up.helper = "previousWindow"
 
 """
 
-private let wheelJSON = #"""
-{"helpers":{"nextWindow":"/opt/homebrew/bin/aerospace focus --boundaries-action wrap-around-the-workspace right",
-"previousWindow":"/opt/homebrew/bin/aerospace focus --boundaries-action wrap-around-the-workspace left"},
-"mouse":{"verticalWheel":{"up":{"helper":"previousWindow"},"down":{"helper":"nextWindow"}}}}
-"""#
-
 private func verticalWheelTests() {
     // Parses, validates and resolves like any other mapping.
     let decoded = try? validateConfigTOML(Data(wheelTOML.utf8)).get()
@@ -503,20 +446,17 @@ private func verticalWheelTests() {
     expectEqual(decoded?.unknownKeys, [])
     expectEqual(decoded?.config.resolvedActions().mouse.verticalWheel.down,
                 .shell("/opt/homebrew/bin/aerospace focus --boundaries-action wrap-around-the-workspace right"))
-    // Same result as the JSON, and migration writes exactly this canonical TOML.
-    expectEqual(decoded, try? validateConfigDocument(Data(wheelJSON.utf8)).get(), "TOML and JSON agree")
-    expectEqual(text(try! tomlConfigData(fromJSON: Data(wheelJSON.utf8))), wheelTOML, "JSON-to-TOML migration output")
+    // The serializer writes exactly this canonical TOML.
+    expectEqual(text(renderConfigTOML(parsed(wheelTOML))), wheelTOML, "canonical output")
     // Round trips through the model and the serializer.
     let encoded = encodeConfigTOML(decoded!.config)
     expectEqual(try? validateConfigTOML(encoded).get().config, decoded?.config)
     expectEqual(text(renderConfigTOML(parsed(text(encoded)))), text(encoded), "stable")
-    // The schema covers the slots: unknown keys and bad values fail with the JSON messages.
-    for (toml, json) in [("mouse.verticalWheel.left.helper = \"x\"", #"{"mouse":{"verticalWheel":{"left":{"helper":"x"}}}}"#),
-                         ("mouse.verticalWheel.up.helper = \"missing\"", #"{"mouse":{"verticalWheel":{"up":{"helper":"missing"}}}}"#),
-                         ("mouse.verticalWheel.up = { shell = \"a\", helper = \"b\" }", #"{"mouse":{"verticalWheel":{"up":{"shell":"a","helper":"b"}}}}"#)] {
+    // The schema covers the slots: unknown keys and bad values fail and name the setting.
+    for toml in ["mouse.verticalWheel.left.helper = \"x\"", "mouse.verticalWheel.up.helper = \"missing\"",
+                 "mouse.verticalWheel.up = { shell = \"a\", helper = \"b\" }"] {
         let reason = validateConfigTOML(Data(toml.utf8)).failureReason
-        expect(reason != nil, "rejected: \(toml)")
-        expectEqual(reason, validateConfigDocument(Data(json.utf8)).failureReason, toml)
+        expect(reason?.hasPrefix("mouse.verticalWheel.") == true, "rejected: \(toml) (\(reason ?? "accepted"))")
     }
     let schema = try! JSONSerialization.jsonObject(with: Data(configSchemaJSON.utf8)) as! [String: Any]
     let mouse = (schema["properties"] as! [String: Any])["mouse"] as! [String: Any]

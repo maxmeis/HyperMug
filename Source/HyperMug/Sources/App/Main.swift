@@ -22,7 +22,7 @@ private final class HyperMugRuntime {
         LegacyCapsRemap.removeIfPresent(log: makeLogSink(category: "legacy-caps"))
 
         let configDirectory = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config")
-        store = ConfigStore(url: configDirectory.appendingPathComponent(AppIdentity.configFileName), format: .toml,
+        store = ConfigStore(url: configDirectory.appendingPathComponent(AppIdentity.configFileName),
                             legacyURL: configDirectory.appendingPathComponent(AppIdentity.legacyConfigFileName),
                             environment: makeConfigStoreEnvironment(log: makeLogSink(category: "config")))
         tap = EventTapHost(log: makeLogSink(category: "tap"))

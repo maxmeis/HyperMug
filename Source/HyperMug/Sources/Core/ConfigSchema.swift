@@ -65,7 +65,7 @@ private func buttonSchema(_ description: String) -> String {
 """#
 }
 
-/// JSON Schema (draft-07) for `~/.config/hypermug.toml` (and the legacy JSON file): the single source of truth, compiled into the binary.
+/// JSON Schema (draft-07) for `~/.config/hypermug.toml`: the single source of truth, compiled into the binary.
 /// The tests check it against `encodeConfig` and the model.
 public let configSchemaJSON: String = #"""
 {
@@ -183,19 +183,3 @@ public let configSchemaJSON: String = #"""
 }
 
 """#
-
-/// Replace only schema metadata; preserve every actual setting and unknown value.
-/// Callers compare disk bytes again before atomically replacing a symlink target.
-public func configDataLinkingSchema(_ data: Data, schemaURL: URL) throws -> Data {
-    guard var object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-        throw ConfigError(reason: "config must be a JSON object")
-    }
-    if let value = object["$schema"], !(value is String) {
-        throw ConfigError(reason: "$schema: expected a string")
-    }
-    if object["$schema"] as? String == schemaURL.absoluteString { return data }
-    object["$schema"] = schemaURL.absoluteString
-    var result = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
-    result.append(0x0A)
-    return result
-}

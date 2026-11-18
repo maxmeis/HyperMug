@@ -25,7 +25,7 @@ Quit and reopen HyperMug after a Homebrew upgrade. Existing Canary users should 
 
 ## First run and permissions
 
-HyperMug creates `~/.config/hypermug.toml` with defaults at first launch; an existing `~/.config/hypermug.json` from an earlier version is [migrated](configuration.md#migrating-from-hypermugjson) instead. No settings are imported from other apps. The app requests Accessibility permission and prompts for Input Monitoring when needed. Review or grant them from **Doctor… → Permissions** in the menu. Relaunch HyperMug after granting Input Monitoring; the privileges window has a restart button.
+HyperMug creates `~/.config/hypermug.toml` with defaults at first launch. A `~/.config/hypermug.json` from an earlier version is [not read](configuration.md#earlier-json-configuration). No settings are imported from other apps. The app requests Accessibility permission and prompts for Input Monitoring when needed. Review or grant them from **Doctor… → Permissions** in the menu. Relaunch HyperMug after granting Input Monitoring; the privileges window has a restart button.
 
 - **Accessibility** enables the keyboard and mouse event tap used by Caps Lock Meh/Hyper, side-button and wheel mappings, and scroll inversion.
 - **Input Monitoring** enables raw Caps Lock detection and access to the MX Master 3S thumb button.
@@ -45,7 +45,7 @@ Quit Hyperkey or other Caps Lock remappers while HyperMug is using Meh/Hyper mod
 HyperMug does not import MyMug settings. To move manually:
 
 1. Disable MyMug's login item, then quit MyMug.
-2. Move `~/.config/mymug.json` to `~/.config/hypermug.json` and remove an obsolete `$schema` reference. HyperMug migrates it to `~/.config/hypermug.toml` on launch.
+2. Copy the settings you want from `~/.config/mymug.json` into `~/.config/hypermug.toml`, written as TOML.
 3. Review the file for settings you no longer want. Remove unknown keys and omit unmapped actions; invalid settings are reported while the last valid configuration remains active.
 4. Launch HyperMug and grant Accessibility and Input Monitoring again; macOS permission grants belong to the app identity and signature.
 

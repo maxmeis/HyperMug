@@ -25,7 +25,7 @@ public enum AppIdentity {
     public static let appName = "HyperMug"
     public static let bundleID = "com.maxmeis.hypermug"
     public static let configFileName = "hypermug.toml"            // in ~/.config
-    public static let legacyConfigFileName = "hypermug.json"      // migrated to configFileName once
+    public static let legacyConfigFileName = "hypermug.json"      // retired; its presence is only reported
     public static let schemaFileName = "hypermug.schema.json"
     #endif
     public static let logSubsystem = bundleID

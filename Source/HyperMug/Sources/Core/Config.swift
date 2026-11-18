@@ -512,7 +512,9 @@ public func isBlankConfigData(_ data: Data) -> Bool {
     isBlank(String(decoding: data, as: UTF8.self))
 }
 
-public func decodeConfig(_ data: Data) -> Result<DecodedConfig, ConfigError> {
+/// The model's Codable bridge: Foundation's serialization of an already parsed and schema-checked TOML tree.
+/// Not a configuration format; users only ever write TOML.
+func decodeConfig(_ data: Data) -> Result<DecodedConfig, ConfigError> {
     if isBlankConfigData(data) { return .success(DecodedConfig(config: AppConfig(), unknownKeys: [])) }
     let collector = UnknownKeyCollector()
     let decoder = JSONDecoder()
@@ -537,8 +539,9 @@ private extension Encoder {
     var includeEmptyKeys: Bool { userInfo[emptyKeysKey] as? Bool == true }
 }
 
-/// Include unassigned slots as `{}` when creating or recreating a configuration file.
-public func encodeConfig(_ config: AppConfig, schemaURL: URL? = nil, includeEmptyKeys: Bool = false) -> Data {
+/// The model's Codable encoding, rendered by `encodeConfigTOML`. Include unassigned slots as `{}` when
+/// creating or recreating a configuration file.
+func encodeConfig(_ config: AppConfig, schemaURL: URL? = nil, includeEmptyKeys: Bool = false) -> Data {
     let encoder = JSONEncoder()
     encoder.userInfo[emptyKeysKey] = includeEmptyKeys
     if let schemaURL { encoder.userInfo[schemaReferenceKey] = schemaURL.absoluteString }

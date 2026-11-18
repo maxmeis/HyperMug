@@ -35,13 +35,10 @@ private final class Harness {
     var failWrite = false
 
     var notices: [ConfigNotice] = []
-    var failMove = false
 
-    /// The JSON store suites predate TOML; the format-specific behavior is identical, so they still run on JSON.
-    init(configURL: URL? = nil, schemaURL: URL? = nil, customIO: Bool = false,
-         format: ConfigDocumentFormat = .json, legacyURL: URL? = nil) {
+    init(configURL: URL? = nil, schemaURL: URL? = nil, customIO: Bool = false, legacyURL: URL? = nil) {
         configDir = root.appendingPathComponent("cfg")
-        url = configURL ?? configDir.appendingPathComponent(format == .toml ? "hypermug.toml" : "hypermug.json")
+        url = configURL ?? configDir.appendingPathComponent("hypermug.toml")
         var env = ConfigStoreEnvironment(
             schemaURL: schemaURL,
             log: { [unowned self] level, message in
@@ -68,12 +65,8 @@ private final class Harness {
                 if failWrite { throw NSError(domain: "FixtureWrite", code: 1) }
                 try data.write(to: url, options: .atomic)
             }
-            env.moveItem = { [unowned self] from, to in
-                if failMove { throw NSError(domain: "FixtureMove", code: 1) }
-                try FileManager.default.moveItem(at: from, to: to)
-            }
         }
-        store = ConfigStore(url: url, format: format, legacyURL: legacyURL, environment: env)
+        store = ConfigStore(url: url, legacyURL: legacyURL, environment: env)
         store.onNotice = { [unowned self] in notices.append($0) }
         store.onChange = { [unowned self] in changes.append($0) }
         store.onError = { [unowned self] in errors.append($0) }
@@ -117,7 +110,7 @@ private final class Harness {
     }
 }
 
-private let hyperJSON = "{\"capsLock\":\"hyper\"}"
+private let hyperTOML = "capsLock = \"hyper\"\n"
 private let hyperConfig = AppConfig(capsLock: .hyper)
 
 func configStoreTests() {
@@ -132,7 +125,7 @@ func configStoreTests() {
     schemaMigrationRaceTests()
     documentSaveTests()
     tomlStoreTests()
-    legacyMigrationTests()
+    legacyFileTests()
 }
 
 // MARK: - start
@@ -142,7 +135,7 @@ private func startTests() {
     do {
         let h = Harness()
         h.store.start()
-        expectEqual(h.fileText, String(decoding: encodeConfig(.newFileDefaults, includeEmptyKeys: true), as: UTF8.self), "default config written")
+        expectEqual(h.fileText, String(decoding: encodeConfigTOML(.newFileDefaults, includeEmptyKeys: true), as: UTF8.self), "default config written")
         expect(!FileManager.default.fileExists(atPath: h.configDir.appendingPathComponent(AppIdentity.schemaFileName).path),
                "no schema is written beside the config")
         expectEqual(h.changes, [.newFileDefaults], "onChange runs exactly once")
@@ -157,21 +150,21 @@ private func startTests() {
     // Valid file: adopted, byte-identical afterwards (no rewrite), one onChange with the loaded config.
     do {
         let h = Harness()
-        h.put(hyperJSON)
+        h.put(hyperTOML)
         h.store.start()
         expectEqual(h.store.config, hyperConfig, "valid file adopted")
         expectEqual(h.changes, [hyperConfig], "onChange once with the loaded config")
-        expectEqual(h.fileText, hyperJSON, "file not rewritten")
+        expectEqual(h.fileText, hyperTOML, "file not rewritten")
     }
 
     // Invalid file: error set, alert once, file untouched, defaults stay active, onChange still reports them once.
     do {
         let h = Harness()
-        h.put("{")
+        h.put("a =")
         h.store.start()
-        expectEqual(h.fileText, "{", "invalid file untouched")
+        expectEqual(h.fileText, "a =", "invalid file untouched")
         expectEqual(h.errors.count, 1, "one alert")
-        expect(h.errors.first?.reason.hasPrefix("invalid JSON") ?? false, "alert reason is the decode error")
+        expect(h.errors.first?.reason.hasPrefix("invalid TOML") ?? false, "alert reason is the decode error")
         expectEqual(h.store.error, h.errors.first, "store.error equals the alerted error")
         expectEqual(h.store.config, AppConfig(), "defaults are active")
         expectEqual(h.changes, [AppConfig()], "onChange once")
@@ -190,7 +183,7 @@ private func startTests() {
 
     // The config directory cannot be created (its parent is a regular file): logged, start still completes.
     do {
-        let h = Harness(configURL: makeTempDir().appendingPathComponent("plain").appendingPathComponent("sub").appendingPathComponent("c.json"))
+        let h = Harness(configURL: makeTempDir().appendingPathComponent("plain").appendingPathComponent("sub").appendingPathComponent("c.toml"))
         try? Data("x".utf8).write(to: h.url.deletingLastPathComponent().deletingLastPathComponent())
         h.store.start()
         expect(h.logged(.error, containing: "cannot create") == 1, "directory failure logged")
@@ -220,7 +213,7 @@ private func createIfAbsentTests() {
     // Deleted while running: recreated from the in-memory config, and the file is watched again.
     do {
         let h = Harness()
-        h.put(hyperJSON)
+        h.put(hyperTOML)
         h.store.start()
         try? FileManager.default.removeItem(at: h.url)
         h.fileWatches.last?.onEvent(true)   // the watch dies with the file
@@ -228,7 +221,7 @@ private func createIfAbsentTests() {
         expectEqual(h.store.config, hyperConfig, "config survives the deletion")
         let watchesBefore = h.fileWatches.count
         h.store.createIfAbsent()
-        expectEqual(h.fileText, String(decoding: encodeConfig(hyperConfig, includeEmptyKeys: true), as: UTF8.self), "recreated from the in-memory config")
+        expectEqual(h.fileText, String(decoding: encodeConfigTOML(hyperConfig, includeEmptyKeys: true), as: UTF8.self), "recreated from the in-memory config")
         expectEqual(h.fileWatches.count, watchesBefore + 1, "the recreated file is watched")
         expectEqual(h.changes, [hyperConfig], "recreating does not report a change")
         // Our own write must not look like an external edit.
@@ -240,7 +233,7 @@ private func createIfAbsentTests() {
     }
 
     // An existing file is never touched: valid, invalid, or blank.
-    for existing in ["{\"capsLock\":\"default\"}", "{", "  \n"] {
+    for existing in ["capsLock = \"default\"\n", "a =", "  \n"] {
         let h = Harness()
         h.put(existing)
         h.store.start()
@@ -255,7 +248,7 @@ private func createIfAbsentTests() {
         h.store.start()
         try? FileManager.default.removeItem(at: h.configDir)
         h.store.createIfAbsent()
-        expectEqual(h.fileText, String(decoding: encodeConfig(.newFileDefaults, includeEmptyKeys: true), as: UTF8.self), "directory and file recreated")
+        expectEqual(h.fileText, String(decoding: encodeConfigTOML(.newFileDefaults, includeEmptyKeys: true), as: UTF8.self), "directory and file recreated")
     }
 }
 
@@ -266,7 +259,7 @@ private func reloadTests() {
     do {
         let h = Harness()
         h.store.start()
-        h.put(hyperJSON)
+        h.put(hyperTOML)
         h.fileWatches.last?.onEvent(false)
         expectEqual(h.pending.count, 1, "an event schedules one reload")
         expectEqual(h.pending.first?.delay, 0.15, "150 ms debounce")
@@ -284,13 +277,13 @@ private func reloadTests() {
     // A rewrite that decodes to the same config does not fire onChange.
     do {
         let h = Harness()
-        h.put(hyperJSON)
+        h.put(hyperTOML)
         h.store.start()
-        h.externalEdit("{ \"capsLock\" : \"hyper\" , \"unknown\": 1 }")
+        h.externalEdit("capsLock = \"hyper\"\nunknown = 1\n")
         expectEqual(h.changes, [hyperConfig], "equal config: no onChange")
         expect(h.store.error != nil, "unknown fields are schema errors")
         expectEqual(h.store.config, hyperConfig, "unknown fields cannot replace the last valid config")
-        h.externalEdit(hyperJSON)
+        h.externalEdit(hyperTOML)
         expectEqual(h.store.unknownKeys, [])
     }
 
@@ -300,7 +293,7 @@ private func reloadTests() {
         h.store.start()
         let firstWatch = h.fileWatches[0]
         let tmp = h.configDir.appendingPathComponent("tmp")
-        try? Data(hyperJSON.utf8).write(to: tmp)
+        try? Data(hyperTOML.utf8).write(to: tmp)
         _ = try? FileManager.default.replaceItemAt(h.url, withItemAt: tmp)
         h.dirWatches.last?.onEvent(false)
         h.runScheduled()
@@ -313,9 +306,9 @@ private func reloadTests() {
     // Absent during reload: config kept, error cleared, no alert.
     do {
         let h = Harness()
-        h.put(hyperJSON)
+        h.put(hyperTOML)
         h.store.start()
-        h.externalEdit("{")
+        h.externalEdit("a =")
         expect(h.store.error != nil, "precondition: invalid")
         try? FileManager.default.removeItem(at: h.url)
         h.dirWatches.last?.onEvent(false)
@@ -333,45 +326,45 @@ private func reloadTests() {
 
 private func invalidFileTests() {
     let h = Harness()
-    h.put(hyperJSON)
+    h.put(hyperTOML)
     h.store.start()
     let changesAfterStart = h.changes
 
     // First invalid edit: alert once; last good config stays; file never rewritten.
-    h.externalEdit("{")
+    h.externalEdit("a =")
     expectEqual(h.errors.count, 1, "invalid edit alerts once")
     expectEqual(h.store.config, hyperConfig, "last good config stays active")
-    expectEqual(h.fileText, "{", "invalid file untouched")
+    expectEqual(h.fileText, "a =", "invalid file untouched")
     expectEqual(h.changes, changesAfterStart, "no change reported")
 
     // Same bytes again (a touch): no reload work at all.
     let logCount = h.logs.count
-    h.externalEdit("{")
+    h.externalEdit("a =")
     expectEqual(h.logs.count, logCount, "identical bytes are ignored")
 
     // Different bytes, same reason: logged again, but not alerted again.
-    h.externalEdit("{ ")
+    h.externalEdit("a =\n")
     expectEqual(h.errors.count, 1, "the same reason is not alerted twice")
     expectEqual(h.logged(.error, containing: "invalid config"), 1, "duplicate reasons do not flood the log")
-    expectEqual(h.fileText, "{ ", "still untouched")
+    expectEqual(h.fileText, "a =\n", "still untouched")
 
     // A different reason alerts again.
-    h.externalEdit("[]")
-    expectEqual(h.errors.map { $0.reason }.last, "config: expected object", "new reason shown")
+    h.externalEdit("capsLock = 1\n")
+    expectEqual(h.errors.map { $0.reason }.last, "capsLock: expected string", "new reason shown")
     expectEqual(h.errors.count, 2, "a different reason alerts")
     expectEqual(h.store.error, h.errors.last, "store.error tracks the latest reason")
 
     // A valid load clears the error and the memory of the last alert: the same bad content alerts again.
-    h.externalEdit("{\"capsLock\":\"default\"}")
+    h.externalEdit("capsLock = \"default\"\n")
     expect(h.store.error == nil, "valid load clears the error")
     expectEqual(h.store.config, AppConfig(capsLock: .default), "valid edit applied")
-    h.externalEdit("[]")
+    h.externalEdit("capsLock = 1\n")
     expectEqual(h.errors.count, 3, "same bad content alerts again after a valid load")
-    expectEqual(h.fileText, "[]", "file never written while invalid")
+    expectEqual(h.fileText, "capsLock = 1\n", "file never written while invalid")
     expectEqual(h.store.config, AppConfig(capsLock: .default), "config is still the last good one")
 
     // A semantic error inside an otherwise valid document.
-    h.externalEdit("{\"capsLock\":\"upper\"}")
+    h.externalEdit("capsLock = \"upper\"\n")
     expect(h.store.error?.reason.hasPrefix("capsLock") ?? false, "validation errors are reported")
     expectEqual(h.errors.count, 4, "alerted")
 }
@@ -384,7 +377,7 @@ private func blankFileTests() {
         let h = Harness()
         h.put("")
         h.store.start()
-        expectEqual(h.fileText, String(decoding: encodeConfig(.newFileDefaults, includeEmptyKeys: true), as: UTF8.self), "blank file initialized")
+        expectEqual(h.fileText, String(decoding: encodeConfigTOML(.newFileDefaults, includeEmptyKeys: true), as: UTF8.self), "blank file initialized")
         expectEqual(h.store.config, .newFileDefaults, "defaults adopted")
         expectEqual(h.changes, [.newFileDefaults], "one onChange")
         expect(h.errors.isEmpty && h.store.error == nil, "blank is not an error")
@@ -393,10 +386,10 @@ private func blankFileTests() {
     // Blank while running: initialized, and the change to defaults is reported.
     do {
         let h = Harness()
-        h.put(hyperJSON)
+        h.put(hyperTOML)
         h.store.start()
         h.externalEdit(" \n")
-        expectEqual(h.fileText, String(decoding: encodeConfig(.newFileDefaults, includeEmptyKeys: true), as: UTF8.self), "truncated file initialized")
+        expectEqual(h.fileText, String(decoding: encodeConfigTOML(.newFileDefaults, includeEmptyKeys: true), as: UTF8.self), "truncated file initialized")
         expectEqual(h.changes, [hyperConfig, .newFileDefaults], "defaults reported")
         // Our own initialization does not loop.
         h.fileWatches.last?.onEvent(false)
@@ -408,14 +401,14 @@ private func blankFileTests() {
     // An editor truncates, then finishes its save before the guarded write: the new content wins and nothing is written.
     do {
         let h = Harness()
-        h.put("{\"launchAtLogin\":true}")
+        h.put("launchAtLogin = true\n")
         h.store.start()
         h.onLog = { [unowned h] _, message in
-            if message.contains("is empty") { h.put(hyperJSON) }
+            if message.contains("is empty") { h.put(hyperTOML) }
         }
         h.externalEdit("")
         h.onLog = nil
-        expectEqual(h.fileText, hyperJSON, "the editor's content was not overwritten")
+        expectEqual(h.fileText, hyperTOML, "the editor's content was not overwritten")
         expectEqual(h.store.config, hyperConfig, "the editor's content was loaded")
         expectEqual(h.changes.last, hyperConfig, "and reported")
     }
@@ -423,7 +416,7 @@ private func blankFileTests() {
     // The file vanishes between the two reads: treated as absent, nothing written.
     do {
         let h = Harness()
-        h.put(hyperJSON)
+        h.put(hyperTOML)
         h.store.start()
         h.onLog = { [unowned h] _, message in
             if message.contains("is empty") { try? FileManager.default.removeItem(at: h.url) }
@@ -442,12 +435,12 @@ private func blankFileTests() {
         try? FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: dir.path)
         defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path) }
         h.store.start()
-        expectEqual(h.logged(.error, containing: "hypermug.json"), 1, "write failure logged")
+        expectEqual(h.logged(.error, containing: "hypermug.toml"), 1, "write failure logged")
         expectEqual(h.store.config, .newFileDefaults, "defaults still adopted")
         expect(h.store.error == nil, "a failed initialization is not a config error")
         h.fileWatches.last?.onEvent(false)
         h.runScheduled()
-        expectEqual(h.logged(.error, containing: "hypermug.json"), 1, "the failing write is not retried on the next reload")
+        expectEqual(h.logged(.error, containing: "hypermug.toml"), 1, "the failing write is not retried on the next reload")
         expectEqual(h.fileText, "", "file still empty")
     }
 
@@ -455,14 +448,14 @@ private func blankFileTests() {
     do {
         let h = Harness()
         h.prepareDir()
-        let target = h.root.appendingPathComponent("dotfiles").appendingPathComponent("real.json")
+        let target = h.root.appendingPathComponent("dotfiles").appendingPathComponent("real.toml")
         try? FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? Data().write(to: target)
         try? FileManager.default.createSymbolicLink(at: h.url, withDestinationURL: target)
         h.store.start()
         expectEqual(try? FileManager.default.destinationOfSymbolicLink(atPath: h.url.path), target.path, "still a symlink")
-        expectEqual(try? Data(contentsOf: target), encodeConfig(.newFileDefaults, includeEmptyKeys: true), "written through to the target")
-        try? Data("{\"capsLock\":\"hyper\",\"launchAtLogin\":false}".utf8).write(to: target)
+        expectEqual(try? Data(contentsOf: target), encodeConfigTOML(.newFileDefaults, includeEmptyKeys: true), "written through to the target")
+        try? Data("capsLock = \"hyper\"\nlaunchAtLogin = false\n".utf8).write(to: target)
         h.store.pollFallback()
         expectEqual(h.store.config, hyperConfig, "an edit of the symlink target is noticed by the poll")
     }
@@ -474,7 +467,7 @@ private func pollFallbackTests() {
     // Before start: nothing happens.
     do {
         let h = Harness()
-        h.put(hyperJSON)
+        h.put(hyperTOML)
         h.store.pollFallback()
         expect(h.changes.isEmpty && h.watches.isEmpty && h.logs.isEmpty, "poll before start does nothing")
     }
@@ -482,9 +475,9 @@ private func pollFallbackTests() {
     // A changed file is reloaded.
     do {
         let h = Harness()
-        h.put(hyperJSON)
+        h.put(hyperTOML)
         h.store.start()
-        h.put("{\"capsLock\":\"default\",\"launchAtLogin\":true}")   // no watcher event delivered
+        h.put("capsLock = \"default\"\nlaunchAtLogin = true\n")   // no watcher event delivered
         h.store.pollFallback()
         expectEqual(h.store.config, AppConfig(capsLock: .default, launchAtLogin: true), "poll picked up the edit")
         expectEqual(h.changes.count, 2, "reported once")
@@ -497,10 +490,10 @@ private func pollFallbackTests() {
         func pinMtime(_ h: Harness) {
             try? FileManager.default.setAttributes([.modificationDate: fixed], ofItemAtPath: h.url.path)
         }
-        h.put("{\"capsLock\":\"meh\"}  ")
+        h.put("capsLock = \"meh\"  ")
         pinMtime(h)
         h.store.start()
-        h.put("{\"capsLock\":\"hyper\"}")   // same size, same inode
+        h.put("capsLock = \"hyper\"")   // same size, same inode
         pinMtime(h)
         h.store.pollFallback()
         expectEqual(h.store.config, AppConfig(capsLock: .meh), "no reload when the stamp is unchanged")
@@ -510,7 +503,7 @@ private func pollFallbackTests() {
     // An absent file stays quiet on every poll.
     do {
         let h = Harness()
-        h.put(hyperJSON)
+        h.put(hyperTOML)
         h.store.start()
         try? FileManager.default.removeItem(at: h.url)
         h.store.pollFallback()
@@ -523,7 +516,7 @@ private func pollFallbackTests() {
     // Directory removed and recreated: the watch is re-armed.
     do {
         let h = Harness()
-        h.put(hyperJSON)
+        h.put(hyperTOML)
         h.store.start()
         h.store.pollFallback()
         expectEqual(h.dirWatches.count, 1, "an unchanged directory keeps its watch")
@@ -543,7 +536,7 @@ private func watcherLifecycleTests() {
     // A "gone" directory event drops the watch; the next poll re-arms it.
     do {
         let h = Harness()
-        h.put(hyperJSON)
+        h.put(hyperTOML)
         h.store.start()
         h.dirWatches[0].onEvent(true)
         expect(h.dirWatches[0].token.cancelled, "gone cancels the directory watch")
@@ -556,7 +549,7 @@ private func watcherLifecycleTests() {
     // A "gone" file event drops the watch; the reload that follows re-arms it for the file that is there now.
     do {
         let h = Harness()
-        h.put(hyperJSON)
+        h.put(hyperTOML)
         h.store.start()
         h.fileWatches[0].onEvent(true)
         expect(h.fileWatches[0].token.cancelled, "gone cancels the file watch")
@@ -571,7 +564,7 @@ private func watcherLifecycleTests() {
     // The poll re-arms a file watch that died without a reload following.
     do {
         let h = Harness()
-        h.put(hyperJSON)
+        h.put(hyperTOML)
         h.store.start()
         h.fileWatches[0].onEvent(true)
         h.store.pollFallback()
@@ -582,7 +575,7 @@ private func watcherLifecycleTests() {
     do {
         let h = Harness()
         h.watchReturnsNil = true
-        h.put(hyperJSON)
+        h.put(hyperTOML)
         h.store.start()
         expectEqual(h.logged(.error, containing: "cannot watch"), 1, "directory watch failure logged")
         expectEqual(h.store.config, hyperConfig, "the store still works")
@@ -604,7 +597,7 @@ private func watcherLifecycleTests() {
         h.runScheduled()
         expect(h.fileWatches[0].token.cancelled, "watch of a deleted file is dropped")
         expectEqual(h.fileWatches.count, 1, "no watch while the file is missing")
-        h.put(hyperJSON)
+        h.put(hyperTOML)
         h.dirWatches[0].onEvent(false)
         h.runScheduled()
         expectEqual(h.store.config, hyperConfig, "the file is picked up when it comes back")
@@ -617,13 +610,13 @@ private func bundledSchemaStoreTests() {
     do {
         let h = Harness(schemaURL: schema)
         h.store.start()
-        let object = try? JSONSerialization.jsonObject(with: Data(h.fileText!.utf8)) as? [String: Any]
-        expectEqual(object?["$schema"] as? String, schema.absoluteString, "new config references bundled schema")
+        expectEqual(try? parseConfigTOML(Data(h.fileText!.utf8)).get()["$schema"], .string(schema.absoluteString),
+                    "new config references bundled schema")
         expectEqual(h.store.config, .newFileDefaults)
     }
     do {
         let h = Harness(schemaURL: schema)
-        h.put(#"{"$schema":"./hypermug.schema.json","capsLock":"hyper"}"#)
+        h.put("\"$schema\" = \"./hypermug.schema.json\"\ncapsLock = \"hyper\"\n")
         h.store.start()
         expectEqual(h.store.config, hyperConfig, "migration preserves settings")
         expect(h.fileText!.contains(schema.absoluteString), "legacy sidecar link migrated")
@@ -634,14 +627,14 @@ private func bundledSchemaStoreTests() {
     }
     do {
         let h = Harness(schemaURL: schema)
-        h.put("{")
+        h.put("a =")
         h.store.start()
-        expectEqual(h.fileText, "{", "invalid JSON is never rewritten")
+        expectEqual(h.fileText, "a =", "invalid TOML is never rewritten")
         expectEqual(h.errors.count, 1)
     }
     do {
         let h = Harness(schemaURL: schema)
-        h.put(#"{"capsLock":"hyper","future":{"keep":1}}"#)
+        h.put("capsLock = \"hyper\"\nfuture.keep = 1\n")
         h.store.start()
         expect(h.store.error != nil, "unknown fields cause native config error")
         expect(h.fileText!.contains("future"), "migration does not delete unsupported settings")
@@ -653,11 +646,11 @@ private func schemaMigrationRaceTests() {
     let schema = URL(fileURLWithPath: "/Applications/HyperMug.app/Contents/Resources/hypermug.schema.json")
     do {
         let h = Harness(schemaURL: schema, customIO: true)
-        h.put(#"{"capsLock":"meh"}"#)
+        h.put("capsLock = \"meh\"\n")
         var reads = 0
         h.beforeRead = { _ in
             reads += 1
-            if reads == 3 { h.put(#"{"capsLock":"hyper"}"#) }
+            if reads == 3 { h.put(hyperTOML) }
         }
         h.store.start()
         h.runScheduled()
@@ -666,23 +659,23 @@ private func schemaMigrationRaceTests() {
     }
     do {
         let h = Harness(schemaURL: schema, customIO: true)
-        h.put(hyperJSON)
+        h.put(hyperTOML)
         h.failWrite = true
         h.store.start()
-        expectEqual(h.fileText, hyperJSON, "failed schema migration leaves bytes intact")
+        expectEqual(h.fileText, hyperTOML, "failed schema migration leaves bytes intact")
         expect(h.store.error?.reason.contains("bundled schema reference") == true, "metadata write failure is actionable")
         expectEqual(h.errors.count, 1)
         expectEqual(h.store.config, AppConfig(), "write failure retains previous valid config")
         h.failWrite = false
-        h.externalEdit(hyperJSON + "\n")
+        h.externalEdit(hyperTOML + "\n")
         expectEqual(h.store.config, hyperConfig)
         expect(h.store.error == nil, "repair recovers normally")
     }
     do {
         let h = Harness(schemaURL: schema)
         h.prepareDir()
-        let target = h.root.appendingPathComponent("dotfiles.json")
-        try! Data(hyperJSON.utf8).write(to: target)
+        let target = h.root.appendingPathComponent("dotfiles.toml")
+        try! Data(hyperTOML.utf8).write(to: target)
         try! FileManager.default.createSymbolicLink(at: h.url, withDestinationURL: target)
         h.store.start()
         expectEqual(try? FileManager.default.destinationOfSymbolicLink(atPath: h.url.path), target.path, "schema migration preserves dotfiles symlink")
@@ -695,21 +688,21 @@ private func schemaMigrationRaceTests() {
 private func documentSaveTests() {
     do {
         let h = Harness(customIO: true)
-        h.put(hyperJSON)
+        h.put(hyperTOML)
         h.store.start()
         let before = try! h.store.readDocument()
-        let edit = Data(#"{"capsLock":"default"}"#.utf8)
+        let edit = Data("capsLock = \"default\"\n".utf8)
         try! h.store.saveDocument(edit, replacing: before)
         expectEqual(h.store.config.capsLock, .default, "the editor saves through the running store")
         expectEqual(try! h.store.readDocument(), edit, "raw formatting survives without schema migration")
         expectEqual(h.changes.count, 2, "save applies once")
-        for invalid in ["", "{", #"{"capsLock":"typo"}"#] {
+        for invalid in ["", "a =", "capsLock = \"typo\"\n"] {
             do { try h.store.saveDocument(Data(invalid.utf8), replacing: edit); expect(false) }
             catch { expectEqual(try! h.store.readDocument(), edit, "invalid drafts never replace disk") }
         }
-        h.put(hyperJSON + "\n")
+        h.put(hyperTOML + "\n")
         do { try h.store.saveDocument(edit, replacing: edit); expect(false) }
-        catch { expectEqual(h.fileText, hyperJSON + "\n", "external edits win a stale Save") }
+        catch { expectEqual(h.fileText, hyperTOML + "\n", "external edits win a stale Save") }
         h.failWrite = true
         do { try h.store.saveDocument(edit, replacing: try h.store.readDocument()); expect(false) }
         catch { expectEqual(h.store.config.capsLock, .default, "write failure cannot apply a draft") }
@@ -723,23 +716,23 @@ private func documentSaveTests() {
         let schema = URL(fileURLWithPath: "/Applications/HyperMug.app/Contents/Resources/hypermug.schema.json")
         let h = Harness(schemaURL: schema)
         h.prepareDir()
-        let target = h.root.appendingPathComponent("editor-dotfiles.json")
-        try! Data(hyperJSON.utf8).write(to: target)
+        let target = h.root.appendingPathComponent("editor-dotfiles.toml")
+        try! Data(hyperTOML.utf8).write(to: target)
         try! FileManager.default.createSymbolicLink(at: h.url, withDestinationURL: target)
         h.store.start()
         let baseline = try! h.store.readDocument()
-        try! h.store.saveDocument(Data(#"{"capsLock":"default"}"#.utf8), replacing: baseline)
+        try! h.store.saveDocument(Data("capsLock = \"default\"\n".utf8), replacing: baseline)
         expectEqual(try? FileManager.default.destinationOfSymbolicLink(atPath: h.url.path), target.path)
-        let saved = try! JSONSerialization.jsonObject(with: Data(contentsOf: target)) as! [String: Any]
-        expectEqual(saved["$schema"] as? String, schema.absoluteString, "editor writes the real bundle reference")
+        let saved = try! parseConfigTOML(Data(contentsOf: target)).get()
+        expectEqual(saved["$schema"], .string(schema.absoluteString), "editor writes the real bundle reference")
     }
     do {
         let h = Harness()
-        h.put("{")
+        h.put("a =")
         h.store.start()
         try! FileManager.default.removeItem(at: h.url)
         h.store.pollFallback()
-        h.externalEdit("{")
+        h.externalEdit("a =")
         expectEqual(h.errors.count, 2, "recreating an invalid file reports a new error after absence cleared it")
     }
     do {
@@ -750,38 +743,34 @@ private func documentSaveTests() {
     }
 }
 
-// MARK: - TOML and legacy JSON migration
+// MARK: - TOML documents and the retired JSON file
 
 private let tomlSchema = URL(fileURLWithPath: "/Applications/HyperMug.app/Contents/Resources/hypermug.schema.json")
 
-/// A TOML store with a legacy `hypermug.json` beside it.
-private func migrationHarness(schemaURL: URL? = tomlSchema, customIO: Bool = false) -> (Harness, URL) {
+/// A store with a retired `hypermug.json` slot beside it.
+private func legacyHarness() -> (Harness, URL) {
     let root = makeTempDir().appendingPathComponent("cfg")
     let legacy = root.appendingPathComponent("hypermug.json")
-    let h = Harness(configURL: root.appendingPathComponent("hypermug.toml"), schemaURL: schemaURL, customIO: customIO,
-                    format: .toml, legacyURL: legacy)
+    let h = Harness(configURL: root.appendingPathComponent("hypermug.toml"), schemaURL: tomlSchema, legacyURL: legacy)
     h.prepareDir()
     return (h, legacy)
 }
 
 private func readText(_ url: URL) -> String? { (try? Data(contentsOf: url)).map { String(decoding: $0, as: UTF8.self) } }
-private func exists(_ url: URL) -> Bool { (try? FileManager.default.attributesOfItem(atPath: url.path)) != nil }
 
 private func tomlStoreTests() {
     // A new TOML file shows every slot, links the schema both ways and loads the defaults.
     do {
-        let h = Harness(schemaURL: tomlSchema, format: .toml)
+        let h = Harness(schemaURL: tomlSchema)
         h.store.start()
         expectEqual(h.fileText, String(decoding: encodeConfigTOML(.newFileDefaults, schemaURL: tomlSchema, includeEmptyKeys: true), as: UTF8.self))
         expect(h.fileText!.hasPrefix("#:schema \(tomlSchema.absoluteString)\n"), "directive for TOML editors")
         expectEqual(h.store.config, .newFileDefaults)
-        expectEqual(h.store.documentFormat, .toml)
-        expectEqual(h.store.documentURL, h.url)
         expect(h.notices.isEmpty && h.store.notice == nil, "no notice without a legacy file")
     }
     // Schema links preserve comments; a later poll does not rewrite.
     do {
-        let h = Harness(schemaURL: tomlSchema, format: .toml)
+        let h = Harness(schemaURL: tomlSchema)
         h.put("# my settings\ncapsLock = \"hyper\" # hold for hyper\n")
         h.store.start()
         expectEqual(h.store.config, hyperConfig)
@@ -792,20 +781,20 @@ private func tomlStoreTests() {
     }
     // Invalid TOML is reported with its position and never rewritten.
     do {
-        let h = Harness(schemaURL: tomlSchema, format: .toml)
+        let h = Harness(schemaURL: tomlSchema)
         h.put("capsLock = \"hyper\"\nmouse = {\n")
         h.store.start()
         expectEqual(h.store.error?.reason, "invalid TOML at line 2, column 10: expected a key")
         expectEqual(h.fileText, "capsLock = \"hyper\"\nmouse = {\n")
         h.externalEdit("capsLock = \"other\"\n")
-        expectEqual(h.store.error?.reason, validateConfigDocument(Data(#"{"capsLock":"other"}"#.utf8)).failureReason, "schema errors match JSON")
+        expectEqual(h.store.error?.reason, "capsLock: unsupported value", "schema errors name the setting")
         h.externalEdit("capsLock = \"hyper\"\n")
         expectEqual(h.store.config, hyperConfig)
         expect(h.store.error == nil)
     }
     // Editor saves keep comments; empty saves get a TOML hint.
     do {
-        let h = Harness(format: .toml)
+        let h = Harness()
         h.put("capsLock = \"meh\"\n")
         h.store.start()
         let before = try! h.store.readDocument()
@@ -818,208 +807,59 @@ private func tomlStoreTests() {
         expect((try? h.store.validateDocument(Data("# defaults\n".utf8)).get())?.config == AppConfig(), "comment-only means defaults")
         do { try h.store.saveDocument(Data("a =".utf8), replacing: Data(edit.utf8)); expect(false) }
         catch { expectEqual((error as? ConfigError)?.reason, "invalid TOML at line 1, column 4: expected a value") }
-        let jsonStore = Harness()
-        expectEqual(jsonStore.store.validateDocument(Data()).failureReason, "Configuration cannot be empty. Use {} for default settings.")
     }
     // A blank TOML file is initialized with TOML defaults.
     do {
-        let h = Harness(format: .toml)
+        let h = Harness()
         h.put("")
         h.store.start()
         expectEqual(h.fileText, String(decoding: encodeConfigTOML(.newFileDefaults, includeEmptyKeys: true), as: UTF8.self))
     }
 }
 
-private func legacyMigrationTests() {
-    // Valid JSON migrates once: equivalent TOML, the JSON kept as a backup, one notice.
+private func legacyFileTests() {
+    // Only a legacy JSON file: it is not read, TOML defaults are written and used, and one notice says why.
     do {
-        let (h, legacy) = migrationHarness()
-        try! Data(issue39JSON.utf8).write(to: legacy)
+        let (h, legacy) = legacyHarness()
+        let json = #"{"capsLock":"hyper","launchAtLogin":true}"#
+        try! Data(json.utf8).write(to: legacy)
         h.store.start()
-        let backup = legacy.deletingLastPathComponent().appendingPathComponent("hypermug.json.migrated-backup")
-        expect(!exists(legacy), "the JSON was renamed")
-        expectEqual(readText(backup), issue39JSON, "the backup holds the original bytes")
-        let toml = try! Data(contentsOf: h.url)
-        expectEqual(try? validateConfigTOML(toml).get(), try? validateConfigDocument(Data(issue39JSON.utf8)).get(), "the TOML validates identically")
-        expectEqual(h.store.config, try! validateConfigDocument(Data(issue39JSON.utf8)).get().config)
-        expect(h.fileText!.hasPrefix("#:schema \(tomlSchema.absoluteString)\n"), "the migrated file links the bundled schema")
-        expect(h.fileText!.contains("[mouse.buttons]\nback.helper = \"previousWorkspace\""), h.fileText!)
-        let notice = ConfigNotice.migrated(from: "hypermug.json", to: "hypermug.toml", backup: "hypermug.json.migrated-backup")
-        expectEqual(h.notices, [notice])
+        expectEqual(h.fileText, String(decoding: encodeConfigTOML(.newFileDefaults, schemaURL: tomlSchema, includeEmptyKeys: true), as: UTF8.self),
+                    "TOML defaults are written")
+        expectEqual(h.store.config, .newFileDefaults, "the JSON settings are not applied")
+        expect(h.store.error == nil && h.errors.isEmpty, "the JSON file is not a configuration error")
+        expectEqual(readText(legacy), json, "the JSON file is left alone")
+        let notice = ConfigNotice.legacyUnsupported(legacy: "hypermug.json", active: "hypermug.toml")
+        expectEqual(notice.message, "hypermug.json is no longer supported; settings now live in hypermug.toml.")
         expectEqual(h.store.notice, notice)
-        expectEqual(notice.message, "Migrated hypermug.json to hypermug.toml. The original is kept as hypermug.json.migrated-backup.")
-        expectEqual(h.logged(.info, containing: "Migrated hypermug.json"), 1)
-        expect(h.store.error == nil && h.errors.isEmpty)
-        expectEqual(h.store.documentURL, h.url)
-        let stable = h.fileText
-        h.dirWatches.last?.onEvent(false)
-        h.runScheduled()
+        expectEqual(h.notices, [notice], "one notice")
+        expectEqual(h.logged(.info, containing: "hypermug.json is no longer supported"), 1)
+        // Later reloads keep the notice without repeating it.
+        h.externalEdit(hyperTOML)
         h.store.pollFallback()
-        expectEqual(h.fileText, stable, "the migration runs once")
-        expectEqual(h.notices.count, 1, "the notice is shown once")
-    }
-    // Without a schema URL, an earlier backup gets a numbered name; blank JSON migrates to the defaults.
-    do {
-        let (h, legacy) = migrationHarness(schemaURL: nil)
-        try! Data("  ".utf8).write(to: legacy)
-        let dir = legacy.deletingLastPathComponent()
-        try! Data("old".utf8).write(to: dir.appendingPathComponent("hypermug.json.migrated-backup"))
-        try! Data("old".utf8).write(to: dir.appendingPathComponent("hypermug.json.migrated-backup-2"))
-        h.store.start()
-        expectEqual(readText(dir.appendingPathComponent("hypermug.json.migrated-backup-3")), "  ")
-        expectEqual(readText(dir.appendingPathComponent("hypermug.json.migrated-backup")), "old", "earlier backups are kept")
-        expectEqual(h.fileText, String(decoding: encodeConfigTOML(.newFileDefaults, includeEmptyKeys: true), as: UTF8.self))
-        expectEqual(h.store.config, .newFileDefaults)
-    }
-    // Invalid JSON is not migrated: it stays active, is reported exactly as before, and migrates once fixed.
-    do {
-        let (h, legacy) = migrationHarness()
-        try! Data(#"{"capsLock":"other"}"#.utf8).write(to: legacy)
-        h.store.start()
-        expect(!exists(h.url), "no TOML for invalid JSON")
-        expectEqual(readText(legacy), #"{"capsLock":"other"}"#, "the JSON is untouched")
-        expectEqual(h.store.error?.reason, validateConfigDocument(Data(#"{"capsLock":"other"}"#.utf8)).failureReason)
-        expectEqual(h.errors.count, 1)
-        expectEqual(h.store.documentURL, legacy)
-        expectEqual(h.store.documentFormat, .json)
-        let blocked = ConfigNotice.migrationBlocked(from: "hypermug.json", to: "hypermug.toml")
-        expectEqual(h.store.notice, blocked)
-        expect(blocked.message.hasPrefix("hypermug.json was not migrated to hypermug.toml because it is invalid."))
-        expectEqual(h.fileWatches.count, 0, "the canonical path is not watched yet")
-        expectEqual(h.watch(legacy.path).count, 1, "the legacy document is watched")
-        h.store.createIfAbsent()
-        expect(!exists(h.url), "Settings… does not create a TOML file beside invalid JSON")
-        try! Data(hyperJSON.utf8).write(to: legacy)
-        h.watch(legacy.path).last?.onEvent(false)
-        h.runScheduled()
-        expect(exists(h.url) && !exists(legacy), "a repaired JSON file migrates")
         expectEqual(h.store.config, hyperConfig)
-        expect(h.store.error == nil)
-        expectEqual(h.store.documentFormat, .toml)
-        expectEqual(h.fileWatches.count, 1, "the TOML file is watched after migration")
+        expectEqual(h.notices, [notice], "not repeated")
+        expectEqual(h.store.notice, notice, "still reported while the file exists")
+        // Removing the JSON file clears the notice.
+        try! FileManager.default.removeItem(at: legacy)
+        h.externalEdit("capsLock = \"meh\"\n")
+        expect(h.store.notice == nil, "the notice clears")
+        expectEqual(h.notices, [notice])
     }
-    // Saving a repaired legacy document from the editor migrates right away.
+    // Both files: the TOML file is used and the JSON file is still reported.
     do {
-        let (h, legacy) = migrationHarness()
-        try! Data("{".utf8).write(to: legacy)
-        h.store.start()
-        expect(h.store.error?.reason.hasPrefix("invalid JSON") == true)
-        let before = try! h.store.readDocument()
-        expectEqual(before, Data("{".utf8))
-        expectEqual(h.store.validateDocument(Data("capsLock = 1".utf8)).failureReason?.hasPrefix("invalid JSON"), true, "JSON rules while pending")
-        try! h.store.saveDocument(Data(hyperJSON.utf8), replacing: before)
-        expect(exists(h.url) && !exists(legacy), "the save migrated")
-        expectEqual(h.store.config, hyperConfig)
-        expect(String(decoding: try! h.store.readDocument()!, as: UTF8.self).contains("capsLock = \"hyper\""), "the editor now reads TOML")
-    }
-    // Both files: TOML wins, the JSON is ignored and left alone; removing it clears the warning.
-    do {
-        let (h, legacy) = migrationHarness()
-        h.put("capsLock = \"hyper\"\n")
+        let (h, legacy) = legacyHarness()
+        h.put(hyperTOML)
         try! Data(#"{"capsLock":"default"}"#.utf8).write(to: legacy)
         h.store.start()
         expectEqual(h.store.config, hyperConfig)
-        expectEqual(readText(legacy), #"{"capsLock":"default"}"#)
-        let ignored = ConfigNotice.legacyIgnored(legacy: "hypermug.json", active: "hypermug.toml")
-        expectEqual(h.store.notice, ignored)
-        expectEqual(ignored.message, "hypermug.json is ignored because hypermug.toml exists. Move or delete hypermug.json.")
-        h.dirWatches.last?.onEvent(false)
-        h.runScheduled()
-        expectEqual(h.notices, [ignored], "warned once")
-        try! FileManager.default.removeItem(at: legacy)
-        h.dirWatches.last?.onEvent(false)
-        h.runScheduled()
-        expect(h.store.notice == nil, "the warning clears")
+        expectEqual(h.store.notice, .legacyUnsupported(legacy: "hypermug.json", active: "hypermug.toml"))
     }
-    // A failed TOML write keeps the JSON active; a failed rename leaves both files and warns.
+    // No legacy file: no notice.
     do {
-        let (h, legacy) = migrationHarness(customIO: true)
-        try! Data(hyperJSON.utf8).write(to: legacy)
-        h.failWrite = true
+        let (h, _) = legacyHarness()
         h.store.start()
-        expect(!exists(h.url) && exists(legacy))
-        expect(h.logged(.error, containing: "hypermug.json stays active") >= 1, "write failure logged")
-        expectEqual(h.store.documentURL, legacy)
-        h.failWrite = false
-        h.failMove = true
-        h.dirWatches.last?.onEvent(false)
-        h.runScheduled()
-        expect(exists(h.url) && exists(legacy), "TOML written, JSON kept")
-        expectEqual(h.logged(.error, containing: "cannot rename hypermug.json"), 1)
-        expectEqual(h.store.notice, .legacyIgnored(legacy: "hypermug.json", active: "hypermug.toml"))
-        expectEqual(h.store.config, hyperConfig)
-    }
-    // A legacy file with wheel bindings migrates them.
-    do {
-        let (h, legacy) = migrationHarness()
-        let json = #"{"helpers":{"n":"echo n","p":"echo p"},"mouse":{"verticalWheel":{"up":{"helper":"p"},"down":{"helper":"n"}}}}"#
-        try! Data(json.utf8).write(to: legacy)
-        h.store.start()
-        expect(h.fileText!.contains("\n[mouse.verticalWheel]\ndown.helper = \"n\"\nup.helper = \"p\"\n"), h.fileText!)
-        expectEqual(h.store.config.mouse.verticalWheel.up, .helper("p"))
-        expectEqual(try? validateConfigTOML(Data(h.fileText!.utf8)).get(), try? validateConfigDocument(Data(json.utf8)).get())
-    }
-    // A legacy null (rejected by the schema, unrepresentable in TOML): no crash, no TOML, the JSON stays active.
-    do {
-        let (h, legacy) = migrationHarness()
-        let json = #"{"capsLock":"hyper","mouse":{"buttons":{"thumb":null}}}"#
-        try! Data(json.utf8).write(to: legacy)
-        h.store.start()
-        expect(!exists(h.url), "no partial TOML file")
-        expectEqual(readText(legacy), json, "the JSON is untouched")
-        expectEqual(h.store.documentURL, legacy)
-        expectEqual(h.store.error?.reason, validateConfigDocument(Data(json.utf8)).failureReason)
-        expectEqual(h.store.notice, .migrationBlocked(from: "hypermug.json", to: "hypermug.toml"))
-        try! Data(#"{"capsLock":"hyper","mouse":{"buttons":{"thumb":{}}}}"#.utf8).write(to: legacy)
-        h.watch(legacy.path).last?.onEvent(false)
-        h.runScheduled()
-        expect(exists(h.url) && !exists(legacy), "the repaired file migrates")
-        expectEqual(h.store.config, hyperConfig)
-        expect(h.store.error == nil)
-    }
-    // A valid JSON file that cannot be converted keeps working as JSON, says why, and migrates once convertible.
-    do {
-        let (h, legacy) = migrationHarness()
-        try! Data(hyperJSON.utf8).write(to: legacy)
-        h.store.convertLegacyJSON = { _, _ in .failure(ConfigError(reason: "cannot convert to TOML: helpers.x: null has no TOML equivalent")) }
-        h.store.start()
-        expect(!exists(h.url), "nothing is written")
-        expect(exists(legacy))
-        expectEqual(h.store.config, hyperConfig, "the valid JSON settings are active")
-        expect(h.store.error == nil && h.errors.isEmpty)
-        expectEqual(h.store.documentURL, legacy)
-        expectEqual(h.store.documentFormat, .json)
-        let failed = ConfigNotice.migrationFailed(from: "hypermug.json", to: "hypermug.toml",
-                                                  reason: "cannot convert to TOML: helpers.x: null has no TOML equivalent")
-        expectEqual(h.store.notice, failed)
-        expect(failed.message.hasPrefix("hypermug.json is valid but was not migrated to hypermug.toml (cannot convert to TOML: helpers.x"))
-        expect(h.logged(.error, containing: "cannot migrate hypermug.json: cannot convert to TOML: helpers.x") >= 1, "the reason and key path are logged")
-        h.store.convertLegacyJSON = migratedConfigTOML
-        try! Data((hyperJSON + "\n").utf8).write(to: legacy)
-        h.watch(legacy.path).last?.onEvent(false)
-        h.runScheduled()
-        expect(exists(h.url) && !exists(legacy), "migrates once convertible")
-        expectEqual(h.store.config, hyperConfig)
-        expectEqual(h.store.notice, .migrated(from: "hypermug.json", to: "hypermug.toml", backup: "hypermug.json.migrated-backup"))
-    }
-    // An unreadable legacy path is reported and not migrated.
-    do {
-        let (h, legacy) = migrationHarness()
-        try! FileManager.default.createDirectory(at: legacy, withIntermediateDirectories: true)
-        h.store.start()
-        expect(!exists(h.url))
-        expect(h.store.error?.reason.hasPrefix("cannot read") == true)
-        expectEqual(h.store.documentURL, legacy)
-    }
-    // The TOML file deleted while running, with a new legacy file: Settings… migrates instead of recreating.
-    do {
-        let (h, legacy) = migrationHarness()
-        h.store.start()
-        try! FileManager.default.removeItem(at: h.url)
-        try! Data(hyperJSON.utf8).write(to: legacy)
-        h.store.createIfAbsent()
-        expect(exists(h.url) && !exists(legacy))
-        expect(h.fileText!.contains("capsLock = \"hyper\""))
+        expect(h.store.notice == nil && h.notices.isEmpty)
     }
 }
 
