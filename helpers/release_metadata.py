@@ -16,7 +16,7 @@ import ed25519
 SEMVER = re.compile(r"^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
 SHA = re.compile(r"^[0-9a-f]{40}$")
 REPOSITORY = "maxmeis/hypermug"
-FEED_URL = f"https://raw.githubusercontent.com/{REPOSITORY}/updates/appcast-stable.xml"
+FEED_URL = f"https://raw.githubusercontent.com/{REPOSITORY}/updates/appcast.xml"
 SPARKLE = "http://www.andymatuschak.org/xml-namespaces/sparkle"
 BUNDLE_VERSION = re.compile(r"^(0|[1-9][0-9]*)(\.(0|[1-9][0-9]*)){0,2}$")
 

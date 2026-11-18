@@ -47,7 +47,7 @@ python3 helpers/release_metadata.py cask --version "$VERSION" --zip "$archive" -
 signature="$(printf '%s' "$SPARKLE_ED_PRIVATE_KEY" | "$SPARKLE_ROOT/bin/sign_update" --ed-key-file - -p "$archive")"
 unset SPARKLE_ED_PRIVATE_KEY
 # Fails unless the signature verifies with the SUPublicEDKey inside this archive.
-python3 helpers/release_metadata.py appcast --version "$VERSION" --zip "$archive" --signature "$signature" --output "$work/appcast-stable.xml"
+python3 helpers/release_metadata.py appcast --version "$VERSION" --zip "$archive" --signature "$signature" --output "$work/appcast.xml"
 if [[ "$is_draft" == true ]]; then
   latest_tag="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name 2> "$work/latest-error")" || {
     if grep -q 'HTTP 404' "$work/latest-error"; then latest_tag=''; else cat "$work/latest-error" >&2; exit 1; fi
@@ -80,6 +80,7 @@ else
 fi
 # The feed lives on its own branch in a scratch repository so this checkout,
 # including the running helpers, is untouched. Sparkle reads it via raw URLs.
+# Only appcast.xml is written; the 0.3.0 feed appcast-stable.xml is never touched.
 origin_url="$(git remote get-url origin)"
 feed="$work/updates"
 for attempt in 1 2 3; do
@@ -93,11 +94,13 @@ for attempt in 1 2 3; do
     status=$?
     [[ "$status" == 2 ]] || { echo 'Cannot read the updates branch' >&2; exit 1; }
   fi
-  decision="$(python3 helpers/release_metadata.py feed-decision --current "$feed/appcast-stable.xml" --candidate "$work/appcast-stable.xml")"
+  decision="$(python3 helpers/release_metadata.py feed-decision --current "$feed/appcast.xml" --candidate "$work/appcast.xml")"
   if [[ "$decision" == newer ]]; then echo 'A newer production appcast is already published'; break; fi
   if [[ "$decision" == current ]]; then break; fi
-  cp "$work/appcast-stable.xml" "$feed/appcast-stable.xml"
-  git -C "$feed" add appcast-stable.xml
+  cp "$work/appcast.xml" "$feed/appcast.xml"
+  git -C "$feed" add appcast.xml
+  # appcast-stable.xml stays frozen at 0.3.0: those installs trust only the lost key.
+  [[ "$(git -C "$feed" diff --cached --name-only)" == appcast.xml ]] || { echo 'Feed commit may only change appcast.xml' >&2; exit 1; }
   git -C "$feed" -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -qm "chore: update production appcast to $VERSION"
   if git -C "$feed" push origin HEAD:refs/heads/updates; then break; fi
   if [[ "$attempt" == 3 ]]; then echo 'Cannot commit appcast to the updates branch; check the publishing credential and branch rules' >&2; exit 1; fi

@@ -126,7 +126,7 @@ class PublishTests(unittest.TestCase):
         return result
 
     def remote_feed(self):
-        result = subprocess.run(['git', '--git-dir', str(self.remote), 'show', 'updates:appcast-stable.xml'],
+        result = subprocess.run(['git', '--git-dir', str(self.remote), 'show', 'updates:appcast.xml'],
                                 capture_output=True, text=True)
         return result.stdout if result.returncode == 0 else None
 
@@ -134,11 +134,11 @@ class PublishTests(unittest.TestCase):
         return subprocess.run(['git', '--git-dir', str(self.remote), 'rev-list', '--count', 'updates'],
                               capture_output=True, text=True, check=True).stdout.strip()
 
-    def seed_feed(self, version):
+    def seed_feed(self, version, name='appcast.xml'):
         """Publish a pre-existing updates branch, as left by an earlier release."""
         seeded = Path(self.temp.name) / 'seeded'
         subprocess.run(['git', 'init', '-q', str(seeded)], check=True)
-        (seeded / 'appcast-stable.xml').write_text(
+        (seeded / name).write_text(
             f'<rss xmlns:sparkle="{SPARKLE}"><channel><item><sparkle:version>{version}</sparkle:version>'
             '</item></channel></rss>\n')
         for args in (['add', '.'], ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-qm', 'feed'],
@@ -164,6 +164,21 @@ class PublishTests(unittest.TestCase):
         self.assertEqual(len(signed), 1)
         self.assertNotEqual(Path(signed[0]).resolve(), (self.repo / 'build/release/HyperMug-0.2.1.zip').resolve())
         self.assertEqual(self.feed_commits(), '2')
+
+    def test_publisher_only_ever_touches_appcast_xml(self):
+        # The 0.3.0 feed trusts the lost key; a new-key item there would show users a signature error.
+        self.seed_feed('0.3.0', name='appcast-stable.xml')
+        frozen = subprocess.run(['git', '--git-dir', str(self.remote), 'show', 'updates:appcast-stable.xml'],
+                                capture_output=True, check=True).stdout
+        for _ in range(2):
+            result = self.publish()
+            self.assertEqual(result.returncode, 0, result.stderr)
+        log = subprocess.run(['git', '--git-dir', str(self.remote), 'log', '--format=', '--name-only', 'updates'],
+                             capture_output=True, text=True, check=True).stdout.split()
+        # One seed commit plus exactly one publisher commit, which changes appcast.xml alone.
+        self.assertEqual(log, ['appcast.xml', 'appcast-stable.xml'])
+        self.assertEqual(subprocess.run(['git', '--git-dir', str(self.remote), 'show', 'updates:appcast-stable.xml'],
+                                        capture_output=True, check=True).stdout, frozen)
 
     def test_newer_feed_is_never_moved_backward(self):
         newer = self.seed_feed('0.2.5')

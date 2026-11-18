@@ -30,7 +30,7 @@ VERSION="${APP_VERSION:-0.1.0}"
 NUMBER="${BUILD_NUMBER:-1}"
 CHANNEL_META="${RELEASE_CHANNEL:-local}"
 # Only production bundles get a feed; Dev and local test builds never check for updates.
-FEED="https://raw.githubusercontent.com/maxmeis/hypermug/updates/appcast-stable.xml"
+FEED="https://raw.githubusercontent.com/maxmeis/hypermug/updates/appcast.xml"
 if [ "$VARIANT" = dev ]; then CHANNEL_META=local; fi
 case "$CHANNEL_META" in local|production) ;; *) echo "error: invalid RELEASE_CHANNEL" >&2; exit 1;; esac
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "error: invalid APP_VERSION" >&2; exit 1; }

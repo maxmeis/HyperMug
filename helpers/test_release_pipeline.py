@@ -77,7 +77,7 @@ class ReleasePipelineTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             archive = release_zip(Path(folder) / 'HyperMug-1.2.3.zip', build='1.2.3')
             signature = sparkle_signature(archive)
-            output = Path(folder) / 'appcast-stable.xml'
+            output = Path(folder) / 'appcast.xml'
             result = subprocess.run([sys.executable, str(ROOT / 'helpers/release_metadata.py'), 'appcast',
                 '--version', '1.2.3', '--zip', str(archive), '--signature', signature, '--output', str(output)],
                 capture_output=True, text=True)

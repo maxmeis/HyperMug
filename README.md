@@ -11,7 +11,7 @@ brew tap maxmeis/hypermug https://github.com/maxmeis/hypermug
 brew install maxmeis/hypermug/hypermug
 ```
 
-HyperMug checks for updates once a day and offers to install them; **Check for Updates…** in the menu checks immediately. Releases after 0.3.1 are signed with a new update key. HyperMug 0.3.0 cannot verify them, and 0.3.1 has no updater, so if you have 0.3.0 or 0.3.1, run `brew upgrade --cask maxmeis/hypermug/hypermug` once; later updates arrive in the app. See [Installation](docs/installation.md) for permissions and first-run setup. For an independent local app, clone this repository and run `make dev`; see [Development](docs/development.md).
+HyperMug checks for updates once a day and offers to install them; **Check for Updates…** in the menu checks immediately. Releases after 0.3.1 are signed with a new update key. HyperMug 0.3.0 and 0.3.1 never see them in the app, so if you have either, run `brew upgrade --cask maxmeis/hypermug/hypermug` once; later updates arrive in the app. A bare `brew upgrade` skips casks that declare `auto_updates true`, so name the cask. See [Installation](docs/installation.md) for permissions and first-run setup. For an independent local app, clone this repository and run `make dev`; see [Development](docs/development.md).
 
 ## Features
 

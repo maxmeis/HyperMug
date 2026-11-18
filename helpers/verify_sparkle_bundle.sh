@@ -6,7 +6,7 @@ cd "$(dirname "$0")/.."
 app="${1:?app}"; team="${2:?Apple team}"
 plist="$app/Contents/Info.plist"
 value() { plutil -extract "$1" raw -o - "$plist"; }
-[[ "$(value SUFeedURL)" == https://raw.githubusercontent.com/maxmeis/hypermug/updates/appcast-stable.xml ]] || { echo 'Unexpected SUFeedURL' >&2; exit 1; }
+[[ "$(value SUFeedURL)" == https://raw.githubusercontent.com/maxmeis/hypermug/updates/appcast.xml ]] || { echo 'Unexpected SUFeedURL' >&2; exit 1; }
 [[ "$(value SUPublicEDKey)" == "$(plutil -extract SUPublicEDKey raw -o - Source/HyperMug/Info.plist)" ]] || { echo 'SUPublicEDKey differs from the source template' >&2; exit 1; }
 [[ "$(value SUEnableAutomaticChecks)" == true && "$(value SUVerifyUpdateBeforeExtraction)" == true ]] || { echo 'Sparkle checks are not enabled' >&2; exit 1; }
 [[ "$(value SUScheduledCheckInterval)" == 86400 ]] || { echo 'Sparkle must check daily' >&2; exit 1; }
