@@ -83,7 +83,7 @@ jobs:
         if: needs.changes.outputs.native == 'true'
         run: make compile-check
 
-      - name: Build bundle and verify app icon
+      - name: Build Dev bundle and verify icon, Sparkle framework and no update feed
         if: needs.changes.outputs.native == 'true'
         run: |
           make dev
@@ -93,6 +93,8 @@ jobs:
           test "$(plutil -extract CFBundleShortVersionString raw -o - "$app/Contents/Info.plist")" = 0.1.0
           test "$(plutil -extract CFBundleVersion raw -o - "$app/Contents/Info.plist")" = 1
           ! plutil -extract SUFeedURL raw -o - "$app/Contents/Info.plist" >/dev/null 2>&1
+          test -L "$app/Contents/Frameworks/Sparkle.framework/Versions/Current"
+          test -L "$app/Contents/Frameworks/Sparkle.framework/Sparkle"
           test -s "$app/Contents/Resources/HyperMug.icns"
           python3 helpers/check-bundle-schema.py "$app"
           codesign --verify --deep --strict "$app"

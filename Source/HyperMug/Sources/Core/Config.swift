@@ -136,6 +136,7 @@ public struct AppConfig: Equatable {
         let swipes = SwipeMap(left: next, right: prev)
         return AppConfig(
             launchAtLogin: !AppIdentity.isDevelopment,
+            autoUpdate: !AppIdentity.isDevelopment,
             mouse: MouseConfig(buttons: ButtonMap(back: next, forward: prev)),
             trackpad: TrackpadConfig(threeFingerSwipe: swipes, fourFingerSwipe: swipes)
         )
@@ -145,10 +146,12 @@ public struct AppConfig: Equatable {
     public var capsLock: CapsMode
     public var caffeineOnLaunch: Bool
     public var launchAtLogin: Bool
+    public var autoUpdate: Bool
     public var mouse: MouseConfig
     public var trackpad: TrackpadConfig
 
     public init(capsLock: CapsMode = .meh, caffeineOnLaunch: Bool = true, launchAtLogin: Bool = false,
+                autoUpdate: Bool = true,
                 mouse: MouseConfig = MouseConfig(), trackpad: TrackpadConfig = TrackpadConfig(),
                 helpers: [String: String] = [:], shellTimeoutSeconds: Double = 10) {
         self.helpers = helpers
@@ -156,6 +159,7 @@ public struct AppConfig: Equatable {
         self.capsLock = capsLock
         self.caffeineOnLaunch = caffeineOnLaunch
         self.launchAtLogin = launchAtLogin
+        self.autoUpdate = autoUpdate
         self.mouse = mouse
         self.trackpad = trackpad
     }
@@ -446,8 +450,7 @@ extension AppConfig: Codable {
         }
         caffeineOnLaunch = try c.decodeIfPresent(Bool.self, forKey: AnyKey("caffeineOnLaunch")) ?? true
         launchAtLogin = try c.decodeIfPresent(Bool.self, forKey: AnyKey("launchAtLogin")) ?? false
-        // Accept the retired setting so existing files keep loading. Updates are managed by Homebrew.
-        _ = try c.decodeIfPresent(Bool.self, forKey: AnyKey("autoUpdate"))
+        autoUpdate = try c.decodeIfPresent(Bool.self, forKey: AnyKey("autoUpdate")) ?? true
         mouse = try c.decodeIfPresent(MouseConfig.self, forKey: AnyKey("mouse")) ?? MouseConfig()
         trackpad = try c.decodeIfPresent(TrackpadConfig.self, forKey: AnyKey("trackpad")) ?? TrackpadConfig()
         let references: [(String, ButtonAction?)] = [
@@ -474,6 +477,7 @@ extension AppConfig: Codable {
         try c.encode(capsLock.rawValue, forKey: AnyKey("capsLock"))
         try c.encode(caffeineOnLaunch, forKey: AnyKey("caffeineOnLaunch"))
         try c.encode(launchAtLogin, forKey: AnyKey("launchAtLogin"))
+        try c.encode(autoUpdate, forKey: AnyKey("autoUpdate"))
         try c.encode(mouse, forKey: AnyKey("mouse"))
         if !helpers.isEmpty || encoder.includeEmptyKeys { try c.encode(helpers, forKey: AnyKey("helpers")) }
         if trackpad.hasMappings || encoder.includeEmptyKeys { try c.encode(trackpad, forKey: AnyKey("trackpad")) }
@@ -508,7 +512,9 @@ public func isBlankConfigData(_ data: Data) -> Bool {
     isBlank(String(decoding: data, as: UTF8.self))
 }
 
-public func decodeConfig(_ data: Data) -> Result<DecodedConfig, ConfigError> {
+/// The model's Codable bridge: Foundation's serialization of an already parsed and schema-checked TOML tree.
+/// Not a configuration format; users only ever write TOML.
+func decodeConfig(_ data: Data) -> Result<DecodedConfig, ConfigError> {
     if isBlankConfigData(data) { return .success(DecodedConfig(config: AppConfig(), unknownKeys: [])) }
     let collector = UnknownKeyCollector()
     let decoder = JSONDecoder()
@@ -533,8 +539,9 @@ private extension Encoder {
     var includeEmptyKeys: Bool { userInfo[emptyKeysKey] as? Bool == true }
 }
 
-/// Include unassigned slots as `{}` when creating or recreating a configuration file.
-public func encodeConfig(_ config: AppConfig, schemaURL: URL? = nil, includeEmptyKeys: Bool = false) -> Data {
+/// The model's Codable encoding, rendered by `encodeConfigTOML`. Include unassigned slots as `{}` when
+/// creating or recreating a configuration file.
+func encodeConfig(_ config: AppConfig, schemaURL: URL? = nil, includeEmptyKeys: Bool = false) -> Data {
     let encoder = JSONEncoder()
     encoder.userInfo[emptyKeysKey] = includeEmptyKeys
     if let schemaURL { encoder.userInfo[schemaReferenceKey] = schemaURL.absoluteString }

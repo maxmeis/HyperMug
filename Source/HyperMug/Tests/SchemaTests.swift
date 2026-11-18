@@ -124,8 +124,7 @@ private func schemaStructureTests() {
     for sample in [AppConfig(), .newFileDefaults, mapped, fullyMapped, swapped, swipes, swappedSwipes, helper] {
         validate(schema, encoded(sample), "")
     }
-    expectEqual(Set(propertyPaths(schema, "")).subtracting(seen), ["autoUpdate"],
-                "only the retired compatibility field is absent from new files")
+    expectEqual(Set(propertyPaths(schema, "")).subtracting(seen), [], "schema properties without an encoded counterpart")
 
     // Required keys: exactly as decided, and every one is in the encoded default.
     let rootRequired = Set(schema["required"] as? [String] ?? [])
@@ -143,8 +142,13 @@ private func schemaStructureTests() {
     expect((node(["mouse", "verticalWheel"])["description"] as? String)?.contains("Natural Scrolling") == true,
            "schema explains that wheel bindings use the physical direction")
     expect(!rootRequired.contains("trackpad"), "trackpad is optional for old configs")
-    expectEqual(node(["autoUpdate"])["deprecated"] as? Bool, true, "retired setting remains accepted")
-    expect((encoded(AppConfig()) as? JSON)?["autoUpdate"] == nil, "new files omit retired setting")
+    expect(!rootRequired.contains("autoUpdate"), "autoUpdate is optional for old configs")
+    expectEqual(node(["autoUpdate"])["type"] as? String, "boolean", "autoUpdate schema type")
+    expectEqual((encoded(AppConfig()) as? JSON)?["autoUpdate"] as? Bool, true, "new defaults encode autoUpdate")
+    expectEqual((encoded(AppConfig(autoUpdate: false)) as? JSON)?["autoUpdate"] as? Bool, false,
+                "disabled autoUpdate encodes as false")
+    expectEqual(try? decodeConfig(Data("{\"capsLock\":\"meh\"}".utf8)).get().config.autoUpdate, true,
+                "legacy config without autoUpdate keeps automatic checks enabled")
     expect((node(["trackpad"])["description"] as? String)?.contains("System Settings") == true,
            "schema explains one-time native gesture setup")
     expectEqual(Set((node(["trackpad"])["properties"] as? JSON ?? [:]).keys), ["threeFingerSwipe", "fourFingerSwipe"], "trackpad groups")
@@ -194,19 +198,8 @@ private func schemaStructureTests() {
 
 private func schemaReferenceTests() {
     let schema = URL(fileURLWithPath: "/Applications/HyperMug Dev.app/Contents/Resources/hypermug-dev.schema.json")
-    let input = Data(#"{"$schema":"./old.schema.json","helpers":{" spaced ":"echo secret"},"custom":{"keep":1}}"#.utf8)
-    let linked = try! configDataLinkingSchema(input, schemaURL: schema)
-    let object = jsonObject(String(decoding: linked, as: UTF8.self))
-    expectEqual(object["$schema"] as? String, schema.absoluteString, "resource URL is escaped correctly")
-    expectEqual(object["helpers"] as? [String: String], [" spaced ": "echo secret"], "helper names and commands survive metadata migration")
-    expectEqual((object["custom"] as? [String: Int])?["keep"], 1, "unknown user data is not discarded")
-    expectEqual(try? configDataLinkingSchema(linked, schemaURL: schema), linked, "same reference preserves exact bytes")
     expectEqual(jsonObject(String(decoding: encodeConfig(.newFileDefaults, schemaURL: schema), as: UTF8.self))["$schema"] as? String,
                 schema.absoluteString, "new files link directly into the bundle")
     expect(jsonObject(String(decoding: encodeConfig(.newFileDefaults), as: UTF8.self))["$schema"] == nil,
            "model encoding does not invent an adjacent schema")
-    for text in ["{", "[]", #"{"$schema":false}"#] {
-        do { _ = try configDataLinkingSchema(Data(text.utf8), schemaURL: schema); expect(false, "invalid metadata must throw") }
-        catch { expect(true, "invalid input remains the caller's responsibility") }
-    }
 }

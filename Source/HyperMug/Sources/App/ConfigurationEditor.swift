@@ -9,8 +9,7 @@ final class ConfigurationEditorModel: ObservableObject {
     @Published private(set) var messageIsError = false
     var onChange: (() -> Void)?
     private let store: ConfigStore
-    var url: URL { store.documentURL }
-    var formatName: String { store.documentFormat.rawValue }
+    var url: URL { store.url }
 
     init(store: ConfigStore) { self.store = store }
 
@@ -44,7 +43,7 @@ final class ConfigurationEditorModel: ObservableObject {
         switch store.validateDocument(Data(draft.text.utf8)) {
         case .success:
             messageIsError = false
-            message = "Valid \(formatName), schema and action references. Save to apply."
+            message = "Valid TOML, schema and action references. Save to apply."
         case .failure(let error): failed(error)
         }
     }
@@ -75,7 +74,7 @@ final class ConfigurationEditorModel: ObservableObject {
     private func showDiskValidation() {
         message = nil
         messageIsError = false
-        if case .failure(let error) = store.documentFormat.validate(Data(draft.text.utf8)) { failed(error) }
+        if case .failure(let error) = validateConfigTOML(Data(draft.text.utf8)) { failed(error) }
     }
 }
 
@@ -89,7 +88,7 @@ struct ConfigurationEditorView: View {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Configuration").font(.title2.bold())
-                        Text("One \(model.formatName) file for every binding and preference.")
+                        Text("One TOML file for every binding and preference.")
                             .foregroundStyle(.secondary)
                     }
                     Spacer()

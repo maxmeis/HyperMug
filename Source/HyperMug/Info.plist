@@ -22,6 +22,14 @@
 	<string>1</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
+	<key>SUPublicEDKey</key>
+	<string>vYfrUMGar99Cz+cmGGCHLiEX/evdHA7lzTTNZvgqv9s=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
+	<key>SUVerifyUpdateBeforeExtraction</key>
+	<true/>
 	<key>LSUIElement</key>
 	<true/>
 </dict>

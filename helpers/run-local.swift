@@ -23,23 +23,18 @@ func aerospace(_ arguments: [String]) -> String? {
 let currentWorkspace = aerospace(["list-workspaces", "--focused"])
 let directory = manager.homeDirectoryForCurrentUser.appendingPathComponent(".config", isDirectory: true)
 let devConfig = directory.appendingPathComponent("hypermug-dev.toml")
-let devLegacyConfig = directory.appendingPathComponent("hypermug-dev.json")
 let productionConfig = directory.appendingPathComponent("hypermug.toml")
-let productionLegacyConfig = directory.appendingPathComponent("hypermug.json")
 
-// Copy settings once. Later Dev edits never change the production file, which is only read here (Dev
-// migrates its own legacy hypermug-dev.json itself).
-if !manager.fileExists(atPath: devConfig.path), !manager.fileExists(atPath: devLegacyConfig.path) {
+// Copy settings once. Later Dev edits never change the production file, which is only read here.
+if !manager.fileExists(atPath: devConfig.path) {
     var source: [String: ConfigValue]?
     if manager.fileExists(atPath: productionConfig.path) {
         source = try parseConfigTOML(Data(contentsOf: productionConfig)).get()
-    } else if manager.fileExists(atPath: productionLegacyConfig.path) {
-        source = try parseConfigTOML(tomlConfigData(fromJSON: Data(contentsOf: productionLegacyConfig))).get()
     }
     if var config = source {
         config["$schema"] = .string(appURL.appendingPathComponent("Contents/Resources/hypermug-dev.schema.json").absoluteString)
         config["launchAtLogin"] = .boolean(false)
-        config.removeValue(forKey: "autoUpdate")
+        config["autoUpdate"] = .boolean(false)
         try renderConfigTOML(config).write(to: devConfig, options: .atomic)
         print("Created separate Dev settings: \(devConfig.path)")
     }

@@ -18,7 +18,7 @@ struct ConfigurationEditorChecks {
             if failWrite { throw NSError(domain: "TestWrite", code: 1) }
             try data.write(to: path, options: .atomic)
         }, log: { _,_ in }, schedule: { _,_ in Token() }, watch: { _,_ in nil })
-        let store = ConfigStore(url: url, format: .toml, environment: env)
+        let store = ConfigStore(url: url, environment: env)
         store.start()
         let model = ConfigurationEditorModel(store: store)
         model.reload()
