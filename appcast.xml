@@ -3,11 +3,11 @@
   <channel>
     <title>HyperMug updates</title>
     <item>
-      <title>HyperMug 0.3.2</title>
-      <sparkle:version>0.3.2</sparkle:version>
-      <sparkle:shortVersionString>0.3.2</sparkle:shortVersionString>
+      <title>HyperMug 0.3.3</title>
+      <sparkle:version>0.3.3</sparkle:version>
+      <sparkle:shortVersionString>0.3.3</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-      <enclosure url="https://github.com/maxmeis/hypermug/releases/download/v0.3.2/HyperMug-0.3.2.zip" length="2169272" type="application/octet-stream" sparkle:edSignature="eztpL1KpIZUiYufWcrlbVfNozLsqvu4uNv4tbaEN0C69nGmXM3VbQ+ZGigTZXa02ty3TxP4afhei2bGIw0LKCQ==" />
+      <enclosure url="https://github.com/maxmeis/hypermug/releases/download/v0.3.3/HyperMug-0.3.3.zip" length="2157898" type="application/octet-stream" sparkle:edSignature="w3eZyQh7IGK+/LUWXBBpj8RV21mJ48VRo5FY4BsLiOQktT4p1k3IHAKU+AyNnxJeUrUGei/EiUbNWhMKaIEdBw==" />
     </item>
   </channel>
 </rss>
