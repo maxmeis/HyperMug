@@ -14,13 +14,9 @@ Homebrew lives in this repository; no external tap, release service, GitHub App,
 
 ## Repository configuration
 
-Source changes should merge through the protected `main` branch with required CODEOWNERS review. The workflow needs these separate publishing prerequisites:
+Production is active on protected `main`: the `production` environment is restricted to `main` with no required reviewers or wait timer, so source pushes release automatically. Source pull requests retain required CODEOWNERS review. The repository-scoped SSH deploy key is stored as the `production` environment secret `HOMEBREW_SSH_PRIVATE_KEY`; its ruleset exception permits the generated cask commit to bypass pull-request and required-check rules. Force-push and deletion protections are separate and have no deploy-key bypass. Actions uses `GITHUB_TOKEN` with Contents write for tags and releases.
 
-- The `production` environment must permit `main` without a required reviewer or wait timer for fully automatic releases. Keep its deployment branch policy restricted to `main`.
-- The publisher must be allowed to update the generated cask directly on `main`. `contents: write` does not bypass required pull requests or status checks. Under the current rules, configure a repository-scoped write deploy key and save its private key as the Production environment secret `HOMEBREW_SSH_PRIVATE_KEY`. The key needs an explicit PR/status-check ruleset exception; keep force-push and deletion protection in a separate ruleset without that bypass. The workflow itself does not weaken repository rules. Without a deploy key, the publisher uses `GITHUB_TOKEN` and the branch must permit that token's direct write.
-- GitHub Actions must be allowed to create releases/tags with Contents write. Keep source review, force-push and deletion protections.
-
-Before merging this migration, inspect both branch protection and rulesets: their rules apply together. A CODEOWNERS file alone does not grant CI a direct-push exception. Existing production approval and publication rules must be updated before claiming this pipeline is fully automatic.
+For a new repository using this workflow, restrict the `production` environment to `main` and leave reviewers and wait timers unset. Install a repository-scoped write deploy key and save its private key as `HOMEBREW_SSH_PRIVATE_KEY` in that environment. Add a narrow PR and required-check ruleset bypass for that key, while keeping source CODEOWNERS review and force-push/deletion protections in rulesets without the bypass. Inspect all applicable branch protections and rulesets together: `contents: write` and CODEOWNERS alone do not grant direct-push permission. Alternatively, omit the deploy key only when the repository's rules explicitly allow the workflow token to update the cask directly.
 
 ## Production credentials
 
@@ -37,7 +33,7 @@ Keep Apple credentials in the `production` environment, accessible only to the r
 | Variable | `APP_STORE_CONNECT_KEY_ID` | Notarization API key identifier |
 | Variable | `APP_STORE_CONNECT_ISSUER_ID` | Notarization API issuer identifier |
 
-Retire old release-bot, external-tap and Sparkle credentials only after dependent projects have migrated and a real production publication plus Homebrew update has succeeded. Existing historical releases remain unchanged.
+The first migrated production release, `v0.3.1`, has been published and its cask update verified. Retire old release-bot, external-tap and Sparkle credentials only after every dependent project has completed a real production publication and Homebrew update. Existing historical releases remain unchanged.
 
 ## Validation
 
