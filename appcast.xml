@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+  <channel>
+    <title>HyperMug updates</title>
+    <item>
+      <title>HyperMug 0.3.2</title>
+      <sparkle:version>0.3.2</sparkle:version>
+      <sparkle:shortVersionString>0.3.2</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <enclosure url="https://github.com/maxmeis/hypermug/releases/download/v0.3.2/HyperMug-0.3.2.zip" length="2169272" type="application/octet-stream" sparkle:edSignature="eztpL1KpIZUiYufWcrlbVfNozLsqvu4uNv4tbaEN0C69nGmXM3VbQ+ZGigTZXa02ty3TxP4afhei2bGIw0LKCQ==" />
+    </item>
+  </channel>
+</rss>
