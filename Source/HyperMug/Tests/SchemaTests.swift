@@ -99,10 +99,10 @@ private func schemaStructureTests() {
         capsLock: .hyper, caffeineOnLaunch: false, launchAtLogin: true,
         mouse: MouseConfig(invertScroll: InvertScroll(vertical: true, horizontal: true),
                            buttons: ButtonMap(back: shortcut(["cmd", "["]), forward: shortcut(["cmd", "]"]), thumb: .shell("echo hi")),
-                           verticalWheel: WheelMap(up: shortcut(["ctrl", "up"]), down: .shell("echo down"))))
+                           horizontalWheel: WheelMap(left: shortcut(["ctrl", "up"]), right: .shell("echo down"))))
     let swapped = AppConfig(mouse: MouseConfig(buttons: ButtonMap(
         back: .shell("echo back"), forward: .shell("echo forward"), thumb: shortcut(["meh", "k"])),
-        verticalWheel: WheelMap(up: .shell("echo up"), down: shortcut(["ctrl", "down"]))))
+        horizontalWheel: WheelMap(left: .shell("echo up"), right: shortcut(["ctrl", "down"]))))
     let swipes = AppConfig(trackpad: TrackpadConfig(
         threeFingerSwipe: SwipeMap(up: .shell("up"), down: shortcut(["cmd", "a"]),
                                    left: .shell("left"), right: shortcut(["cmd", "b"])),
@@ -117,7 +117,7 @@ private func schemaStructureTests() {
                              left: .helper("shared"), right: .helper("shared"))
     let helper = AppConfig(mouse: MouseConfig(buttons: ButtonMap(back: .helper("shared"),
                                                                  forward: .helper("shared"), thumb: .helper("shared")),
-                                              verticalWheel: WheelMap(up: .helper("shared"), down: .helper("shared"))),
+                                              horizontalWheel: WheelMap(left: .helper("shared"), right: .helper("shared"))),
                            trackpad: TrackpadConfig(threeFingerSwipe: helperMap,
                                                     fourFingerSwipe: helperMap),
                            helpers: ["shared": "echo shared"])
@@ -135,11 +135,11 @@ private func schemaStructureTests() {
     expect(node(["mouse", "buttons"])["required"] == nil, "buttons has no required keys")
     expect(((schema["properties"] as? JSON) ?? [:])["caffeine"] == nil, "the schema does not know the removed caffeine key")
     expectEqual(Set(node(["capsLock"])["enum"] as? [String] ?? []), Set(CapsMode.allCases.map { $0.rawValue }), "capsLock enum == CapsMode cases")
-    expectEqual(Set((node(["mouse"])["properties"] as? JSON ?? [:]).keys), ["invertScroll", "buttons", "verticalWheel"], "mouse properties")
-    expect(node(["mouse", "verticalWheel"])["required"] == nil, "wheel directions are optional")
-    expectEqual(Set((node(["mouse", "verticalWheel"])["properties"] as? JSON ?? [:]).keys),
+    expectEqual(Set((node(["mouse"])["properties"] as? JSON ?? [:]).keys), ["invertScroll", "buttons", "horizontalWheel"], "mouse properties")
+    expect(node(["mouse", "horizontalWheel"])["required"] == nil, "wheel directions are optional")
+    expectEqual(Set((node(["mouse", "horizontalWheel"])["properties"] as? JSON ?? [:]).keys),
                 Set(WheelDirection.allCases.map(\.rawValue)), "wheel directions")
-    expect((node(["mouse", "verticalWheel"])["description"] as? String)?.contains("Natural Scrolling") == true,
+    expect((node(["mouse", "horizontalWheel"])["description"] as? String)?.contains("Natural Scrolling") == true,
            "schema explains that wheel bindings use the physical direction")
     expect(!rootRequired.contains("trackpad"), "trackpad is optional for old configs")
     expect(!rootRequired.contains("autoUpdate"), "autoUpdate is optional for old configs")
@@ -161,7 +161,7 @@ private func schemaStructureTests() {
     // Buttons: one shell string or one non-empty shortcut array of known tokens.
     let tokenSet = Set(shortcutTokenNames)
     for path in (["back", "forward", "thumb"].map { ["mouse", "buttons", $0] } +
-                 ["up", "down"].map { ["mouse", "verticalWheel", $0] } +
+                 ["left", "right"].map { ["mouse", "horizontalWheel", $0] } +
                  ["threeFingerSwipe", "fourFingerSwipe"].flatMap { group in
                      SwipeDirection.allCases.map { ["trackpad", group, $0.rawValue] }
                  }) {
