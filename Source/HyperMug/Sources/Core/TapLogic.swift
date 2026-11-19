@@ -29,7 +29,7 @@ public struct TapSettings: Equatable {
         forward = config.mouse.buttons.forward
         invertVertical = config.mouse.invertScroll.vertical
         invertHorizontal = config.mouse.invertScroll.horizontal
-        wheel = config.mouse.verticalWheel
+        wheel = config.mouse.horizontalWheel
     }
 
     /// Only the event types that are needed.
@@ -275,21 +275,23 @@ public struct TapState: Equatable {
         }
     }
 
-    /// Consumes a mouse-wheel event whose physical vertical direction is mapped; nil = normal scroll handling.
+    /// Consumes a mouse-wheel event whose physical horizontal direction is mapped; nil = normal scroll handling.
     /// Bindings see the device direction: Natural Scrolling is undone here, and inversion only applies to passed events.
     private mutating func wheelBinding(_ e: TapEvent, settings: TapSettings) -> (TapDecision, [TapEffect])? {
         guard !settings.wheel.isEmpty, shouldInvertScroll(scrollPhase: e.scrollPhase, momentumPhase: e.momentumPhase)
         else { return nil }
-        let primary = e.continuous ? Double(e.vertical.point) : Double(e.vertical.line)
-        let delta = primary != 0 ? primary : e.vertical.fixed
+        let primary = e.continuous ? Double(e.horizontal.point) : Double(e.horizontal.line)
+        let delta = primary != 0 ? primary : e.horizontal.fixed
         guard delta != 0 else { return nil }
-        let direction: WheelDirection = (delta > 0) != e.invertedFromDevice ? .up : .down
+        let direction: WheelDirection = (delta > 0) != e.invertedFromDevice ? .left : .right
         guard let action = settings.wheel.action(for: direction) else {
             wheelSteps.reset()
             return nil
         }
         let fires = wheelSteps.step(direction, continuousPoints: e.continuous ? abs(delta) : nil, nowNanos: e.nowNanos)
-        return (TapDecision(pass: false), fires ? [.run(action)] : [])
+        // Keep vertical motion in a mixed-axis event, including its configured inversion.
+        let vertical = settings.invertVertical ? negated(e.vertical) : nil
+        return (TapDecision(vertical: vertical, horizontal: .zero), fires ? [.run(action)] : [])
     }
 
     /// nil when the axis carries no movement (nothing to rewrite).

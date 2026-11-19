@@ -168,13 +168,13 @@ public let configSchemaJSON: String = #"""
             "thumb": \#(buttonSchema("Thumb button of the MX Master 3S over Bluetooth (needs Input Monitoring permission)."))
           }
         },
-        "verticalWheel": {
+        "horizontalWheel": {
           "type": "object",
-          "description": "Actions for physical vertical wheel steps of a mouse wheel. A mapped direction is consumed and runs its action once per wheel step; fast or free-spinning rolls are limited. An unmapped direction keeps normal scrolling. Directions refer to the physical wheel, independent of Natural Scrolling and invertScroll.vertical. Trackpad and Magic Mouse scrolling is never bound.",
+          "description": "Actions for physical horizontal (thumb) wheel steps of a mouse wheel. A mapped direction is consumed and runs its action once per wheel step; fast or free-spinning rolls are limited. An unmapped direction keeps normal scrolling. Directions refer to the physical wheel, independent of Natural Scrolling and invertScroll.horizontal. Trackpad and Magic Mouse scrolling is never bound.",
           "additionalProperties": false,
           "properties": {
-            "up": \#(buttonSchema("Wheel rolled up (away from you).")),
-            "down": \#(buttonSchema("Wheel rolled down (toward you)."))
+            "left": \#(buttonSchema("Wheel rolled left.")),
+            "right": \#(buttonSchema("Wheel rolled right."))
           }
         }
       }

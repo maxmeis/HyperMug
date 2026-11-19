@@ -26,13 +26,13 @@ back.shell = "/opt/homebrew/bin/aerospace workspace --no-stdin --wrap-around nex
 forward.shell = "/opt/homebrew/bin/aerospace workspace --no-stdin --wrap-around prev"
 thumb = {}
 
+[mouse.horizontalWheel]
+left = {}
+right = {}
+
 [mouse.invertScroll]
 horizontal = false
 vertical = false
-
-[mouse.verticalWheel]
-down = {}
-up = {}
 
 [trackpad.fourFingerSwipe]
 down = {}
@@ -53,7 +53,7 @@ On a new or empty file, HyperMug shows every button, wheel and swipe direction, 
 
 ### AeroSpace example
 
-[`docs/examples/aerospace.toml`](examples/aerospace.toml) is the owner's own setup: Caps Lock as Meh, the mouse side buttons and three-finger swipes switch AeroSpace workspaces, and four-finger swipes switch windows. It uses shared helpers and needs AeroSpace at `/opt/homebrew/bin/aerospace`. The test suite checks that this file stays valid.
+[`docs/examples/aerospace.toml`](examples/aerospace.toml) is the owner's own setup: Caps Lock as Meh, the mouse side buttons and three-finger swipes switch AeroSpace workspaces, and horizontal wheel steps and four-finger swipes switch windows. It uses shared helpers and needs AeroSpace at `/opt/homebrew/bin/aerospace`. The test suite checks that this file stays valid.
 
 ```toml
 #:schema file:///Applications/HyperMug.app/Contents/Resources/hypermug.schema.json
@@ -65,9 +65,9 @@ capsLock = "meh"
 launchAtLogin = false
 
 [helpers]
-nextWindow = "/opt/homebrew/bin/aerospace focus --wrap-around dfs-next"
+aerospaceWindowNext = "/opt/homebrew/bin/aerospace focus --wrap-around dfs-next"
+aerospaceWindowPrev = "/opt/homebrew/bin/aerospace focus --wrap-around dfs-prev"
 nextWorkspace = "/opt/homebrew/bin/aerospace workspace --no-stdin --wrap-around next"
-previousWindow = "/opt/homebrew/bin/aerospace focus --wrap-around dfs-prev"
 previousWorkspace = "/opt/homebrew/bin/aerospace workspace --no-stdin --wrap-around prev"
 
 [mouse.buttons]
@@ -75,13 +75,17 @@ back.helper = "previousWorkspace"
 forward.helper = "nextWorkspace"
 thumb = {}
 
+[mouse.horizontalWheel]
+left.helper = "aerospaceWindowNext"
+right.helper = "aerospaceWindowPrev"
+
 [mouse.invertScroll]
 horizontal = false
 vertical = false
 
 [trackpad.fourFingerSwipe]
-left.helper = "nextWindow"
-right.helper = "previousWindow"
+left.helper = "aerospaceWindowNext"
+right.helper = "aerospaceWindowPrev"
 
 [trackpad.threeFingerSwipe]
 left.helper = "nextWorkspace"
@@ -118,27 +122,29 @@ TOML is the only configuration format. Earlier versions stored settings in `~/.c
 | `mouse.invertScroll.vertical` | Inverts mouse wheel vertical scrolling relative to the current macOS direction. |
 | `mouse.invertScroll.horizontal` | Inverts the MX Master 3S horizontal/thumb wheel relative to the current macOS direction. |
 | `mouse.buttons` | Actions for `back`, `forward`, and `thumb` buttons. |
-| `mouse.verticalWheel` | Actions for physical vertical wheel steps, `up` and `down`. Unbound by default; see [Wheel bindings](#wheel-bindings). |
+| `mouse.horizontalWheel` | Actions for physical horizontal wheel steps, `left` and `right`. Unbound by default; see [Wheel bindings](#wheel-bindings). |
 | `trackpad` | Optional `threeFingerSwipe` and `fourFingerSwipe` actions in each of `left`, `right`, `up`, and `down`. |
 
 Scroll inversion affects mouse wheels only, not trackpads or Magic Mouse scrolling.
 
 ## Wheel bindings
 
-`mouse.verticalWheel.up` and `.down` bind wheel steps to the same actions as buttons and swipes. For example, with the side buttons switching AeroSpace workspaces, the wheel can move focus between windows:
+`mouse.horizontalWheel.left` and `.right` bind horizontal/thumb wheel steps to the same actions as buttons and swipes. For example, with the side buttons switching AeroSpace workspaces, the horizontal wheel can move focus between windows:
 
 ```toml
 [helpers]
-nextWindow = "/opt/homebrew/bin/aerospace focus --boundaries-action wrap-around-the-workspace right"
-previousWindow = "/opt/homebrew/bin/aerospace focus --boundaries-action wrap-around-the-workspace left"
+aerospaceWindowNext = "/opt/homebrew/bin/aerospace focus --wrap-around dfs-next"
+aerospaceWindowPrev = "/opt/homebrew/bin/aerospace focus --wrap-around dfs-prev"
 
-[mouse.verticalWheel]
-down.helper = "nextWindow"
-up.helper = "previousWindow"
+[mouse.horizontalWheel]
+left.helper = "aerospaceWindowNext"
+right.helper = "aerospaceWindowPrev"
 ```
 
-- A mapped direction is consumed: its wheel events no longer scroll, and each wheel step runs the action once. An unmapped direction, and horizontal scrolling, keep scrolling normally.
-- `up` means rolling the wheel away from you and `down` toward you, whatever the Natural Scrolling setting. `invertScroll.vertical` does not swap bindings; it only reverses the scrolling of an unmapped direction.
+Older configurations may contain an empty `[mouse.verticalWheel]` table with `up = {}` and `down = {}`. HyperMug ignores those unassigned placeholders, so your other settings keep working; you can remove that table. Configured vertical wheel actions are no longer supported and must be replaced with horizontal `left`/`right` bindings.
+
+- A mapped horizontal direction is consumed: it no longer scrolls horizontally, and each wheel step runs the action once. An unmapped direction and vertical scrolling keep scrolling normally. Vertical wheel action bindings are not supported.
+- `left` and `right` refer to the physical horizontal wheel direction, whatever the Natural Scrolling setting. `invertScroll.horizontal` does not swap bindings; it only reverses the scrolling of an unmapped direction.
 - Clicky wheels count one step per notch. High-resolution or smooth-scrolling wheels accumulate their pixel travel into steps. Steps are at least 150 ms apart, and one continuous roll, such as a free-spinning flick, runs at most three actions; pause for about 0.3 s to continue.
 - Only mouse wheels are bound. Trackpad and Magic Mouse scrolling is never consumed.
 - Wheel bindings use the Accessibility event tap. Other tools that rewrite scroll events, such as smooth-scrolling utilities, can change what HyperMug sees.
