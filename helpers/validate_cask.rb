@@ -6,7 +6,17 @@ require "cask/cask_loader"
 path, version, digest = ARGV
 abort "usage: validate_cask.rb CASK VERSION SHA256" unless path && version && digest
 
-cask = Cask::CaskLoader.from_content(File.read(path))
+source = File.read(path)
+loader = Cask::CaskLoader
+cask = if loader.respond_to?(:from_content)
+  loader.from_content(source)
+else
+  # GitHub's macOS runner can have an older Homebrew without from_content.
+  # Its content loader still evaluates the same Cask DSL in memory.
+  legacy = loader::FromContentLoader.new(source)
+  accepts_config = legacy.method(:load).parameters.any? { |kind, name| [:key, :keyreq].include?(kind) && name == :config }
+  accepts_config ? legacy.load(config: nil) : legacy.load
+end
 expected_url = "https://github.com/maxmeis/hypermug/releases/download/v#{version}/HyperMug-#{version}.zip"
 abort "unexpected Cask token" unless cask.token == "hypermug"
 abort "unexpected Cask version" unless cask.version.to_s == version

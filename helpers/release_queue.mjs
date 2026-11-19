@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
-import semanticRelease from 'semantic-release';
 import { releaseConfig } from '../release.config.mjs';
 
 function git(cwd, ...args) {
@@ -51,6 +51,9 @@ export function nextSource(repo, main = 'origin/main') {
 }
 
 export async function semanticPlan(repo, selection) {
+  // `pending` is used by the Ubuntu preflight before npm dependencies exist.
+  // Load the release engine only when an actual source needs a version.
+  const { default: semanticRelease } = await import('semantic-release');
   const temp = await mkdtemp(join(tmpdir(), 'hypermug-semantic-'));
   try {
     const checkout = join(temp, 'checkout');
@@ -111,6 +114,6 @@ async function main() {
   console.log(`Next release: v${plan.version} from ${plan.sourceSha} (build ${plan.buildNumber})`);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
   main().catch((error) => { console.error(error); process.exitCode = 1; });
 }

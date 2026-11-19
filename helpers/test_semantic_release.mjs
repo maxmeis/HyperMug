@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -47,6 +47,18 @@ function caskCommit(repo, version) {
 }
 
 const logger = { log() {}, error() {}, success() {} };
+
+test('scheduled no-op releases stop on Ubuntu and PR CI does not rerun on main', () => {
+  const release = readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');
+  const ci = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
+  const preflight = release.split(/^  preflight:\s*$/m)[1]?.split(/^  release:\s*$/m)[0];
+  assert.ok(preflight, 'release workflow needs a preflight job');
+  assert.match(preflight, /runs-on: ubuntu-latest/);
+  assert.doesNotMatch(preflight, /npm ci|macos-latest/);
+  assert.match(release, /^  release:\n    needs: preflight\n    if: needs\.preflight\.outputs\.pending == 'true'\n    runs-on: macos-latest/m);
+  assert.doesNotMatch(ci, /^  push:/m);
+  assert.match(ci, /^  pull_request:/m);
+});
 
 test('Conventional Commit policy releases every valid type and breaking change', async () => {
   async function kind(message) {
@@ -106,9 +118,13 @@ test('semantic-release analyzes a source commit even with a skip-release phrase'
 test('backlog dispatch gate is true only while a source remains', (t) => {
   const { repo, cleanup } = fixture();
   t.after(cleanup);
+  mkdirSync(join(repo, 'helpers'));
+  copyFileSync(new URL('./release_queue.mjs', import.meta.url), join(repo, 'helpers/release_queue.mjs'));
+  copyFileSync(new URL('../release.config.mjs', import.meta.url), join(repo, 'release.config.mjs'));
+  writeFileSync(join(repo, 'package.json'), '{"type":"module"}\n');
   function pending() {
     const result = spawnSync(process.execPath,
-      [new URL('./release_queue.mjs', import.meta.url).pathname, 'pending', '--repo', repo, '--main', 'main'],
+      [join(repo, 'helpers/release_queue.mjs'), 'pending', '--repo', repo, '--main', 'main'],
       { encoding: 'utf8' });
     assert.equal(result.status, 0, result.stderr);
     return result.stdout.trim();

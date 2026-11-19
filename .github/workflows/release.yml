@@ -13,8 +13,28 @@ concurrency:
   cancel-in-progress: false
   queue: max
 jobs:
-  release:
+  preflight:
     if: github.repository == 'maxmeis/hypermug' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      pending: ${{ steps.queue.outputs.pending }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check whether a source needs release
+        id: queue
+        run: |
+          set -euo pipefail
+          git fetch --prune origin '+refs/heads/main:refs/remotes/origin/main' '+refs/tags/*:refs/tags/*'
+          pending="$(node helpers/release_queue.mjs pending --main origin/main)"
+          test "$pending" = true || test "$pending" = false
+          echo "pending=$pending" >> "$GITHUB_OUTPUT"
+  release:
+    needs: preflight
+    if: needs.preflight.outputs.pending == 'true'
     runs-on: macos-latest
     timeout-minutes: 60
     environment: production

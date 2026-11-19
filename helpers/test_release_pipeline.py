@@ -1,6 +1,7 @@
 """Production version selection and artifact metadata regression tests."""
 import base64
 import hashlib
+import os
 import plistlib
 import shutil
 import subprocess
@@ -62,6 +63,20 @@ class ReleasePipelineTests(unittest.TestCase):
             command = [str(ROOT / 'helpers/validate-cask.sh'), str(cask), '1.2.3', digest]
             valid = subprocess.run(command, capture_output=True, text=True)
             self.assertEqual(valid.returncode, 0, valid.stderr)
+            legacy_command = [
+                'brew', 'ruby', '-e',
+                'require "cask/cask_loader"; '
+                'Cask::CaskLoader.singleton_class.send(:remove_method, :from_content) '
+                'if Cask::CaskLoader.respond_to?(:from_content); '
+                'load ARGV.shift',
+                str(ROOT / 'helpers/validate_cask.rb'), str(cask), '1.2.3', digest,
+            ]
+            env = dict(os.environ,
+                       HOMEBREW_CACHE=str(Path(folder) / 'brew-cache'),
+                       HOMEBREW_TEMP=str(Path(folder) / 'brew-temp'),
+                       HOMEBREW_NO_AUTO_UPDATE='1', HOMEBREW_NO_INSTALL_FROM_API='1')
+            legacy = subprocess.run(legacy_command, env=env, capture_output=True, text=True)
+            self.assertEqual(legacy.returncode, 0, legacy.stderr)
             wrong_digest = subprocess.run(command[:-1] + ['0' * 64], capture_output=True, text=True)
             self.assertNotEqual(wrong_digest.returncode, 0)
             self.assertIn('unexpected Cask digest', wrong_digest.stderr)
